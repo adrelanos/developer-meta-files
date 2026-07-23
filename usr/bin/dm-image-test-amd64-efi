@@ -1,0 +1,25 @@
+#!/bin/bash
+
+## Copyright (C) 2025 - 2025 ENCRYPTED SUPPORT LLC <adrelanos@whonix.org>
+## See the file COPYING for copying conditions.
+
+## AI-Assisted
+
+## Thin wrapper: boot-test an amd64 disk image through OVMF (EFI) via dm-image-test (boot + login + functional checks).
+## First argument is the disk image (qcow2/raw/vdi/vmdk); any further arguments are
+## forwarded to dm-image-test unchanged (e.g. --session, --login-pass, --run, --timeout).
+
+set -o errexit
+set -o nounset
+set -o pipefail
+set -o errtrace
+shopt -s inherit_errexit
+shopt -s shift_verbose
+
+[ "$#" -ge 1 ] || { printf '%s\n' "Usage: dm-image-test-amd64-efi DISK_IMAGE [dm-image-test options...]" >&2; exit 2; }
+
+dm_image_test_wrapper_dir="$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")"
+disk_image="${1}"
+shift
+
+"${dm_image_test_wrapper_dir}/dm-image-test" --disk "${disk_image}" --arch amd64 --firmware efi "$@"
