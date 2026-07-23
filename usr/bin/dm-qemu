@@ -424,6 +424,13 @@ else
    qemu_opts=(-machine "${machine}" "${accel_opts[@]}" -m "${memory}" -smp "${smp}" -nographic -no-reboot -vga none)
 fi
 
+## Give the guest a user-mode (NAT) NIC so the boot faithfully reproduces a real
+## VM with network access -- systemcheck's --leak-tests, Tor bootstrap and
+## sdwdate all need it, and without a backend the guest's eth0 stays DOWN.
+## User-mode ('-nic user') needs no privileges and exposes no inbound port; it
+## also disables qemu's implicit default NIC, so there is exactly one interface.
+qemu_opts+=(-nic "user,model=virtio-net-pci")
+
 ## Boot media. An ISO is attached as an external USB mass-storage device -- a virtual USB stick --
 ## mirroring how users install: they write the ISO to a USB stick and boot it (isohybrid ISOs
 ## boot as a raw USB block device). This is arch-independent: unlike '-cdrom', which needs an IDE
