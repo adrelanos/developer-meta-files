@@ -5,28 +5,47 @@
 
 ## AI-Assisted
 
-## dm-qemu: boot a built derivative-maker ISO headless over the serial console in qemu, for
-## automated boot-testing (e.g. CI smoke test, or verifying '--serial-console-enable').
+## dm-qemu: boot a built derivative-maker artifact headless over the serial console in qemu,
+## for automated boot-testing (e.g. CI smoke test).
 ##
-## The ISO is attached as an emulated external USB stick (usb-storage), matching how
-## users actually install it -- write to a USB stick, boot from it -- rather than an
-## optical -cdrom almost nobody uses now; this also works uniformly on amd64 and arm64.
-## The live boot is deliberately SILENT in production ('quiet loglevel=0' in the kernel
-## cmdline), so a plain GRUB boot over serial shows the GRUB menu and then nothing --
-## you cannot tell whether the kernel booted. '--verbose' fixes that: it extracts the
-## kernel, initrd and the chosen menu entry's cmdline from the ISO, strips the silencers
-## ('quiet', 'loglevel=0', 'splash') exactly like the debug-misc package's grub-output-verbose
-## does, and DIRECT-boots the kernel (qemu -kernel/-initrd/-append) with the ISO attached as the
-## live medium (the USB stick) -- so kernel + systemd + the serial getty login prompt all reach
-## the serial console. '--fast' additionally appends 'mitigations=off' so a pure-TCG host (no KVM,
-## e.g. a nested Qubes VM) reaches userspace in minutes instead of not at all; do NOT use --fast
-## for a security-fidelity test. KVM is used automatically when /dev/kvm is present.
+## Two artifact kinds are supported:
+##   --iso PATH   an installer/live ISO, attached as an emulated external USB stick
+##                (usb-storage), matching how users actually install it -- write to a USB stick,
+##                boot from it -- rather than an optical -cdrom almost nobody uses now; this also
+##                works uniformly on amd64 and arm64.
+##   --disk PATH  a VM disk image (qcow2, raw, vdi, vmdk), booted from the virtual disk through
+##                firmware exactly as a real VM would. The format is auto-detected with 'qemu-img
+##                info' (override with --disk-format). The image is booted with qemu '-snapshot'
+##                so all guest writes go to a throwaway overlay and the built artifact is never
+##                modified. .ova is NOT accepted directly -- it is a tar container; extract its
+##                .vmdk/.vdi and pass that.
+##
+## DEFAULT boot: through real firmware (SeaBIOS/OVMF on x86, edk2 UEFI on arm64) -> (shim ->)
+## GRUB -> kernel, over serial. The live/VM boot is deliberately SILENT in production
+## ('quiet loglevel=0'), so a plain firmware boot over serial would show GRUB and then nothing.
+## dm-qemu therefore INJECTS the serial-console + verbose kernel parameters through the full
+## firmware -> GRUB -> kernel chain via the SMBIOS Type 1 system serial number ('dm-cmdline=...'),
+## which a cooperating grub.cfg reader (shipped in vm-config-dist) appends to the kernel line.
+## This surfaces kernel + systemd + the serial getty login prompt WITHOUT editing the image and
+## WITHOUT a build-time serial console -- the smbios grub module is in Debian's SIGNED grub, so it
+## works on BIOS, EFI, and EFI+Secure-Boot alike.
+##
+## --direct-kernel is a NON-default, internal-debugging path (ISO only): it extracts the kernel,
+## initrd and the chosen menu entry's cmdline from the ISO, strips the silencers ('quiet',
+## 'loglevel=0', 'splash') exactly like the debug-misc package's grub-output-verbose does, and
+## DIRECT-boots the kernel (qemu -kernel/-initrd/-append) with the ISO attached as the live
+## medium -- bypassing firmware and GRUB. Use it only when the firmware/SMBIOS path itself is
+## under suspicion; the SMBIOS default is the fidelity path.
+##
+## '--fast' additionally injects 'mitigations=off' so a pure-TCG host (no KVM, e.g. a nested
+## Qubes VM) reaches userspace in minutes instead of not at all; do NOT use --fast for a
+## security-fidelity test. KVM is used automatically when /dev/kvm is present.
 ##
 ## style-ok: no-has -- dm-qemu is a self-contained boot-tester meant to run on a bare CI
 ## runner (just qemu + xorriso + bash); it deliberately does NOT source derivative-maker's
 ## helper-scripts, so it uses 'command -v' rather than the 'has' helper.
 ## style-ok: no-safe-rm -- for the same reason it must not depend on the 'safe-rm' helper; the
-## only removal is its OWN mktemp workdir (a fixed, self-created path), removed with 'rm -rf'.
+## only removal is its OWN mktemp workdir (a fixed, self-created path), removed with 'rm -r -f'.
 
 set -o errexit
 set -o nounset
@@ -38,30 +57,40 @@ shopt -s shift_verbose
 usage() {
    cat -- <<'EOF'
 Usage: dm-qemu --iso PATH [options]
+       dm-qemu --disk PATH [options]
 
-  --iso PATH          the ISO to boot (required)
+  --iso PATH          boot an ISO, attached as an emulated USB stick (mutually exclusive
+                      with --disk). Required unless --disk is given.
+  --disk PATH         boot a VM disk image (qcow2, raw, vdi, vmdk) from the virtual disk through
+                      firmware (mutually exclusive with --iso). Booted with '-snapshot' so the
+                      artifact is never modified. .ova is not accepted (tar container: extract
+                      its .vmdk/.vdi first).
+  --disk-format FMT   override the auto-detected disk format (qcow2|raw|vdi|vmdk). Default: auto
+                      via 'qemu-img info'. Only meaningful with --disk.
   --arch ARCH         guest Debian architecture (amd64, arm64, ...; default: the host's
                       'dpkg --print-architecture'). Selects the qemu binary, machine type
-                      and serial console via the shared arch map, so an arm64 ISO
+                      and serial console via the shared arch map, so an arm64 artifact
                       can be boot-tested (cross-arch runs under TCG; KVM only when guest arch
                       == host arch).
-  --firmware FW        x86 firmware path: 'bios' (SeaBIOS, default), 'efi' (OVMF), or
+  --firmware FW       x86 firmware: 'bios' (SeaBIOS, default), 'efi' (OVMF), or
                       'efi-secureboot' (OVMF secboot + Microsoft-key vars; validates Debian's
                       signed shim). Boots the real firmware -> shim -> GRUB -> kernel chain.
                       Needs the 'ovmf' package. x86 (amd64) only; arm64 already uses UEFI.
-  --serial-log PATH   capture the serial console here (default: <iso>.serial-boot.log)
+  --serial-log PATH   capture the serial console here (default: <image>.serial-boot.log)
   --timeout SECS      hard qemu time limit (default 1800)
-  --verbose           strip 'quiet'/'loglevel=0'/'splash' and DIRECT-boot the kernel so kernel +
-                      systemd + login reach serial (default: plain GRUB boot, production-silent)
-  --fast              also append 'mitigations=off' for pure-TCG speed (NOT a fidelity test)
-  --entry NAME        which live menu entry's cmdline to use for --verbose:
+  --direct-kernel     INTERNAL DEBUG (ISO only): extract kernel/initrd from the ISO, strip
+                      'quiet'/'loglevel=0'/'splash' and DIRECT-boot the kernel, bypassing
+                      firmware + GRUB. Default is a firmware boot with the verbose + serial
+                      console kernel parameters injected via SMBIOS (see --smbios-append).
+  --fast              also inject 'mitigations=off' for pure-TCG speed (NOT a fidelity test)
+  --entry NAME        which live menu entry's cmdline to use for --direct-kernel:
                       user (default) | sysmaint | unrestricted
   --accel MODE        acceleration: auto (default; KVM when guest arch == host arch and
                       /dev/kvm is usable, else TCG) | kvm (force, error if unavailable) |
                       tcg (force emulation)
   --memory MB         guest RAM in MB (default 3072)
   --smp N             guest vCPUs (default 4)
-  --extra-append STR  extra kernel cmdline appended in --verbose mode
+  --extra-append STR  extra kernel cmdline appended in --direct-kernel mode
   --qmp PATH          add a QMP control socket ('-qmp unix:PATH,server,nowait'), so a driver
                       can graceful-shutdown the guest (system_powerdown) and read the QMP
                       SHUTDOWN event to tell a guest reboot from a poweroff -- what the serial
@@ -71,22 +100,22 @@ Usage: dm-qemu --iso PATH [options]
                       PNG screendumps in DIR), deciding boot success from the framebuffer instead
                       of serial. For images that cannot be instrumented (no serial console, or a
                       sovereign/measured boot that must not be edited). Mutually exclusive with
-                      --verbose (which serial-boots via -kernel). Auto-creates a QMP socket if
-                      --qmp is not given.
+                      --direct-kernel (which serial-boots via -kernel). Auto-creates a QMP socket
+                      if --qmp is not given.
   --smbios-append STR extra kernel cmdline injected through the FULL firmware -> GRUB -> kernel
-                      chain via the SMBIOS Type 1 system serial number ('dm-cmdline=STR'), for the
-                      plain / --screendump boot (NOT --verbose, which direct-boots past GRUB).
+                      chain via the SMBIOS Type 1 system serial number ('dm-cmdline=STR'). On the
+                      default serial boot this is APPENDED to the verbose + serial-console params
+                      dm-qemu already injects; on --screendump it is the only injected payload.
                       Requires an image grub.cfg that reads it (the cooperating reader; smbios
-                      module is in Debian's signed grub, so this works on BIOS, EFI, and EFI+Secure
-                      Boot -- SB verified: an injected loglevel=7/plymouth.enable=0 took effect
-                      through OVMF-secboot -> signed shim -> signed grub, GRUB lockdown does not
-                      block the smbios read or cmdline append).
-  --emit-argv         build the qemu command (incl. --verbose kernel/initrd extraction) but do
-                      NOT run it: print the argv one token per line to stdout for an external
-                      driver (e.g. a pexpect boot-login harness) to spawn, and leave the
+                      module is in Debian's signed grub, so this works on BIOS, EFI, and
+                      EFI+Secure Boot). Ignored under --direct-kernel (which direct-boots past
+                      GRUB -- use --extra-append there).
+  --emit-argv         build the qemu command (incl. --direct-kernel kernel/initrd extraction) but
+                      do NOT run it: print the argv one token per line to stdout for an external
+                      driver (e.g. a pexpect boot-login harness) to spawn, and leave any
                       extracted-kernel workdir in place (its path is printed to stderr; the
                       caller owns cleanup). '-serial mon:stdio' is NOT added -- the caller adds
-                      whatever serial wiring it needs. Composes with --verbose/--entry/--fast.
+                      whatever serial wiring it needs. Composes with --direct-kernel/--entry/--fast.
   --help, -h          this help
 
 Exit: 0 if the serial log reached a login prompt / systemd; 5 if it booted but did not reach
@@ -96,18 +125,20 @@ EOF
 }
 
 ## EXIT-trap target (R-051: traps call a named function, never an inline string). Removes the
-## kernel/initrd extraction workdir; only set as the trap when NOT in --emit-argv mode, where
-## the caller owns the workdir instead. 'rm' (not safe-rm) per the no-safe-rm waiver above.
-## Invoked only indirectly via 'trap', hence unreachable to shellcheck (SC2317).
+## kernel/initrd (and OVMF vars) extraction workdir; only set as the trap when NOT in --emit-argv
+## mode, where the caller owns the workdir instead. 'rm' (not safe-rm) per the no-safe-rm waiver
+## above. Invoked only indirectly via 'trap', hence unreachable to shellcheck (SC2317).
 # shellcheck disable=SC2317
 dm_qemu_cleanup_workdir() {
-   rm -rf -- "${work_dir}"
+   rm -r -f -- "${work_dir}"
 }
 
 iso=''
+disk=''
+disk_format=''
 serial_log=''
 timeout_secs='1800'
-verbose='false'
+direct_kernel='false'
 fast='false'
 entry='user'
 memory='3072'
@@ -124,43 +155,62 @@ firmware='bios'
 while [ "$#" -gt 0 ]; do
    case "$1" in
       --iso)
-         iso="${2:?--iso needs a value}"
+         [ "$#" -ge 2 ] || { printf 'dm-qemu: --iso needs a value\n' >&2; exit 2; }
+         iso="${2}"
+         shift 2
+         ;;
+      --disk)
+         [ "$#" -ge 2 ] || { printf 'dm-qemu: --disk needs a value\n' >&2; exit 2; }
+         disk="${2}"
+         shift 2
+         ;;
+      --disk-format)
+         [ "$#" -ge 2 ] || { printf 'dm-qemu: --disk-format needs a value\n' >&2; exit 2; }
+         disk_format="${2}"
          shift 2
          ;;
       --arch)
-         arch="${2:?--arch needs a value}"
+         [ "$#" -ge 2 ] || { printf 'dm-qemu: --arch needs a value\n' >&2; exit 2; }
+         arch="${2}"
          shift 2
          ;;
       --accel)
-         accel="${2:?--accel needs a value}"
+         [ "$#" -ge 2 ] || { printf 'dm-qemu: --accel needs a value\n' >&2; exit 2; }
+         accel="${2}"
          shift 2
          ;;
       --firmware)
-         firmware="${2:?--firmware needs a value}"
+         [ "$#" -ge 2 ] || { printf 'dm-qemu: --firmware needs a value\n' >&2; exit 2; }
+         firmware="${2}"
          shift 2
          ;;
       --qmp)
-         qmp="${2:?--qmp needs a value}"
+         [ "$#" -ge 2 ] || { printf 'dm-qemu: --qmp needs a value\n' >&2; exit 2; }
+         qmp="${2}"
          shift 2
          ;;
       --screendump)
-         screendump="${2:?--screendump needs a value}"
+         [ "$#" -ge 2 ] || { printf 'dm-qemu: --screendump needs a value\n' >&2; exit 2; }
+         screendump="${2}"
          shift 2
          ;;
       --smbios-append)
-         smbios_append="${2:?--smbios-append needs a value}"
+         [ "$#" -ge 2 ] || { printf 'dm-qemu: --smbios-append needs a value\n' >&2; exit 2; }
+         smbios_append="${2}"
          shift 2
          ;;
       --serial-log)
-         serial_log="${2:?--serial-log needs a value}"
+         [ "$#" -ge 2 ] || { printf 'dm-qemu: --serial-log needs a value\n' >&2; exit 2; }
+         serial_log="${2}"
          shift 2
          ;;
       --timeout)
-         timeout_secs="${2:?--timeout needs a value}"
+         [ "$#" -ge 2 ] || { printf 'dm-qemu: --timeout needs a value\n' >&2; exit 2; }
+         timeout_secs="${2}"
          shift 2
          ;;
-      --verbose)
-         verbose='true'
+      --direct-kernel)
+         direct_kernel='true'
          shift
          ;;
       --emit-argv)
@@ -172,19 +222,23 @@ while [ "$#" -gt 0 ]; do
          shift
          ;;
       --entry)
-         entry="${2:?--entry needs a value}"
+         [ "$#" -ge 2 ] || { printf 'dm-qemu: --entry needs a value\n' >&2; exit 2; }
+         entry="${2}"
          shift 2
          ;;
       --memory)
-         memory="${2:?--memory needs a value}"
+         [ "$#" -ge 2 ] || { printf 'dm-qemu: --memory needs a value\n' >&2; exit 2; }
+         memory="${2}"
          shift 2
          ;;
       --smp)
-         smp="${2:?--smp needs a value}"
+         [ "$#" -ge 2 ] || { printf 'dm-qemu: --smp needs a value\n' >&2; exit 2; }
+         smp="${2}"
          shift 2
          ;;
       --extra-append)
-         extra_append="${2:?--extra-append needs a value}"
+         [ "$#" -ge 2 ] || { printf 'dm-qemu: --extra-append needs a value\n' >&2; exit 2; }
+         extra_append="${2}"
          shift 2
          ;;
       --help|-h)
@@ -205,21 +259,42 @@ while [ "$#" -gt 0 ]; do
    esac
 done
 
-[ -n "${iso}" ] || { printf 'dm-qemu: --iso is required\n' >&2; usage >&2; exit 2; }
-[ -r "${iso}" ] || { printf 'dm-qemu: ISO not readable: %s\n' "${iso}" >&2; exit 2; }
-[ -n "${serial_log}" ] || serial_log="${iso}.serial-boot.log"
-
-## --screendump (framebuffer, full-chain) and --verbose (serial '-kernel' direct boot) are
-## different, incompatible boot paths.
-if [ -n "${screendump}" ] && [ "${verbose}" = 'true' ]; then
-   printf 'dm-qemu: --screendump and --verbose are mutually exclusive (framebuffer vs serial direct-boot)\n' >&2
+## Exactly one artifact: --iso or --disk.
+if [ -n "${iso}" ] && [ -n "${disk}" ]; then
+   printf 'dm-qemu: --iso and --disk are mutually exclusive\n' >&2
    exit 2
 fi
-## --smbios-append travels through GRUB; --verbose direct-boots the kernel past GRUB, so the
+if [ -z "${iso}" ] && [ -z "${disk}" ]; then
+   printf 'dm-qemu: one of --iso or --disk is required\n' >&2
+   usage >&2
+   exit 2
+fi
+if [ -n "${iso}" ]; then
+   [ -r "${iso}" ] || { printf 'dm-qemu: ISO not readable: %s\n' "${iso}" >&2; exit 2; }
+   image="${iso}"
+else
+   [ -r "${disk}" ] || { printf 'dm-qemu: disk image not readable: %s\n' "${disk}" >&2; exit 2; }
+   image="${disk}"
+fi
+[ -n "${serial_log}" ] || serial_log="${image}.serial-boot.log"
+
+## --direct-kernel extracts the kernel/initrd from an ISO's /live tree; a disk image has no such
+## tree to extract from, so it is ISO-only.
+if [ "${direct_kernel}" = 'true' ] && [ -z "${iso}" ]; then
+   printf 'dm-qemu: --direct-kernel needs --iso (it extracts kernel/initrd from the ISO); a disk image boots through firmware only\n' >&2
+   exit 2
+fi
+## --screendump (framebuffer, full-chain) and --direct-kernel (serial '-kernel' direct boot) are
+## different, incompatible boot paths.
+if [ -n "${screendump}" ] && [ "${direct_kernel}" = 'true' ]; then
+   printf 'dm-qemu: --screendump and --direct-kernel are mutually exclusive (framebuffer vs serial direct-boot)\n' >&2
+   exit 2
+fi
+## --smbios-append travels through GRUB; --direct-kernel boots the kernel past GRUB, so the
 ## SMBIOS reader never runs. Refuse the combination loudly rather than silently dropping it
-## (use --extra-append in --verbose mode instead).
-if [ -n "${smbios_append}" ] && [ "${verbose}" = 'true' ]; then
-   printf 'dm-qemu: --smbios-append needs the GRUB path; it is ignored under --verbose. Use --extra-append for direct boot.\n' >&2
+## (use --extra-append in --direct-kernel mode instead).
+if [ -n "${smbios_append}" ] && [ "${direct_kernel}" = 'true' ]; then
+   printf 'dm-qemu: --smbios-append needs the GRUB path; it is ignored under --direct-kernel. Use --extra-append for direct boot.\n' >&2
    exit 2
 fi
 
@@ -233,7 +308,7 @@ source "${dm_qemu_dir}/../libexec/developer-meta-files/arch-to-qemu-machine.bsh"
 ## Default the guest arch to the HOST's Debian architecture via 'dpkg --print-architecture' --
 ## the same source help-steps/variables and parse-cmd use for host_architecture -- so no
 ## uname->arch table is needed here. --arch takes a Debian arch (amd64, arm64, ...), matching
-## dist_build_target_arch; pass it to boot-test a cross-arch ISO (arm64 on amd64 runs TCG).
+## dist_build_target_arch; pass it to boot-test a cross-arch artifact (arm64 on amd64 runs TCG).
 host_arch="$(dpkg --print-architecture)"
 [ -n "${arch}" ] || arch="${host_arch}"
 
@@ -271,7 +346,20 @@ case "${firmware}" in
       exit 2
       ;;
 esac
-command -v xorriso >/dev/null || { printf 'dm-qemu: xorriso not installed (needed to read the ISO)\n' >&2; exit 2; }
+
+## Command pre-flight (R-091: once, near the top). xorriso reads the ISO for --direct-kernel;
+## qemu-img auto-detects a disk image's format; ImageMagick powers --screendump. Each is checked
+## only on the path that actually needs it.
+if [ "${direct_kernel}" = 'true' ]; then
+   command -v xorriso >/dev/null || { printf 'dm-qemu: xorriso not installed (needed to read the ISO for --direct-kernel)\n' >&2; exit 2; }
+fi
+if [ -n "${disk}" ] && [ -z "${disk_format}" ]; then
+   command -v qemu-img >/dev/null || { printf 'dm-qemu: qemu-img not installed (needed to auto-detect the disk format; or pass --disk-format)\n' >&2; exit 2; }
+   disk_info="$(qemu-img info -- "${disk}")" \
+      || { printf 'dm-qemu: qemu-img info failed for disk %s\n' "${disk}" >&2; exit 2; }
+   disk_format="$(printf '%s\n' "${disk_info}" | sed -n -e 's/^file format: //p')"
+   [ -n "${disk_format}" ] || { printf 'dm-qemu: could not auto-detect the format of %s; pass --disk-format\n' "${disk}" >&2; exit 2; }
+fi
 if [ -n "${screendump}" ]; then
    if ! command -v identify >/dev/null || ! command -v compare >/dev/null; then
       printf 'dm-qemu: ImageMagick (identify + compare) not installed (needed for --screendump)\n' >&2
@@ -328,18 +416,24 @@ else
    qemu_opts=(-machine "${machine}" "${accel_opts[@]}" -m "${memory}" -smp "${smp}" -nographic -no-reboot -vga none)
 fi
 
-## Attach the ISO as an external USB mass-storage device -- a virtual USB stick --
-## mirroring how users actually install: they write the ISO to a USB stick and boot
-## it (isohybrid ISOs boot as a raw USB block device). This is arch-independent:
-## unlike '-cdrom', which needs an IDE CD controller the arm64 'virt' board lacks, a
-## USB xHCI controller works on amd64 and arm64 alike, so both arches share one
-## media path. 'readonly=on' so qemu never writes back to the built ISO artifact
-## (a live boot overlays its writes in RAM, so the medium stays read-only anyway).
-usb_iso_opts=(
-   -drive "if=none,id=usbstick,format=raw,readonly=on,file=${iso}"
-   -device "qemu-xhci,id=xhci"
-   -device "usb-storage,bus=xhci.0,drive=usbstick,removable=on"
-)
+## Boot media. An ISO is attached as an external USB mass-storage device -- a virtual USB stick --
+## mirroring how users install: they write the ISO to a USB stick and boot it (isohybrid ISOs
+## boot as a raw USB block device). This is arch-independent: unlike '-cdrom', which needs an IDE
+## CD controller the arm64 'virt' board lacks, a USB xHCI controller works on amd64 and arm64
+## alike. 'readonly=on' so qemu never writes back to the built ISO artifact (a live boot overlays
+## its writes in RAM). A disk image is attached as a virtio-blk boot disk; '-snapshot' (added
+## below) routes all guest writes to a throwaway overlay so the built artifact is never modified.
+if [ -n "${iso}" ]; then
+   media_opts=(
+      -drive "if=none,id=usbstick,format=raw,readonly=on,file=${iso}"
+      -device "qemu-xhci,id=xhci"
+      -device "usb-storage,bus=xhci.0,drive=usbstick,removable=on"
+   )
+else
+   media_opts=(-drive "if=virtio,format=${disk_format},file=${disk}")
+   ## Non-destructive: every write lands in a temporary overlay, discarded on exit.
+   qemu_opts+=(-snapshot)
+fi
 
 ## Optional QMP control socket (unix, server, non-blocking): qemu listens, the driver connects
 ## after start. 'nowait' so qemu does not block on a QMP client before booting.
@@ -347,7 +441,28 @@ if [ -n "${qmp}" ]; then
    qemu_opts+=(-qmp "unix:${qmp},server,nowait")
 fi
 
-if [ "${verbose}" = 'true' ]; then
+## Serial + verbose kernel parameters, shared by the SMBIOS-injected default boot and the
+## --direct-kernel '-append'. Surface the EARLY boot on serial: without this the kernel
+## self-decompressor and early init -- before the real 8250/PL011 tty driver registers -- are
+## silent, which under TCG (no KVM) is minutes of silence that looks like a hang. earlyprintk
+## (x86: the decompressor stub drives the UART directly) covers the decompression gap; earlycon
+## covers early init until the real driver takes over; keep_bootcon makes the handoff seamless;
+## ignore_loglevel + rd.info keep the kernel and the dracut initramfs chatty (and ignore_loglevel
+## overrides the image's production 'quiet loglevel=0' when these params are APPENDED via SMBIOS).
+## Arch-gated: the x86 'earlyprintk=serial,ttyS0' form is invalid on arm64 (PL011). printk.time=1
+## timestamps every line so a long gap is attributable to its phase; initcall_debug names a
+## stalled initcall. Both arch-independent.
+case "${serial_console}" in
+   ttyS0*)
+      early_console='earlyprintk=serial,ttyS0,115200 earlycon=ttyS0,115200 keep_bootcon ignore_loglevel rd.info'
+      ;;
+   *)
+      early_console='earlycon keep_bootcon ignore_loglevel rd.info'
+      ;;
+esac
+serial_verbose_params="console=${serial_console} ${early_console} printk.time=1 initcall_debug"
+
+if [ "${direct_kernel}" = 'true' ]; then
    ## Extract the kernel, initrd and grub.cfg from the ISO, derive the chosen entry's cmdline,
    ## strip the silencers, and direct-boot. The ISO stays attached (USB stick) as the live medium.
    work_dir="$(mktemp --directory)"
@@ -402,34 +517,16 @@ if [ "${verbose}" = 'true' ]; then
    if [ "${fast}" = 'true' ]; then
       cmdline="${cmdline} mitigations=off"
    fi
-   ## Surface the EARLY boot on serial. Without this the kernel self-decompressor and early
-   ## init -- before the real 8250/PL011 tty driver registers -- are silent on the console, which
-   ## under TCG (no KVM) is minutes of silence that looks like a hang. earlyprintk (x86: the
-   ## decompressor stub drives the UART directly) covers the decompression gap; earlycon covers
-   ## early init until the real driver takes over; keep_bootcon makes the handoff seamless;
-   ## ignore_loglevel + rd.info keep the kernel and the dracut initramfs chatty. Arch-gated: the
-   ## x86 'earlyprintk=serial,ttyS0' form is invalid on arm64 (PL011).
-   case "${serial_console}" in
-      ttyS0*)
-         early_console='earlyprintk=serial,ttyS0,115200 earlycon=ttyS0,115200 keep_bootcon ignore_loglevel rd.info'
-         ;;
-      *)
-         early_console='earlycon keep_bootcon ignore_loglevel rd.info'
-         ;;
-   esac
-   ## printk.time=1 timestamps every line so a long gap is attributable to the phase that caused
-   ## it; initcall_debug logs each initcall and its duration, so a stalled boot names the culprit
-   ## (a "calling X" with no matching "returned X"). Both arch-independent.
-   ## Ensure the arch-correct serial console is present even if the entry somehow lacked it (or
-   ## carried an x86 ttyS0 on an arm64 image), and add the early-console + debug + extra cmdline.
-   full_append="console=${serial_console} ${early_console} printk.time=1 initcall_debug ${cmdline} systemd.log_level=info ${extra_append}"
+   ## Ensure the arch-correct serial console + early-console + debug params are present even if the
+   ## entry somehow lacked them (or carried an x86 ttyS0 on an arm64 image); append the extra cmdline.
+   full_append="${serial_verbose_params} ${cmdline} systemd.log_level=info ${extra_append}"
 
-   printf 'dm-qemu: verbose direct-boot of %s (entry=%s, fast=%s, timeout=%ss)\n' "${kernel_iso_path##*/}" "${entry}" "${fast}" "${timeout_secs}" >&2
-   qemu_opts+=(-kernel "${work_dir}/vmlinuz" -initrd "${work_dir}/initrd.img" -append "${full_append}" "${usb_iso_opts[@]}")
+   printf 'dm-qemu: direct-kernel boot of %s (entry=%s, fast=%s, timeout=%ss)\n' "${kernel_iso_path##*/}" "${entry}" "${fast}" "${timeout_secs}" >&2
+   qemu_opts+=(-kernel "${work_dir}/vmlinuz" -initrd "${work_dir}/initrd.img" -append "${full_append}" "${media_opts[@]}")
 else
-   ## Plain GRUB boot (no direct kernel). On arm64 there is no BIOS, so 'virt' needs UEFI
-   ## firmware to run the ISO's GRUB-efi; locate an edk2 build or fail with a clear hint to
-   ## use --verbose (which direct-boots the kernel and needs no firmware). x86 uses SeaBIOS.
+   ## Firmware boot (the default). On arm64 there is no BIOS, so 'virt' needs UEFI firmware to run
+   ## the artifact's GRUB-efi; locate an edk2 build or fail with a clear hint. x86 uses SeaBIOS
+   ## unless --firmware selects OVMF.
    if [ "${guest_machine}" = 'aarch64' ]; then
       arm_uefi=''
       for arm_uefi_candidate in \
@@ -441,7 +538,7 @@ else
             break
          fi
       done
-      [ -n "${arm_uefi}" ] || { printf 'dm-qemu: arm64 plain boot needs edk2 UEFI firmware (install qemu-efi-aarch64) or use --verbose\n' >&2; exit 2; }
+      [ -n "${arm_uefi}" ] || { printf 'dm-qemu: arm64 boot needs edk2 UEFI firmware (install qemu-efi-aarch64)\n' >&2; exit 2; }
       qemu_opts+=(-bios "${arm_uefi}")
    elif [ "${guest_machine}" = 'x86_64' ] && [ "${firmware}" != 'bios' ]; then
       ## x86 EFI boot via OVMF pflash (SeaBIOS is the default BIOS path). efi-secureboot uses the
@@ -462,8 +559,9 @@ else
          printf 'dm-qemu: OVMF firmware not found (install the ovmf package) for --firmware %s\n' "${firmware}" >&2
          exit 2
       fi
-      ## Writable per-boot copy of the vars flash in an auto-cleaned workdir (the plain path has no
-      ## workdir otherwise; --emit-argv leaves ownership to the caller, mirroring the verbose path).
+      ## Writable per-boot copy of the vars flash in an auto-cleaned workdir (--emit-argv leaves
+      ## ownership to the caller, mirroring the direct-kernel path). Not reused when a direct-kernel
+      ## workdir already exists (the two boot paths are mutually exclusive).
       work_dir="$(mktemp --directory)"
       if [ "${emit_argv}" != 'true' ]; then
          trap dm_qemu_cleanup_workdir EXIT
@@ -474,26 +572,35 @@ else
          -drive "if=pflash,format=raw,unit=1,file=${work_dir}/OVMF_VARS.fd"
       )
    fi
-   printf 'dm-qemu: plain GRUB boot of %s over serial (firmware=%s; production-silent kernel; use --verbose for kernel output)\n' "${iso##*/}" "${firmware}" >&2
-   ## Boot the isohybrid ISO from the emulated USB stick (no '-boot d': there is no
-   ## CD; firmware picks the bootable USB device -- SeaBIOS on x86, edk2 on arm64).
-   qemu_opts+=("${usb_iso_opts[@]}")
-   ## --smbios-append: pass extra kernel cmdline through the FULL firmware -> GRUB -> kernel
-   ## chain (which qemu '-append' cannot reach -- that only works with '-kernel' direct boot).
-   ## A cooperating, TEST-ONLY grub.cfg reader in the image (insmod smbios; smbios --type 1
-   ## --get-string 7) picks up the 'dm-cmdline=' sentinel from the SMBIOS Type 1 system serial
-   ## number and appends the remainder to the kernel line. Type 1 offset 7 (serial) is a real
-   ## string-reference field GRUB can read; Type 11 OEM strings have no such field in the formatted
-   ## area (offset 5 is past its 5-byte length -> "offset outside the structure"). SMBIOS is
-   ## supplied by SeaBIOS (BIOS) and OVMF (EFI) alike; the reader's smbios module is in Debian's
-   ## SIGNED grub, so this works on BIOS, EFI, and EFI+Secure-Boot. SB VERIFIED: booting the signed
-   ## SB ISO with '--firmware efi-secureboot --smbios-append "loglevel=7 plymouth.enable=0" --screendump'
-   ## produced a verbose (non-splash) boot on the framebuffer, i.e. the injected cmdline took effect
-   ## through OVMF-secboot -> signed shim -> signed grub -- GRUB lockdown does not block the smbios
-   ## read or the cmdline append. Commas in the payload are doubled per qemu's value escaping. Only meaningful on this
-   ## full-chain path, not --verbose (direct boot).
-   if [ -n "${smbios_append}" ]; then
-      qemu_opts+=(-smbios "type=1,serial=dm-cmdline=${smbios_append//,/,,}")
+   printf 'dm-qemu: firmware boot of %s over serial (firmware=%s; verbose+serial params injected via SMBIOS)\n' "${image##*/}" "${firmware}" >&2
+   ## Boot from the emulated media (no '-boot d': there is no CD; firmware picks the bootable
+   ## USB stick / virtio disk -- SeaBIOS on x86, edk2 on arm64).
+   qemu_opts+=("${media_opts[@]}")
+   ## SMBIOS cmdline injection through the FULL firmware -> GRUB -> kernel chain (which qemu
+   ## '-append' cannot reach -- that only works with '-kernel' direct boot). A cooperating grub.cfg
+   ## reader in the image (insmod smbios; smbios --type 1 --get-string 7) picks up the 'dm-cmdline='
+   ## sentinel from the SMBIOS Type 1 system serial number (offset 7) and appends the remainder to
+   ## the kernel line. Type 1 offset 7 is a real string-reference field GRUB can read; Type 11 OEM
+   ## strings have no such field in the formatted area. SMBIOS is supplied by SeaBIOS (BIOS) and
+   ## OVMF (EFI) alike; the reader's smbios module is in Debian's SIGNED grub, so this works on
+   ## BIOS, EFI, and EFI+Secure-Boot -- GRUB lockdown does not block the smbios read or the append.
+   ## Commas in the payload are doubled per qemu's value escaping. On the default serial boot the
+   ## payload is the verbose+serial params (+ --smbios-append); under --screendump it is only
+   ## --smbios-append (the framebuffer test wants the image's normal graphical boot). Only
+   ## meaningful on this full-chain path, not --direct-kernel (direct boot).
+   if [ -n "${screendump}" ]; then
+      smbios_payload="${smbios_append}"
+   else
+      smbios_payload="${serial_verbose_params} systemd.log_level=info"
+      if [ "${fast}" = 'true' ]; then
+         smbios_payload="${smbios_payload} mitigations=off"
+      fi
+      if [ -n "${smbios_append}" ]; then
+         smbios_payload="${smbios_payload} ${smbios_append}"
+      fi
+   fi
+   if [ -n "${smbios_payload}" ]; then
+      qemu_opts+=(-smbios "type=1,serial=dm-cmdline=${smbios_payload//,/,,}")
    fi
 fi
 
@@ -502,7 +609,7 @@ if [ "${emit_argv}" = 'true' ]; then
    ## list and spawn (e.g. Python pexpect). One-token-per-line is unambiguous even though the
    ## '-append' value contains spaces: each array element is exactly one line, and no element
    ## contains a newline. The caller adds its own serial wiring ('-serial mon:stdio' etc.).
-   if [ "${verbose}" = 'true' ]; then
+   if [ "${direct_kernel}" = 'true' ]; then
       printf 'dm-qemu: emit-argv workdir (caller owns cleanup): %s\n' "${work_dir}" >&2
    fi
    printf '%s\n' "${qemu_bin}"
@@ -544,9 +651,9 @@ if [ -n "${screendump}" ]; then
       { kill -0 "${qemu_pid}" 2>/dev/null && kill "${qemu_pid}" 2>/dev/null; } || true
    fi
    wait "${qemu_pid}" 2>/dev/null || true
-   ## Corroborate with the serial log: screendump mode still captures serial, and CI test images
-   ## carry a serial console (serial-console-enable), so a login/systemd marker means the guest
-   ## DID boot even when the framebuffer heuristic did not latch (e.g. an animated greeter).
+   ## Corroborate with the serial log: screendump mode still captures serial, so a login/systemd
+   ## marker means the guest DID boot even when the framebuffer heuristic did not latch (e.g. an
+   ## animated greeter). Present only when the image exposes a serial console.
    reached="$(grep -ioE 'login:|Reached target|systemd\[1\]|Welcome to' "${serial_log}" 2>/dev/null | sort -u | tr '\n' ' ' || true)"
    case "${watch_rc}" in
       0)
