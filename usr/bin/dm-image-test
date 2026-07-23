@@ -106,6 +106,11 @@ def build_qemu_argv(args):
     if args.firmware:
         cmd += ["--firmware", args.firmware]
 
+    ## Reliable automation channel: a login-free ROOT shell on the serial console
+    ## (systemd debug-shell + masked login getty), so we never drive the image's
+    ## interactive user zsh (whose line editor corrupts programmatic input).
+    cmd += ["--test-console"]
+
     ## Merge the session cmdline with any caller-supplied --smbios-append.
     append_parts = []
     session_cmdline = SESSION_CMDLINE[args.session]
@@ -141,17 +146,18 @@ def build_qemu_argv(args):
 
 
 def run_checks(child, args, log):
-    """Drive login + checks by matching on OUR OWN accumulated output.
+    """Run the checks over the login-free ROOT serial shell that dm-qemu
+    --test-console binds to the console (systemd debug-shell, login getty masked).
 
-    The guest's login shell is an interactive zsh with a line editor (ZLE),
-    bracketed paste and auto-suggest that decorate the byte stream with escape
-    sequences, and under emulation it is slow to come up. Rather than rely on
-    pexpect.expect() against that noisy stream (unreliable here), read raw chunks
-    with read_nonblocking, accumulate them, and substring/regex match on our own
-    buffer -- and never send a command until the shell has actually answered a
-    probe, so nothing is lost to the getty / shell-start race.
+    This deliberately bypasses the image's interactive user zsh, whose line editor
+    corrupts programmatically-sent input (mangles "$?", swallows 'exec'). We drive
+    a plain root bash, match on our OWN accumulated buffer (read_nonblocking is more
+    reliable than pexpect.expect on the noisy console), and read each command's exit
+    code from a unique sentinel. Commands run as root by default, or as --login-user
+    via a NON-interactive 'su -' (never the user's interactive shell).
     """
     import re
+    import shlex
     import time
     import pexpect  # noqa: E402  (lazy so --help works without it)
 
@@ -177,52 +183,33 @@ def run_checks(child, args, log):
                 return True
         return None
 
-    ## 1) Login prompt, then log in.
-    if not wait_for("login:", args.timeout):
-        log("dm-image-test: never reached a login prompt within %ss" % args.timeout)
-        return FAIL
-    child.sendline(args.login_user)
-    if args.login_pass:
-        if not wait_for("assword:", 120):
-            log("dm-image-test: password prompt not seen after username")
-            return FAIL
-        child.sendline(args.login_pass)
-
-    ## 2) Wait for a live shell, then ESCAPE the interactive zsh. Its line editor
-    ##    (ZLE) rewrites command INPUT -- e.g. "$?" is echoed back as
-    ##    '"$ \x1b[K?\r?"' (cursor-redraw escapes injected mid-token) -- which
-    ##    corrupts any command using shell metacharacters. exec a plain bash (no
-    ##    ZLE) and confirm it too is live. The probe's OUTPUT is 'DM<>token<>'; the
-    ##    command echo keeps the delimiters and token apart (printf '%s' vs its
-    ##    argument), so only real shell OUTPUT matches -- proving the shell is up.
-    def probe_live(label):
-        token = "DMRDY%d%s" % (os.getpid(), label)
-        needle = "DM<>%s<>" % token
-        for _ in range(40):
-            child.sendline("printf 'DM<>%%s<>\\n' %s" % token)
-            if wait_for(needle, 15):
-                return True
-        return False
-
-    if not probe_live("z"):
-        log("dm-image-test: login did not yield an interactive shell")
-        return FAIL
-    ## Neither 'exec' nor 'bash --noprofile --norc' uses a metacharacter ZLE
-    ## mangles, so this line survives; the plain bash it starts has no ZLE.
-    ## 'exec' only runs once zsh finishes reading the line, so DRAIN/settle before
-    ## probing -- probing too soon sends the probe into zsh's ZLE (which mangles it)
-    ## instead of the bash that is about to replace it. "\x00" never matches text,
-    ## so wait_for just reads for the given seconds.
-    wait_for("\x00", 3)
-    child.sendline("exec bash --noprofile --norc")
-    wait_for("\x00", 6)
-    if not probe_live("b"):
-        log("dm-image-test: could not obtain a plain bash shell")
+    ## 1) Wait for the login-free root shell. systemd's debug-shell binds it to the
+    ##    console mid-boot; probe with a split-token printf (only the shell's real
+    ##    OUTPUT of the joined token matches, not the command echo) until it answers.
+    token = "DMRDY%d" % os.getpid()
+    needle = "DM<>%s<>" % token
+    shell_live = False
+    for _ in range(60):
+        child.sendline("printf 'DM<>%%s<>\\n' %s" % token)
+        if wait_for(needle, 10):
+            shell_live = True
+            break
+    if not shell_live:
+        log("dm-image-test: root serial shell (--test-console) never came up")
         return FAIL
 
-    ## 3) Run each check. Emit the exit code inside a unique sentinel; the echoed
-    ##    command form carries a literal '%s' (no digit) so it cannot match the
-    ##    sentinel regex -- only the real output does.
+    ## 2) Boot barrier: wait until the system finishes coming up so checks see a
+    ##    complete environment. is-system-running --wait blocks until
+    ##    running/degraded; its status is not the verdict, just the barrier.
+    boot_done = "DMBOOT%d" % os.getpid()
+    child.sendline("systemctl is-system-running --wait >/dev/null 2>&1; printf '%s\\n'"
+                   % boot_done)
+    wait_for(boot_done, args.timeout)
+
+    ## 3) Run each check; read its exit code from a unique sentinel (the echoed
+    ##    command carries a literal '%s', so only the real output matches). Root by
+    ##    default; --login-user (!= root) runs the command as that user via a
+    ##    non-interactive 'su -', never touching the user's interactive shell.
     commands = args.run
     if commands is None:
         commands = ["systemcheck --cli --verbose --leak-tests"]
@@ -230,7 +217,13 @@ def run_checks(child, args, log):
     rc_re = r"%s:(-?\d+):%s" % (sentinel, sentinel)
     overall = PASS
     for command in commands:
-        child.sendline("%s; printf '%s:%%s:%s\\n' \"$?\"" % (command, sentinel, sentinel))
+        if args.login_user and args.login_user != "root":
+            payload = "su - %s -c %s" % (shlex.quote(args.login_user),
+                                         shlex.quote(command))
+        else:
+            payload = command
+        child.sendline("%s; printf '%s:%%s:%s\\n' \"$?\""
+                       % (payload, sentinel, sentinel))
         match = wait_for(rc_re, args.timeout, regex=True)
         if match is None:
             log("dm-image-test: command timed out or guest died: %s" % command)

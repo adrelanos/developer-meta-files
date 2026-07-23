@@ -83,6 +83,9 @@ Usage: dm-qemu --iso PATH [options]
                       firmware + GRUB. Default is a firmware boot with the verbose + serial
                       console kernel parameters injected via SMBIOS (see --smbios-append).
   --fast              also inject 'mitigations=off' for pure-TCG speed (NOT a fidelity test)
+  --test-console      inject a login-free ROOT shell on the serial console (systemd
+                      debug-shell + mask the login getty) and quiet the kernel log, for
+                      reliable automation (no interactive user shell). Used by dm-image-test.
   --entry NAME        which live menu entry's cmdline to use for --direct-kernel:
                       user (default) | sysmaint | unrestricted
   --accel MODE        acceleration: auto (default; KVM when guest arch == host arch and
@@ -150,6 +153,7 @@ accel='auto'
 qmp=''
 screendump=''
 smbios_append=''
+test_console=''
 firmware='bios'
 
 while [ "$#" -gt 0 ]; do
@@ -219,6 +223,10 @@ while [ "$#" -gt 0 ]; do
          ;;
       --fast)
          fast='true'
+         shift
+         ;;
+      --test-console)
+         test_console='true'
          shift
          ;;
       --entry)
@@ -591,7 +599,17 @@ else
    if [ -n "${screendump}" ]; then
       smbios_payload="${smbios_append}"
    else
-      smbios_payload="${serial_verbose_params} systemd.log_level=info"
+      if [ "${test_console}" = 'true' ]; then
+         ## Reliable automation channel: bind a login-free ROOT shell to the serial
+         ## console via systemd's debug-shell, and MASK the login getty so it -- not
+         ## an interactive user zsh whose line editor (ZLE) corrupts programmatic
+         ## input -- owns the tty. Quiet the kernel console (loglevel=3) so command
+         ## output reads cleanly. Consumed by dm-image-test.
+         serial_tty="${serial_console%%,*}"
+         smbios_payload="console=${serial_console} loglevel=3 systemd.debug_shell=${serial_tty} systemd.mask=serial-getty@${serial_tty}.service"
+      else
+         smbios_payload="${serial_verbose_params} systemd.log_level=info"
+      fi
       if [ "${fast}" = 'true' ]; then
          smbios_payload="${smbios_payload} mitigations=off"
       fi
