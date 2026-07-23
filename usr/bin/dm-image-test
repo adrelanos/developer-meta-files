@@ -141,60 +141,103 @@ def build_qemu_argv(args):
 
 
 def run_checks(child, args, log):
-    """Drive login + checks. Return PASS or FAIL."""
-    import pexpect  # noqa: E402  (imported lazily so --help works without it)
+    """Drive login + checks by matching on OUR OWN accumulated output.
 
-    ## 1) Wait for the getty login prompt.
-    try:
-        child.expect(r"[Ll]ogin:\s*$", timeout=args.timeout)
-    except pexpect.TIMEOUT:
+    The guest's login shell is an interactive zsh with a line editor (ZLE),
+    bracketed paste and auto-suggest that decorate the byte stream with escape
+    sequences, and under emulation it is slow to come up. Rather than rely on
+    pexpect.expect() against that noisy stream (unreliable here), read raw chunks
+    with read_nonblocking, accumulate them, and substring/regex match on our own
+    buffer -- and never send a command until the shell has actually answered a
+    probe, so nothing is lost to the getty / shell-start race.
+    """
+    import re
+    import time
+    import pexpect  # noqa: E402  (lazy so --help works without it)
+
+    accum = [""]
+
+    def wait_for(needle, timeout, regex=False):
+        """Read until 'needle' appears in the accumulated output, or timeout.
+        Returns the re.Match (regex) / True (substring) / None on timeout|EOF."""
+        deadline = time.time() + timeout
+        pattern = re.compile(needle) if regex else None
+        while time.time() < deadline:
+            try:
+                accum[0] += child.read_nonblocking(size=4096, timeout=1)
+            except pexpect.TIMEOUT:
+                pass
+            except pexpect.EOF:
+                return None
+            if regex:
+                match = pattern.search(accum[0])
+                if match:
+                    return match
+            elif needle in accum[0]:
+                return True
+        return None
+
+    ## 1) Login prompt, then log in.
+    if not wait_for("login:", args.timeout):
         log("dm-image-test: never reached a login prompt within %ss" % args.timeout)
         return FAIL
-    except pexpect.EOF:
-        log("dm-image-test: guest exited before a login prompt")
-        return FAIL
-
-    ## 2) Log in.
     child.sendline(args.login_user)
     if args.login_pass:
-        try:
-            child.expect(r"[Pp]assword:\s*$", timeout=120)
-            child.sendline(args.login_pass)
-        except (pexpect.TIMEOUT, pexpect.EOF):
+        if not wait_for("assword:", 120):
             log("dm-image-test: password prompt not seen after username")
             return FAIL
+        child.sendline(args.login_pass)
 
-    ## 3) Establish a stable, unique shell prompt we can synchronise on, rather
-    ##    than guessing the distro PS1.
-    marker = "DM_IMAGE_TEST_READY"
-    prompt = "DM_IMAGE_TEST_PROMPT> "
-    child.sendline("PS1='%s'; echo %s" % (prompt, marker))
-    try:
-        child.expect(marker, timeout=120)
-        child.expect_exact(prompt, timeout=60)
-    except (pexpect.TIMEOUT, pexpect.EOF):
+    ## 2) Wait for a live shell, then ESCAPE the interactive zsh. Its line editor
+    ##    (ZLE) rewrites command INPUT -- e.g. "$?" is echoed back as
+    ##    '"$ \x1b[K?\r?"' (cursor-redraw escapes injected mid-token) -- which
+    ##    corrupts any command using shell metacharacters. exec a plain bash (no
+    ##    ZLE) and confirm it too is live. The probe's OUTPUT is 'DM<>token<>'; the
+    ##    command echo keeps the delimiters and token apart (printf '%s' vs its
+    ##    argument), so only real shell OUTPUT matches -- proving the shell is up.
+    def probe_live(label):
+        token = "DMRDY%d%s" % (os.getpid(), label)
+        needle = "DM<>%s<>" % token
+        for _ in range(40):
+            child.sendline("printf 'DM<>%%s<>\\n' %s" % token)
+            if wait_for(needle, 15):
+                return True
+        return False
+
+    if not probe_live("z"):
         log("dm-image-test: login did not yield an interactive shell")
         return FAIL
+    ## Neither 'exec' nor 'bash --noprofile --norc' uses a metacharacter ZLE
+    ## mangles, so this line survives; the plain bash it starts has no ZLE.
+    ## 'exec' only runs once zsh finishes reading the line, so DRAIN/settle before
+    ## probing -- probing too soon sends the probe into zsh's ZLE (which mangles it)
+    ## instead of the bash that is about to replace it. "\x00" never matches text,
+    ## so wait_for just reads for the given seconds.
+    wait_for("\x00", 3)
+    child.sendline("exec bash --noprofile --norc")
+    wait_for("\x00", 6)
+    if not probe_live("b"):
+        log("dm-image-test: could not obtain a plain bash shell")
+        return FAIL
 
-    ## 4) Run each check; require the expected exit code from every one.
+    ## 3) Run each check. Emit the exit code inside a unique sentinel; the echoed
+    ##    command form carries a literal '%s' (no digit) so it cannot match the
+    ##    sentinel regex -- only the real output does.
     commands = args.run
     if commands is None:
         commands = ["systemcheck --cli --verbose --leak-tests"]
+    sentinel = "DMRC%d" % os.getpid()
+    rc_re = r"%s:(-?\d+):%s" % (sentinel, sentinel)
     overall = PASS
     for command in commands:
-        ## Print a sentinel with the real exit code so we can read it reliably.
-        child.sendline("%s; echo RC=$?=RC" % command)
-        try:
-            child.expect(r"RC=(-?\d+)=RC", timeout=args.timeout)
-            rc = int(child.match.group(1))
-        except (pexpect.TIMEOUT, pexpect.EOF):
+        child.sendline("%s; printf '%s:%%s:%s\\n' \"$?\"" % (command, sentinel, sentinel))
+        match = wait_for(rc_re, args.timeout, regex=True)
+        if match is None:
             log("dm-image-test: command timed out or guest died: %s" % command)
             return FAIL
-        ## Swallow the echoed prompt that follows.
-        try:
-            child.expect_exact(prompt, timeout=60)
-        except (pexpect.TIMEOUT, pexpect.EOF):
-            pass
+        rc = int(match.group(1))
+        ## Drop consumed output so the next command's sentinel is unambiguous.
+        accum[0] = accum[0][match.end():]
         if rc == args.expect_rc:
             log("dm-image-test: OK   (rc=%s) %s" % (rc, command))
         else:
@@ -202,11 +245,11 @@ def run_checks(child, args, log):
                 % (rc, args.expect_rc, command))
             overall = FAIL
 
-    ## 5) Power off cleanly (best-effort; we already have the verdict).
+    ## 4) Power off (best-effort; the verdict is already decided).
     child.sendline("poweroff")
     try:
         child.expect(pexpect.EOF, timeout=120)
-    except pexpect.TIMEOUT:
+    except (pexpect.TIMEOUT, pexpect.EOF):
         pass
     return overall
 
@@ -236,8 +279,11 @@ def main():
     child = pexpect.spawn(
         qemu_argv[0], qemu_argv[1:], timeout=args.timeout, encoding="utf-8"
     )
-    ## Mirror the console to our stderr and the serial log for debugging.
-    child.logfile_read = sys.stderr
+    ## Pace input: the guest's zsh line editor (ZLE) mangles rapidly-sent lines
+    ## (auto-suggest + cursor redraws corrupt e.g. "$?", and a queued 'exec' never
+    ## submits). A small pre-send delay lets each line be read and executed before
+    ## the next, so 'exec bash' actually takes and metacharacters survive.
+    child.delaybeforesend = 0.4
     if log_file is not None:
         ## pexpect writes str; wrap the binary log file.
         import io
