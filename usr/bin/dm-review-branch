@@ -13,11 +13,15 @@ shopt -s shift_verbose
 
 true "INFO: Currently running script: ${BASH_SOURCE[0]} $*"
 
+# shellcheck source=../../../helper-scripts/usr/libexec/helper-scripts/log_run_die.sh
+source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/log_run_die.sh
+
 ## A unicode-spoofing scan that exits non-zero found a look-alike (or hit a
 ## benign failure such as check-ref-names-for-unicode's "No refs matched").
 ## Rather than hard-abort the whole review under errexit, let the operator
-## decide -- matching the git-diff-review consent prompt. No controlling
-## terminal to ask (a CI/batch run): fail closed.
+## decide -- same 'log question' + read-from-/dev/tty consent as
+## git_review_prompt_continue (git-review-scan.sh). No controlling terminal to
+## ask (a CI/batch run): fail closed.
 review_scan_or_prompt() {
    local scan_rc reply
    scan_rc=0
@@ -26,18 +30,16 @@ review_scan_or_prompt() {
       return 0
    fi
    if ! { true < /dev/tty ; } 2>/dev/null ; then
-      printf '%s\n' "dm-review-branch: '${1}' failed (rc='${scan_rc}') and there is no terminal to ask; failing closed." >&2
-      exit "${scan_rc}"
+      die "${scan_rc}" "'${1}' failed (rc='${scan_rc}') and there is no terminal to ask; failing closed."
    fi
-   printf '%s\n' "dm-review-branch: WARNING: '${1}' failed (rc='${scan_rc}') -- possible unicode spoofing." >&2
+   log warn "'${1}' failed (rc='${scan_rc}') -- possible unicode spoofing."
+   log question "Continue the review anyway? [y/N]"
    reply=''
-   printf '%s' 'dm-review-branch: Continue the review anyway? [y/N] ' >&2
    read -r reply < /dev/tty 2>/dev/null || reply=''
    if [ "${reply,,}" != 'y' ] && [ "${reply,,}" != 'yes' ]; then
-      printf '%s\n' "dm-review-branch: aborting the review at your request." >&2
-      exit "${scan_rc}"
+      die "${scan_rc}" "aborting the review at your request."
    fi
-   printf '%s\n' "dm-review-branch: continuing despite '${1}' (rc='${scan_rc}')." >&2
+   log info "continuing despite '${1}' (rc='${scan_rc}')."
 }
 
 ## Scan the ref's new commits (content, messages, author identity)...
