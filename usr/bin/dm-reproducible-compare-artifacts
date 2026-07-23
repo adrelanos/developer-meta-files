@@ -11,30 +11,24 @@
 ##
 ## Usage:
 ##   dm-reproducible-compare-artifacts --target <iso|virtualbox|qcow2> \
-##       --dir-a DIR --dir-b DIR --output REPORT [--allowlist FILE]
+##       --dir-a DIR --dir-b DIR --output REPORT
 ##
-## --target    which image type to locate in each directory:
-##               iso -> *.iso   virtualbox -> *.ova   qcow2 -> *.qcow2.libvirt.xz
-## --dir-a     directory holding the first build's artifact (searched recursively).
-## --dir-b     directory holding the second build's artifact.
-## --output    report file written with the sha256 of each artifact and, when they
-##             differ, a diffoscope explanation of WHAT differs.
-## --allowlist optional file of expected-to-differ diffoscope --exclude globs (one
-##             per non-comment, non-blank line). When the sha256 differs but every
-##             remaining difference is confined to allowlisted paths, the verdict is
-##             downgraded to PASS (reproducible modulo the allowlist). Omit it for
-##             the strict sha256 verdict.
+## --target  which image type to locate in each directory:
+##             iso -> *.iso   virtualbox -> *.ova   qcow2 -> *.qcow2.libvirt.xz
+## --dir-a   directory holding the first build's artifact (searched recursively).
+## --dir-b   directory holding the second build's artifact.
+## --output  report file written with the sha256 of each artifact and, when they
+##           differ, a diffoscope explanation of WHAT differs.
 ##
-## The default verdict is a whole-file sha256 comparison of the two artifacts (a
-## released image is a single file; equal sha256 == bit-for-bit identical, for
+## The definitive verdict is a whole-file sha256 comparison of the two artifacts
+## (a released image is a single file; equal sha256 == bit-for-bit identical, for
 ## every target, with no mounting or format knowledge needed). diffoscope is run
-## ONLY when they differ: without --allowlist purely to EXPLAIN (best-effort; it can
-## OOM on multi-gigabyte images), with --allowlist also to decide whether the only
-## differences are allowlisted. To LOCALIZE a difference to a specific in-image
-## file, run 'ci/reproducible-manifest generate --deep' on each artifact and compare.
+## ONLY when they differ, purely to EXPLAIN the mismatch in the report -- its own
+## success is never the pass/fail signal (it can OOM on multi-gigabyte images), so
+## it is best-effort. To LOCALIZE a difference to a specific in-image file, run
+## 'ci/reproducible-manifest generate --deep' on each artifact and compare.
 ##
-## Exit: 0 identical (reproducible, possibly modulo allowlist), 1 artifacts differ,
-## 2 usage / not-found error.
+## Exit: 0 identical (reproducible), 1 artifacts differ, 2 usage / not-found error.
 
 set -o errexit
 set -o nounset
@@ -53,7 +47,6 @@ target=""
 dir_a=""
 dir_b=""
 report=""
-allowlist=""
 while [ "$#" -gt 0 ]; do
    case "$1" in
       --target)
@@ -74,11 +67,6 @@ while [ "$#" -gt 0 ]; do
       --output)
          [ "$#" -ge 2 ] || usage
          report="$2"
-         shift 2
-         ;;
-      --allowlist)
-         [ "$#" -ge 2 ] || usage
-         allowlist="$2"
          shift 2
          ;;
       *)
@@ -184,48 +172,18 @@ if [ "$sha_a" = "$sha_b" ]; then
    exit 0
 fi
 
-## sha256 differs. Build diffoscope --exclude args from an optional --allowlist of
-## expected-to-differ globs (one per non-comment, non-blank line). With an
-## allowlist, diffoscope-EXCLUDING those paths is the verdict: no remaining
-## differences means the builds are reproducible modulo the allowlisted set
-## (PASS); anything left is a genuine diff (FAIL). Without an allowlist, diffoscope
-## runs only to EXPLAIN and the sha256 mismatch stands as the verdict (FAIL).
-exclude_args=()
-if [ -n "$allowlist" ]; then
-   if [ ! -f "$allowlist" ]; then
-      printf '%s\n' "${0##*/}: --allowlist file not found: $allowlist" >&2
-      exit 2
-   fi
-   allow_line=""
-   while IFS= read -r allow_line || [ -n "$allow_line" ]; do
-      allow_line="${allow_line%%#*}"
-      allow_line="${allow_line#"${allow_line%%[![:space:]]*}"}"
-      allow_line="${allow_line%"${allow_line##*[![:space:]]}"}"
-      [ -n "$allow_line" ] || continue
-      exclude_args+=( --exclude "$allow_line" )
-   done < "$allowlist"
-fi
+{
+   printf '%s\n' "RESULT: artifacts DIFFER (not bit-reproducible)"
+   printf '%s\n' "diffoscope explanation follows (best-effort; may be truncated or skipped):"
+} | tee --append -- "$report"
 
-if [ -n "$allowlist" ]; then
-   printf '%s\n' "RESULT: artifacts differ; checking against allowlist ($(( ${#exclude_args[@]} / 2 )) pattern(s))" | tee --append -- "$report"
-else
-   {
-      printf '%s\n' "RESULT: artifacts DIFFER (not bit-reproducible)"
-      printf '%s\n' "diffoscope explanation follows (best-effort; may be truncated or skipped):"
-   } | tee --append -- "$report"
-fi
-
-## diffoscope is heavy on large images, so bound its output. It exits 1 when it
-## FINDS differences (expected without an allowlist, or when real diffs remain
-## despite one) and >= 2 on a crash / OOM kill.
+## Explain the mismatch. diffoscope is heavy on large images, so bound its output
+## and never let its result change the (sha-based) verdict above. diffoscope exits
+## 1 when it FINDS differences -- expected here, not a failure -- so only exit >= 2
+## (a real crash / OOM kill) warrants the "could not explain" note.
 diffoscope_rc=0
-diffoscope ${exclude_args[@]+"${exclude_args[@]}"} --text - --max-report-size 4194304 --max-diff-block-lines 512 \
+diffoscope --text - --max-report-size 4194304 --max-diff-block-lines 512 \
    -- "$artifact_a" "$artifact_b" >> "$report" 2>&1 || diffoscope_rc="$?"
-
-if [ -n "$allowlist" ] && [ "$diffoscope_rc" -eq 0 ]; then
-   printf '%s\n' "RESULT: identical modulo allowlist (reproducible)" | tee --append -- "$report"
-   exit 0
-fi
 if [ "$diffoscope_rc" -gt 1 ]; then
    printf '%s\n' "(diffoscope could not explain the diff (exit ${diffoscope_rc}); the sha256 mismatch above is the verdict)" >> "$report"
 fi
