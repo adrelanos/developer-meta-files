@@ -16,33 +16,34 @@ true "INFO: Currently running script: ${BASH_SOURCE[0]} $*"
 # shellcheck source=../../../helper-scripts/usr/libexec/helper-scripts/log_run_die.sh
 source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/log_run_die.sh
 
-## A unicode-spoofing scan that exits non-zero found a look-alike (or hit a
-## benign failure such as check-ref-names-for-unicode's "No refs matched").
-## Rather than hard-abort the whole review under errexit, ask the operator via
+## Handle the result of a unicode-spoofing scan ($1 = its exit code, $2 = its
+## name, for messages). A non-zero scan found a look-alike (or hit a benign
+## failure such as check-ref-names-for-unicode's "No refs matched"). Rather than
+## hard-abort the whole review under errexit, ask the operator via
 ## prompt_yes_no_tty (log_run_die.sh) -- the same consent helper git-review uses.
-## Its rc: 0 = continue; 1 = declined; 2 = no controlling terminal to ask (a
+## prompt rc: 0 = continue; 1 = declined; 2 = no controlling terminal to ask (a
 ## CI/batch run) -> fail closed. Either non-zero aborts with the scan's rc.
-review_scan_or_prompt() {
-   local scan_rc prompt_rc
-   scan_rc=0
-   "$@" || scan_rc="$?"
+review_prompt_or_die() {
+   local scan_rc="$1" scan_name="$2" prompt_rc
    if [ "${scan_rc}" -eq 0 ]; then
       return 0
    fi
-   log warn "'${1}' failed (rc='${scan_rc}') -- possible unicode spoofing."
+   log warn "'${scan_name}' failed (rc='${scan_rc}') -- possible unicode spoofing."
    prompt_rc=0
    prompt_yes_no_tty "Continue the review anyway?" || prompt_rc="$?"
    if [ "${prompt_rc}" -eq 2 ]; then
-      die "${scan_rc}" "'${1}' failed (rc='${scan_rc}') and there is no terminal to ask; failing closed."
+      die "${scan_rc}" "'${scan_name}' failed (rc='${scan_rc}') and there is no terminal to ask; failing closed."
    fi
    if [ "${prompt_rc}" -ne 0 ]; then
       die "${scan_rc}" "aborting the review at your request."
    fi
-   log info "continuing despite '${1}' (rc='${scan_rc}')."
+   log info "continuing despite '${scan_name}' (rc='${scan_rc}')."
 }
 
 ## Scan the ref's new commits (content, messages, author identity)...
-review_scan_or_prompt check-ref-commits-for-unicode "${1}"
+scan_rc=0
+check-ref-commits-for-unicode "${1}" || scan_rc="$?"
+review_prompt_or_die "${scan_rc}" check-ref-commits-for-unicode
 
 ## ...and every ref NAME in the repo, for spoofing via non-ASCII unicode.
 ## check-ref-names-for-unicode takes ref-name GLOBS (git for-each-ref), not a
@@ -51,7 +52,9 @@ review_scan_or_prompt check-ref-commits-for-unicode "${1}"
 ## spoofed sibling), and a look-alike name would make for-each-ref fail to
 ## match ("No refs matched") rather than be flagged as suspicious. Scanning
 ## every ref catches a spoofed name anywhere the fetch introduced one.
-review_scan_or_prompt check-ref-names-for-unicode
+scan_rc=0
+check-ref-names-for-unicode || scan_rc="$?"
+review_prompt_or_die "${scan_rc}" check-ref-names-for-unicode
 
 git log "...${1}"
 
