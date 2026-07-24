@@ -190,7 +190,7 @@ fi
 diffoscope_rc=0
 (
    ulimit -v 8000000 || true
-   exec timeout --kill-after=30 900 \
+   timeout --kill-after=30 900 \
       diffoscope --text - --max-report-size 4194304 --max-diff-block-lines 512 \
       -- "$artifact_a" "$artifact_b"
 ) >> "$report" 2>&1 || diffoscope_rc="$?"
