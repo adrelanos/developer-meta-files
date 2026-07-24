@@ -18,10 +18,12 @@ cd -- "$MYDIR"
 
 ## 'helper-scripts' resolves via HELPER_SCRIPTS_PATH (set by help-steps/pre
 ## for a from-source build); this source runs BEFORE 'pre' below, so fall back
-## to the sibling source submodule ('$MYDIR/../../../helper-scripts') when the
-## variable is not already in the environment.
+## to the source tree this script already requires (see the '$HOME/derivative-maker'
+## sources of 'pre' and 'variables' below) when the variable is not in the
+## environment. This script may run as the installed '/usr/bin' copy, so a
+## '$MYDIR'-relative path cannot locate 'helper-scripts'.
 # shellcheck source=../../../helper-scripts/usr/libexec/helper-scripts/strings.bsh
-source "${HELPER_SCRIPTS_PATH:-${MYDIR}/../../../helper-scripts}/usr/libexec/helper-scripts/strings.bsh"
+source "${HELPER_SCRIPTS_PATH:-$HOME/derivative-maker/packages/kicksecure/helper-scripts}/usr/libexec/helper-scripts/strings.bsh"
 source "$HOME/derivative-maker/help-steps/pre"
 source "$HOME/derivative-maker/help-steps/variables"
 
