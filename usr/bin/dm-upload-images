@@ -16,8 +16,12 @@ true "INFO: Currently running script: ${BASH_SOURCE[0]} $*"
 MYDIR="$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" && pwd )"
 cd -- "$MYDIR"
 
-## XXX: hardcoded path
-source /usr/libexec/helper-scripts/strings.bsh
+## 'helper-scripts' resolves via HELPER_SCRIPTS_PATH (set by help-steps/pre
+## for a from-source build); this source runs BEFORE 'pre' below, so fall back
+## to the sibling source submodule ('$MYDIR/../../../helper-scripts') when the
+## variable is not already in the environment.
+# shellcheck source=../../../helper-scripts/usr/libexec/helper-scripts/strings.bsh
+source "${HELPER_SCRIPTS_PATH:-${MYDIR}/../../../helper-scripts}/usr/libexec/helper-scripts/strings.bsh"
 source "$HOME/derivative-maker/help-steps/pre"
 source "$HOME/derivative-maker/help-steps/variables"
 
