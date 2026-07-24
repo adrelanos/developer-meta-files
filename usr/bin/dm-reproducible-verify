@@ -108,14 +108,10 @@ done
 [ -f "${image_file}" ] || error "image file does not exist: '${image_file}'"
 
 ## Command-availability preflight: probe every external tool once here (R-091),
-## not lazily at each call site. signify + sq are required; git is optional --
-## only the Source-Commit sanity warning below consults it.
+## not lazily at each call site. signify + sq + git are all required.
 command -v signify-openbsd >/dev/null 2>&1 || error "signify-openbsd not found; cannot verify signatures."
 command -v sq >/dev/null 2>&1 || error "sq (Sequoia OpenPGP) not found; cannot verify signatures."
-git_available="false"
-if command -v git >/dev/null 2>&1; then
-   git_available="true"
-fi
+command -v git >/dev/null 2>&1 || error "git not found; required for the Source-Commit sanity check."
 
 ## The sidecars sit next to the image in the same directory.
 image_dir="$( cd -- "$( dirname -- "${image_file}" )" && pwd )"
@@ -163,7 +159,7 @@ printf '%s\n' "INFO: verified buildinfo: flavor=${bi_flavor} target=${bi_target}
 
 ## Warn if the local source is not at the recorded commit -- a rebuild from a
 ## different tree will not reproduce.
-if [ -n "${dm_source_root}" ] && [ "${git_available}" = "true" ] && git -C "${dm_source_root}" rev-parse --git-dir >/dev/null 2>&1; then
+if [ -n "${dm_source_root}" ] && git -C "${dm_source_root}" rev-parse --git-dir >/dev/null 2>&1; then
    head_commit="$(git -C "${dm_source_root}" rev-parse HEAD 2>/dev/null || printf '%s' unknown)"
    case "${bi_commit}" in
       "${head_commit}"|unknown|'')
