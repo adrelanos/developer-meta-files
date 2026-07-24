@@ -177,13 +177,23 @@ fi
    printf '%s\n' "diffoscope explanation follows (best-effort; may be truncated or skipped):"
 } | tee --append -- "$report"
 
-## Explain the mismatch. diffoscope is heavy on large images, so bound its output
-## and never let its result change the (sha-based) verdict above. diffoscope exits
-## 1 when it FINDS differences -- expected here, not a failure -- so only exit >= 2
-## (a real crash / OOM kill) warrants the "could not explain" note.
+## Explain the mismatch. diffoscope is heavy: decompressing two multi-GB images
+## can exhaust the runner's RAM and get the whole job OOM/SIGTERM-killed (observed
+## exit 143) BEFORE this script can report the sha-based verdict. Bound it hard so
+## a failed explanation never masks the verdict:
+## - an address-space cap ('ulimit -v') makes diffoscope's own allocation fail
+##   gracefully instead of triggering a host OOM kill (subshell so it does not
+##   leak to this shell), and
+## - a wall-clock 'timeout' caps runtime.
+## diffoscope exits 1 when it FINDS differences (expected here); only a higher
+## exit (crash / resource kill / timeout) warrants the "could not explain" note.
 diffoscope_rc=0
-diffoscope --text - --max-report-size 4194304 --max-diff-block-lines 512 \
-   -- "$artifact_a" "$artifact_b" >> "$report" 2>&1 || diffoscope_rc="$?"
+(
+   ulimit -v 8000000 || true
+   exec timeout --kill-after=30 900 \
+      diffoscope --text - --max-report-size 4194304 --max-diff-block-lines 512 \
+      -- "$artifact_a" "$artifact_b"
+) >> "$report" 2>&1 || diffoscope_rc="$?"
 if [ "$diffoscope_rc" -gt 1 ]; then
    printf '%s\n' "(diffoscope could not explain the diff (exit ${diffoscope_rc}); the sha256 mismatch above is the verdict)" >> "$report"
 fi
