@@ -27,33 +27,36 @@ source "${HELPER_SCRIPTS_PATH:-$HOME/derivative-maker/packages/kicksecure/helper
 source "$HOME/derivative-maker/help-steps/pre"
 source "$HOME/derivative-maker/help-steps/variables"
 
+## Build upload_file_list (reset) for ONE image file: the image plus its
+## signatures, torrent and checksums. Called once per (file, location) pair from
+## main so each image is uploaded to its own destination.
 show_files() {
-   local file_name_item
-   for file_name_item in "${dist_build_files_to_upload[@]}"; do
-      if [ -z "$file_name_item" ]; then
-         continue
-      fi
+   local file_name_item="$1"
+   upload_file_list=()
 
-      test -f "$file_name_item"
+   if [ -z "$file_name_item" ]; then
+      return 0
+   fi
 
-      upload_file_list+=("${file_name_item}")
-      upload_file_list+=("${file_name_item}.asc")
+   test -f "$file_name_item"
 
-      if printf '%s\n' "${file_name_item}.sig" | grep dist-installer ; then
+   upload_file_list+=("${file_name_item}")
+   upload_file_list+=("${file_name_item}.asc")
+
+   if printf '%s\n' "${file_name_item}.sig" | grep dist-installer ; then
+      upload_file_list+=("${file_name_item}.sig")
+   else
+      if test -f "${file_name_item}.sig" ; then
          upload_file_list+=("${file_name_item}.sig")
-      else
-         if test -f "${file_name_item}.sig" ; then
-            upload_file_list+=("${file_name_item}.sig")
-         fi
       fi
+   fi
 
-      upload_file_list+=("${file_name_item}.torrent")
-      upload_file_list+=("${file_name_item}.torrent.asc")
-      upload_file_list+=("${file_name_item}.torrent.sig")
-      upload_file_list+=("${file_name_item}.sha512sums")
-      upload_file_list+=("${file_name_item}.sha512sums.asc")
-      upload_file_list+=("${file_name_item}.sha512sums.sig")
-   done
+   upload_file_list+=("${file_name_item}.torrent")
+   upload_file_list+=("${file_name_item}.torrent.asc")
+   upload_file_list+=("${file_name_item}.torrent.sig")
+   upload_file_list+=("${file_name_item}.sha512sums")
+   upload_file_list+=("${file_name_item}.sha512sums.asc")
+   upload_file_list+=("${file_name_item}.sha512sums.sig")
 
    true "File list:"
    printf '%s\n' "${upload_file_list[@]}"
@@ -101,8 +104,11 @@ upload_files() {
       ## Test if DNS is functional.
       ## Sometimes 'rsync' fails to resolve DNS but running 'nslookup' beforehand fixes it.
       ## Overrule with '|| true' as the failure would be handled below by 'rsync'.
-      for dist_server_with_upload_location_item in $dist_server_with_upload_location_list; do
-         nslookup "$dist_server_with_upload_location_item" || true
+      ## Use a dedicated loop variable so the current pair's
+      ## dist_server_with_upload_location_item (the rsync target) is not clobbered.
+      local dns_probe_item
+      for dns_probe_item in $dist_server_with_upload_location_list; do
+         nslookup "$dns_probe_item" || true
       done
 
       rsync_exit_code="0"
@@ -154,9 +160,14 @@ main() {
       error "Variable dist_server_with_upload_location_list is empty."
    fi
 
-   show_files
-
-   for dist_server_with_upload_location_item in $dist_server_with_upload_location_list ; do
+   ## Upload each image to its OWN destination via the parallel arrays
+   ## (dist_build_files_to_upload[i] -> dist_build_upload_locations[i]), so a
+   ## multi-target build sends each image to the right directory instead of all
+   ## to the first target's. installer-dist repeats the file once per server.
+   local index
+   for index in "${!dist_build_files_to_upload[@]}"; do
+      dist_server_with_upload_location_item="${dist_build_upload_locations[$index]}"
+      show_files "${dist_build_files_to_upload[$index]}"
       upload_files
    done
 
