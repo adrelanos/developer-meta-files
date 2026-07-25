@@ -162,8 +162,8 @@ main() {
 
    ## Upload each image to its OWN destination via the parallel arrays
    ## (dist_build_files_to_upload[i] -> dist_build_upload_locations[i]), so a
-   ## multi-target build sends each image to the right directory instead of all
-   ## to the first target's. installer-dist repeats the file once per server.
+   ## multi-target build sends each image to its own directory. installer-dist
+   ## repeats the file once per server.
    local index
    for index in "${!dist_build_files_to_upload[@]}"; do
       dist_server_with_upload_location_item="${dist_build_upload_locations[$index]}"
