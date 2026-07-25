@@ -40,7 +40,8 @@ source "$HOME/derivative-maker/help-steps/variables"
 #target_vm="whonix-gw"
 
 if [ "$target_vm" = "" ]; then
-   error_ "$target_vm must not be empty!"
+   ## 'fatal_error_no_retry' is intentionally undefined; see help-steps/pre error().
+   fatal_error_no_retry "$target_vm must not be empty!"
 fi
 
 source_vm="$(qubesdb-read /name)"
