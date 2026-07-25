@@ -43,14 +43,53 @@ dm_reprepro_published_source_version() {
    printf '%s\n' "${fields[-1]}"
 }
 
+## Deterministic content hash of a package source tree: every non-VCS file's path
+## AND content. Detects an edit that did NOT bump debian/changelog, so local debug
+## builds rebuild exactly the changed packages -- no package names, no changelog.
+dm_package_source_hash() {
+   local package_source_dir="$1"
+   ( cd -- "$package_source_dir" 2>/dev/null \
+       && find . -type f -not -path './.git/*' -print0 \
+          | LC_ALL=C sort -z \
+          | xargs -0 -r sha256sum \
+          | sha256sum \
+          | cut -d ' ' -f 1 ) || printf '%s\n' "nohash"
+}
+
+## Per-codename source-hash manifest, kept in the build output folder so it
+## persists across builds in the same build slot.
+dm_source_hash_manifest_path() {
+   printf '%s\n' "${binary_build_folder_dist}/dm-source-hashes.${1}.txt"
+}
+
+## Look up the recorded source hash for a source package (empty if none).
+dm_source_hash_lookup() {
+   local manifest="$1" source_pkg="$2"
+   [ -f "$manifest" ] || return 0
+   awk -v p="$source_pkg" '$1 == p { print $2; exit }' "$manifest"
+}
+
+## Record/replace a source package's hash in the manifest (call after publishing).
+dm_source_hash_record() {
+   local manifest="$1" source_pkg="$2" hash="$3" tmp
+   mkdir --parents -- "$(dirname -- "$manifest")"
+   tmp="$(mktemp)"
+   { [ -f "$manifest" ] && grep -v -- "^${source_pkg} " "$manifest" || true ; \
+     printf '%s %s\n' "$source_pkg" "$hash" ; } > "$tmp"
+   mv -- "$tmp" "$manifest"
+}
+
 ## Decide whether a package source tree needs (re)building.
 ##   dm_package_needs_rebuild <package_source_dir> <apt_codename> <repository_name>
-## Return 0 (needs rebuild) when the package is absent from the repository or its
-## changelog version differs from the published one. Return 1 (skip) only when
-## the published source version exactly equals the changelog version.
+## Return 0 (needs rebuild) when the package is absent, its changelog version
+## differs from the published one, OR -- for an already-published same version --
+## its source CONTENT changed since it was last built (edit without a changelog
+## bump, detected by a content-hash manifest). Return 1 (skip) only when the
+## published version matches AND the source hash is unchanged.
 dm_package_needs_rebuild() {
    local package_source_dir apt_codename repository_name
    local changelog_version source_pkg published_version
+   local manifest current_hash stored_hash
    package_source_dir="$1"
    apt_codename="$2"
    repository_name="$3"
@@ -60,10 +99,23 @@ dm_package_needs_rebuild() {
 
    published_version="$(dm_reprepro_published_source_version "$apt_codename" "$source_pkg" "$repository_name")"
 
-   if [ -n "$published_version" ] && dpkg --compare-versions "$changelog_version" eq "$published_version"; then
-      true "INFO: skip $source_pkg: version $changelog_version already published."
-      return 1
+   ## Absent or a different changelog version -> rebuild.
+   if [ -z "$published_version" ] || ! dpkg --compare-versions "$changelog_version" eq "$published_version"; then
+      true "INFO: rebuild $source_pkg: changelog $changelog_version, published ${published_version:-none}."
+      return 0
    fi
-   true "INFO: rebuild $source_pkg: changelog $changelog_version, published ${published_version:-none}."
-   return 0
+
+   ## Same version already published: rebuild only if the source content changed
+   ## since it was last built. Unknown (no manifest entry) is treated as changed,
+   ## so a first build after adopting this repopulates the manifest safely.
+   manifest="$(dm_source_hash_manifest_path "$apt_codename")"
+   current_hash="$(dm_package_source_hash "$package_source_dir")"
+   stored_hash="$(dm_source_hash_lookup "$manifest" "$source_pkg")"
+   if [ -z "$stored_hash" ] || [ "$stored_hash" != "$current_hash" ]; then
+      true "INFO: rebuild $source_pkg: source content changed since last build (hash mismatch)."
+      return 0
+   fi
+
+   true "INFO: skip $source_pkg: version $changelog_version published and source unchanged."
+   return 1
 }
