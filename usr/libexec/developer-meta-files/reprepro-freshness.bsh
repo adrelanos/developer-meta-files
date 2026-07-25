@@ -56,10 +56,13 @@ dm_package_source_hash() {
           | cut -d ' ' -f 1 ) || printf '%s\n' "nohash"
 }
 
-## Per-codename source-hash manifest, kept in the build output folder so it
-## persists across builds in the same build slot.
+## Per-codename source-hash manifest. Kept under binary_build_folder_dist, which
+## is per-build-slot ('derivative-binary/<slot>'), co-located with that slot's
+## local reprepro repo -- so it is NOT shared across build slots (a package
+## published in one slot's repo must not read as up-to-date in another). Placed in
+## a dedicated 'packages-build-status' subfolder rather than the build-folder root.
 dm_source_hash_manifest_path() {
-   printf '%s\n' "${binary_build_folder_dist}/dm-source-hashes.${1}.txt"
+   printf '%s\n' "${binary_build_folder_dist}/packages-build-status/source-hashes.${1}.txt"
 }
 
 ## Look up the recorded source hash for a source package (empty if none).
