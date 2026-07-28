@@ -220,13 +220,25 @@ jobs:
 
       - name: Run Claude Code Review
         id: claude
-        uses: anthropics/claude-code-action@787c5a0ce96a9a6cfb050ea0c8f4c05f2447c251  # v1.0.133
+        uses: anthropics/claude-code-action@be7b93b1907a4abad570368f3c74b6fe3807510b  # v1.0.183
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           ## No 'allowed_users' input exists on the action; the
           ## roster gate is the job's 'if:' above, which runs before
           ## a runner is even allocated. The action's own default
-          ## (any actor with repo write) is the second layer.
+          ## (any actor with repo write) is the second layer, and
+          ## ci/claude-roster-verify.sh keeps the two in agreement.
+          ##
+          ## Turn cap. 'timeout-minutes' bounds wall clock but not
+          ## how much quota a wedged agent loop can spend inside it,
+          ## and a subscription run reports no remaining quota. 60 is
+          ## roughly twice what a mention-driven review takes, so it
+          ## does not truncate real work while still ending a
+          ## pathological loop. Note the failure mode: exhausting the
+          ## cap surfaces as subtype 'error_max_turns', which the
+          ## action raises to core.setFailed, so the job goes RED
+          ## rather than posting a partial review.
+          claude_args: --max-turns 60
 
       ## 'execution_file' is only set when the model actually ran -
       ## the no-op path returns before the inner action produces it.
