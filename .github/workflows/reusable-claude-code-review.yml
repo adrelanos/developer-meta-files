@@ -33,6 +33,25 @@
 ## 'workflow_dispatch' is likewise absent: it resolves to agent mode,
 ## so with no prompt it can only ever no-op.
 ##
+## ## Both comment triggers are kept deliberately
+##
+## GitHub creates a workflow run BEFORE evaluating any 'if:', and the
+## comment events accept only 'types:' - there is no filter on comment
+## body, author or author_association, and no workflow-level 'if:'.
+## The consumer's 'contains(..., '@claude')' gate is therefore the
+## earliest filter that exists; it saves the runner minute, not the
+## run record. Measured over 30 days across the consuming repos: 405
+## comment-triggered runs, 384 skipped, 95% of them authored by bots
+## (CodeRabbit, github-advanced-security) rather than people.
+##
+## Dropping 'pull_request_review_comment' would remove all of the grey
+## skipped checks that appear on a PR - that event attaches its run to
+## the PR HEAD, whereas 'issue_comment' attaches to the default-branch
+## tip, where no PR displays it. It is kept anyway, on purpose: being
+## able to say '@claude' inside an inline review thread, aimed at one
+## specific line, is worth the cosmetic noise. Do not "optimise" this
+## trigger away on a reading of the skipped-run count alone.
+##
 ## ## Trust footprint
 ##
 ## anthropics/claude-code-action - SHA-pinned. Authenticates with the
