@@ -32,8 +32,13 @@
 ## workflow steps that have not installed helper-scripts.
 ##
 ## Expected env:
-##   GITHUB_TOKEN - token that can read repository collaborator
-##                  permissions (Repository: Administration, read).
+##   GITHUB_TOKEN - needs, per endpoint used below:
+##                    Organization: Members            read  (repo listing)
+##                    Repository:   Metadata           read  (always implied)
+##                    Repository:   Contents           read  (workflow probe)
+##                    Repository:   Administration     read  (collaborator
+##                                                            permission)
+##                  Administration alone is NOT sufficient.
 ##
 ## Usage:
 ##   ci/claude-roster-verify.sh [--org org-ai-assisted] \
@@ -103,16 +108,42 @@ done
 [ -v GITHUB_TOKEN ] || die 'claude-roster-verify: GITHUB_TOKEN is not set'
 [ -f "${reusable}" ] || die "claude-roster-verify: no such file: ${reusable}"
 
-api() {
-   curl \
+body_file="$(mktemp)"
+cleanup() {
+   safe-rm --force -- "${body_file}"
+}
+trap cleanup EXIT
+
+## Prints the HTTP status and writes the body to ${body_file}. Deliberately
+## NOT --fail-with-body: this audit exists to prove a negative, so it must be
+## able to tell 404 ("this repo does not carry the workflow") apart from 403 /
+## 429 / 5xx / a transport failure. Collapsing those into one non-zero exit is
+## what turns a rate-limited scan into a false pass. A transport failure gets
+## the synthetic status 000 so every caller's case statement sees it.
+api_status() {
+   local path="$1" code status
+   status=0
+   code="$(curl \
       --silent \
       --show-error \
-      --fail-with-body \
       --max-time 30 \
+      --output "${body_file}" \
+      --write-out '%{http_code}' \
       --header "Authorization: Bearer ${GITHUB_TOKEN}" \
       --header 'Accept: application/vnd.github+json' \
       --header 'X-GitHub-Api-Version: 2022-11-28' \
-      -- "https://api.github.com$1"
+      -- "https://api.github.com${path}")" || status="$?"
+   if [ "${status}" -ne 0 ]; then
+      printf '000\n'
+      return 0
+   fi
+   printf '%s\n' "${code}"
+}
+
+## Every caller funnels its unexpected statuses here, so no endpoint can
+## quietly decide that an error means "absent".
+die_on_status() {
+   die "claude-roster-verify: GET ${1} returned HTTP ${2}; refusing to report a verdict from an incomplete scan"
 }
 
 ## The roster is the only quoted 'default:' in the reusable
@@ -142,12 +173,21 @@ printf '%s\n' "roster: ${roster}"
 declare -a repos=()
 page=1
 while true; do
-   declare -a batch=()
-   mapfile -t batch < <(api "/orgs/${org}/repos?per_page=100&type=all&page=${page}" \
-      | jq --raw-output '.[].name')
-   if [ "${#batch[@]}" -eq 0 ]; then
+   repos_path="/orgs/${org}/repos?per_page=100&type=all&page=${page}"
+   code="$(api_status "${repos_path}")"
+   if [ "${code}" != '200' ]; then
+      die_on_status "${repos_path}" "${code}"
+   fi
+   ## Parse in its own step, not inside the mapfile process substitution:
+   ## there, a jq failure cannot reach errexit, so a malformed page would
+   ## yield an empty batch, break the loop, and pass the audit having
+   ## scanned only part of the org.
+   names="$(jq --raw-output '.[].name' -- "${body_file}")"
+   if [ -z "${names}" ]; then
       break
    fi
+   declare -a batch=()
+   mapfile -t batch <<< "${names}"
    repos+=( "${batch[@]}" )
    page=$(( page + 1 ))
 done
@@ -158,13 +198,37 @@ declare -a drift=()
 claude_repos=0
 
 for repo in "${repos[@]}"; do
-   if ! api "/repos/${org}/${repo}/contents/${consumer_path}" > /dev/null 2>&1; then
-      continue
-   fi
+   contents_path="/repos/${org}/${repo}/contents/${consumer_path}"
+   code="$(api_status "${contents_path}")"
+   case "${code}" in
+      200)
+         ;;
+      404)
+         ## The only status that legitimately means "this repo does not
+         ## run the Claude workflow".
+         continue
+         ;;
+      *)
+         die_on_status "${contents_path}" "${code}"
+         ;;
+   esac
    claude_repos=$(( claude_repos + 1 ))
    for member in "${members[@]}"; do
-      permission="$(api "/repos/${org}/${repo}/collaborators/${member}/permission" \
-         | jq --raw-output '.permission // "none"')"
+      permission_path="/repos/${org}/${repo}/collaborators/${member}/permission"
+      code="$(api_status "${permission_path}")"
+      case "${code}" in
+         200)
+            ;;
+         404)
+            ## Not a collaborator at all: real drift, not an error.
+            drift+=( "${org}/${repo}: ${member} is not a collaborator, needs write" )
+            continue
+            ;;
+         *)
+            die_on_status "${permission_path}" "${code}"
+            ;;
+      esac
+      permission="$(jq --raw-output '.permission // "none"' -- "${body_file}")"
       case "${permission}" in
          admin|write)
             ;;

@@ -109,9 +109,14 @@
 ##                                listed account MUST hold write on
 ##                                the consuming repository (see
 ##                                above). Default is the org roster.
-## - timeout-minutes  (optional)  Job timeout, and the only cap on
-##                                how much quota one mention can
-##                                spend. Default 30.
+## - timeout-minutes  (optional)  Job timeout. Default 30.
+##
+## Two independent caps bound what one mention can spend, and
+## whichever binds first wins: timeout-minutes on wall clock, and the
+## hardcoded 'claude_args: --max-turns' on agent turns (see the step
+## below). Wall clock alone does not bound a fast spin loop, and a
+## turn cap alone does not bound one slow turn. Only the turn cap
+## ends the run as a job FAILURE; a timeout is a cancellation.
 ##
 ## ## Secrets
 ##
