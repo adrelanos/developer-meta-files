@@ -20,6 +20,7 @@ set -o nounset
 set -o pipefail
 set -o errtrace
 shopt -s inherit_errexit
+shopt -s shift_verbose
 
 # shellcheck source=../../../helper-scripts/usr/libexec/helper-scripts/has.sh
 source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/has.sh

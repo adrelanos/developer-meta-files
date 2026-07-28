@@ -12,6 +12,7 @@ set -o nounset
 set -o pipefail
 set -o errtrace
 shopt -s inherit_errexit
+shopt -s shift_verbose
 
 true "INFO: Currently running script: ${BASH_SOURCE[0]} $*"
 
@@ -47,7 +48,7 @@ fi
 source_vm="$(qubesdb-read /name)"
 
 ## Get rid of the huge '.git' folder.
-rm -r -f -- "$binary_build_folder_dist/aptrepo_temp_copy/"
+safe-rm -r -f -- "$binary_build_folder_dist/aptrepo_temp_copy/"
 mkdir -p -- "$binary_build_folder_dist/aptrepo_temp_copy"
 cp -r -- "$binary_build_folder_dist/aptrepo_remote/dists" "$binary_build_folder_dist/aptrepo_temp_copy/dists"
 cp -r -- "$binary_build_folder_dist/aptrepo_remote/pool" "$binary_build_folder_dist/aptrepo_temp_copy/pool"
@@ -60,16 +61,16 @@ Enabled: yes
 Trusted: yes" > "$binary_build_folder_dist/derivative_repo_temp.sources"
 cat -- "$binary_build_folder_dist/derivative_repo_temp.sources"
 
-qvm-run "$target_vm" "rm -r -f -- /home/user/QubesIncoming/$source_vm/aptrepo_temp_copy"
-qvm-run "$target_vm" "rm -f -- /home/user/QubesIncoming/$source_vm/derivative_repo_temp.sources"
-qvm-run "$target_vm" "sudo rm -f -- /etc/apt/sources.list.d/derivative_repo_temp.sources"
+qvm-run "$target_vm" "safe-rm -r -f -- /home/user/QubesIncoming/$source_vm/aptrepo_temp_copy"
+qvm-run "$target_vm" "safe-rm -f -- /home/user/QubesIncoming/$source_vm/derivative_repo_temp.sources"
+qvm-run "$target_vm" "sudo safe-rm -f -- /etc/apt/sources.list.d/derivative_repo_temp.sources"
 
 qvm-copy-to-vm "$target_vm" "$binary_build_folder_dist/derivative_repo_temp.sources"
 qvm-copy-to-vm "$target_vm" "$binary_build_folder_dist/aptrepo_temp_copy/"
 
 qvm-run "$target_vm" "sudo mv -- /home/user/QubesIncoming/$source_vm/derivative_repo_temp.sources /etc/apt/sources.list.d/derivative_repo_temp.sources"
 
-qvm-run "$target_vm" "sudo rm -r -f -- /var/cache/aptrepo_temp_copy"
+qvm-run "$target_vm" "sudo safe-rm -r -f -- /var/cache/aptrepo_temp_copy"
 qvm-run "$target_vm" "sudo cp -r /home/user/QubesIncoming/$source_vm/aptrepo_temp_copy /var/cache/aptrepo_temp_copy"
 qvm-run "$target_vm" "sudo chown -R _apt /var/cache/aptrepo_temp_copy"
 
