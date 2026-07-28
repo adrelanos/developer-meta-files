@@ -1,3 +1,102 @@
+commit a10b0657fc36edbc74aac938e8782a6df42d0a8b
+Merge: 6605092d 1d6b20ea
+Author: Patrick Schleizer <adrelanos@whonix.org>
+Date:   Tue Jul 28 07:55:02 2026 -0400
+
+    Merge remote-tracking branch 'refs/remotes/org-ai-assisted/master'
+
+commit 1d6b20ea41603ba5b076c3c83e36adff3125b059
+Author: claude <noreply@anthropic.com>
+Date:   Tue Jul 28 06:17:07 2026 -0400
+
+    consumer-codex-review: drop OPENAI_API_KEY forward to the disabled reusable
+
+    Propagates org-ai-assisted/developer-meta-files#167. The reusable is a no-op
+    stub (job 'if: false') and no longer declares an OPENAI_API_KEY secret;
+    forwarding an undeclared secret is rejected by GitHub at workflow startup
+    (startup_failure). Dropping the forward lets the no-op run green; Codex review
+    stays cleanly disabled.
+
+    Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+
+commit 0b2f0b339027960ed1cda4943397b8aff301a35b
+Author: assisted-by-ai (Bot Account) (Machine Account) <228987186+assisted-by-ai@users.noreply.github.com>
+Date:   Tue Jul 28 05:54:07 2026 -0400
+
+    consumer-codex-review template: drop OPENAI_API_KEY forward (fix startup_failure) (#167)
+
+    ## Problem
+
+    Every consumer's `OpenAI Codex Review` workflow shows `startup_failure`.
+
+    The reusable `reusable-codex-review.yml` is a deliberate no-op stub (job
+    `if: false`, `run: ":"`, name "OpenAI Codex Review (disabled)") and its
+    `on.workflow_call` no longer declares an `OPENAI_API_KEY` secret. But
+    the consumer template still forwards:
+
+    ```yaml
+        secrets:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+    ```
+
+    GitHub rejects a `secrets:` forward for a secret the referenced reusable
+    workflow does not declare, at workflow startup, before any job runs.
+
+    ## Fix (leave Codex cleanly disabled)
+
+    Drop the `secrets:` forward from the consumer template. The no-op
+    reusable then runs green with no secret needed; Codex review stays
+    disabled without the startup error.
+
+    Re-adding the forward is only correct once the reusable re-declares the
+    secret under `on.workflow_call.secrets` (see the reusable's own "when
+    re-enabling" notes).
+
+    ## Propagation
+
+    Consumers carry a `cp`-ed copy of this template; they need a propagation
+    pass (or a matching one-line removal) to green their live checks.
+    `derivative-maker` was already fixed directly on its integration branch.
+
+    _ Generated with [Claude Code](https://claude.com/claude-code)
+
+    <!-- This is an auto-generated comment: release notes by coderabbit.ai
+    -->
+
+    ## Summary by CodeRabbit
+
+    * **Security**
+    * Updated automated review workflow permissions for pull request
+    interactions.
+      * Removed forwarding of an external API key from the workflow.
+
+    <!-- end of auto-generated comment: release notes by coderabbit.ai -->
+
+    Co-authored-by: claude <noreply@anthropic.com>
+
+commit 6605092de7b9e018728e897e13d3062c0f2b1f3d
+Merge: e44001de a946157e
+Author: Patrick Schleizer <adrelanos@whonix.org>
+Date:   Sun Jul 26 08:00:26 2026 -0400
+
+    Merge remote-tracking branch 'refs/remotes/org-ai-assisted/master'
+
+commit a946157e982fd6c19bd31a56d14cd3f13119f593
+Author: assisted-by-ai (Bot Account) (Machine Account) <228987186+assisted-by-ai@users.noreply.github.com>
+Date:   Fri Jul 24 05:22:27 2026 -0400
+
+    dm-review-branch: continue-anyway prompt on a unicode-scan failure (#166)
+
+    On a non-zero unicode-spoofing scan (check-ref-commits/names-for-unicode), ask the operator to continue via prompt_yes_no_tty instead of hard-aborting under errexit; fail closed when there is no terminal. Uses the canonical log/die helpers; scans invoked literally with rc captured at the call site. Re-establishes the work the bot erroneously closed as #162.
+
+    AI-Assisted
+
+commit e44001deb122b42fddcc35edbac1c4cb56057c15
+Author: Patrick Schleizer <adrelanos@whonix.org>
+Date:   Thu Jul 23 14:12:35 2026 +0000
+
+    bumped changelog version
+
 commit 1ec097168dae28cbb94bafc88eb6d01234bbbb41
 Merge: 7160a29a dc3a61bf
 Author: Patrick Schleizer <adrelanos@whonix.org>
