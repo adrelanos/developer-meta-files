@@ -254,13 +254,19 @@ jobs:
       ## cost report is behind 'display_report', which is off by
       ## default and which would splice model-authored text into the
       ## job summary.
+      ## Same dogfood ref as reusable-secrets-audit / reusable-pre-push-static:
+      ## the caller's own commit when developer-meta-files IS the caller, so a
+      ## PR that edits claude-usage-record.sh exercises the EDITED recorder
+      ## rather than master's copy; plain 'master' for every other caller,
+      ## whose github.sha names a commit in a different repository.
       - name: Checkout developer-meta-files (usage recorder)
         if: always() && steps.claude.outputs.execution_file != ''
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
           repository: org-ai-assisted/developer-meta-files
-          ref: master
+          ref: ${{ github.repository == 'org-ai-assisted/developer-meta-files' && github.sha || 'master' }}
           path: .github/dmf
+          persist-credentials: false
           persist-credentials: false
 
       - name: Record Claude usage
