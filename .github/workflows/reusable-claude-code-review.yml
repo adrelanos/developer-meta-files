@@ -267,7 +267,6 @@ jobs:
           ref: ${{ github.repository == 'org-ai-assisted/developer-meta-files' && github.sha || 'master' }}
           path: .github/dmf
           persist-credentials: false
-          persist-credentials: false
 
       - name: Record Claude usage
         if: always() && steps.claude.outputs.execution_file != ''
