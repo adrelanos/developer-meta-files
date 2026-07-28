@@ -187,11 +187,24 @@ fi
 ## - a wall-clock 'timeout' caps runtime.
 ## diffoscope exits 1 when it FINDS differences (expected here); only a higher
 ## exit (crash / resource kill / timeout) warrants the "could not explain" note.
+## The bounds above were not enough on a 1 GB '.qcow2.libvirt.xz' expanding to a 100 GB
+## sparse image: diffoscope still died with "Out of memory. Diffoscope exiting." (exit 2),
+## explaining nothing. Add the mitigations docs/reproducible-verification.md already
+## prescribes for exactly this case:
+## - bound the per-file diff INPUT and what is retained, not just the report size, so one
+##   large differing member cannot pull the whole diff into memory;
+## - skip the kernel and initrd, which are large, always differ when anything below them
+##   differs, and say nothing useful about the cause; and
+## - keep the temp dir on real disk. A tmpfs $TMPDIR charges diffoscope's spill files to
+##   RAM, which is the failure this is trying to avoid.
 diffoscope_rc=0
 (
    ulimit -v 8000000 || true
+   TMPDIR=/var/tmp \
    timeout --kill-after=30 900 \
       diffoscope --text - --max-report-size 4194304 --max-diff-block-lines 512 \
+      --max-diff-input-lines 100000 --max-diff-block-lines-saved 10000 \
+      --exclude 'boot/initrd*' --exclude 'boot/vmlinuz*' \
       -- "$artifact_a" "$artifact_b"
 ) >> "$report" 2>&1 || diffoscope_rc="$?"
 if [ "$diffoscope_rc" -gt 1 ]; then
