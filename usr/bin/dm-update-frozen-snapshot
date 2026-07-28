@@ -72,65 +72,78 @@ Options:
 EOF
 }
 
-## Print the Nth deb822 stanza of ${1} on stdout. Paragraphs are blank-line separated, so
-## counting them needs no deb822 knowledge -- and doing it here is what lets deb822_field
-## address a STANZA rather than an output line.
-## $1 = file, $2 = occurrence (1-based stanza number).
-deb822_stanza() {
-   local file="$1" want="$2" index line
-   local -a stanza=()
-   index=1
-   while IFS= read -r line || [ -n "${line}" ]; do
-      if [ -n "${line}" ]; then
-         stanza+=( "${line}" )
-         continue
-      fi
-      if [ "${#stanza[@]}" -eq 0 ]; then
-         continue
-      fi
-      if [ "${index}" -eq "${want}" ]; then
-         printf '%s\n' "${stanza[@]}"
-         return 0
-      fi
-      index=$(( index + 1 ))
-      stanza=()
-   done < "${file}"
-   ## Last stanza when the file does not end with a blank line.
-   if [ "${#stanza[@]}" -gt 0 ] && [ "${index}" -eq "${want}" ]; then
-      printf '%s\n' "${stanza[@]}"
-   fi
-}
-
-## Extract a field value (e.g. the first 'Suites:' or 'URIs:' value) from a deb822 .sources
-## file. grep-dctrl (dctrl-tools) does the deb822 parsing, including field continuation
-## lines; the stanza is selected beforehand by deb822_stanza.
+## Print field ${2} of the single stanza in ${1} selected by ${3}:
+##   security -> the stanza whose Suites name a '-security' suite
+##   primary  -> the stanza that does not
 ##
-## Selecting with 'sed -n "${occurrence}p"' over grep-dctrl's output instead would count
-## OUTPUT LINES, not stanzas: a wrapped field body spans several lines, so a continuation
-## line of stanza 1 would be returned as stanza 2's value.
-## $1 = field name, $2 = file, $3 = occurrence (1-based stanza number).
-deb822_field() {
-   local field="$1" file="$2" occurrence="$3" stanza status
-   stanza="$(deb822_stanza "${file}" "${occurrence}")"
-   if [ -z "${stanza}" ]; then
-      return 0
-   fi
-   ## Only exit 1 means "no stanza carries the field". grep-dctrl exits 2 on a parser or
-   ## file error, and laundering that into an empty value would let a malformed .sources
-   ## file read as "field absent" and silently take the caller's not-found path.
-   status=0
-   printf '%s\n' "${stanza}" \
-      | grep-dctrl --no-field-names --show-field="${field}" '' || status="$?"
-   case "${status}" in
-      0|1)
-         return 0
+## grep-dctrl (dctrl-tools) does ALL the deb822 parsing here: paragraph boundaries, field
+## continuation lines, and the stanza selection itself. Nothing about the format is
+## re-implemented in bash.
+##
+## Selecting by PREDICATE rather than by position is what makes this correct. Addressing
+## stanzas by index over grep-dctrl's output -- 'sed -n "${n}p"' -- counts OUTPUT LINES, so a
+## wrapped field body makes stanza 1's continuation line answer as stanza 2. Verified against
+## real grep-dctrl output before this rewrite.
+##
+## The '-security' suffix is Debian's own suite-naming convention, so the predicate survives a
+## rename of the local approx repositories (debian-frozen / debian-security-frozen), which the
+## URIs field would not.
+##
+## '--pattern=' rather than a positional pattern: the pattern begins with '-' and would
+## otherwise have to be defended from option parsing by argument order.
+deb822_select() {
+   local file="$1" field="$2" which="$3"
+   local -a filter=(
+      --field=Suites
+      --regex
+      --pattern=-security
+      --no-field-names
+      --show-field="${field}"
+   )
+   case "${which}" in
+      security)
+         ;;
+      primary)
+         filter+=( --invert-match )
          ;;
       *)
-         printf 'dm-update-frozen-snapshot: grep-dctrl failed (exit %s) reading %s from %s\n' \
-            "${status}" "${field}" "${file}" >&2
+         printf 'dm-update-frozen-snapshot: deb822_select: unknown selector %s\n' "${which}" >&2
          exit 2
          ;;
    esac
+   grep-dctrl "${filter[@]}" -- "${file}"
+}
+
+## $1 = file, $2 = field name, $3 = selector (security|primary).
+deb822_field() {
+   local file="$1" field="$2" which="$3" status stanza_count
+   ## Exit 1 means no stanza matched the selector; the caller's empty-result check reports
+   ## that. Exit 2 is a parser or file error -- laundering it into an empty value would let a
+   ## malformed .sources file read as "field absent" and silently take the not-found path.
+   status=0
+   stanza_count="$(deb822_select "${file}" 'Types' "${which}" | wc -l)" || status="$?"
+   case "${status}" in
+      0)
+         ;;
+      1)
+         return 0
+         ;;
+      *)
+         printf 'dm-update-frozen-snapshot: grep-dctrl failed (exit %s) on %s\n' \
+            "${status}" "${file}" >&2
+         exit 2
+         ;;
+   esac
+   ## Every .sources stanza carries exactly one 'Types:', so counting its lines counts
+   ## STANZAS. More than one match means the selector is ambiguous for this file (a third
+   ## non-security stanza, say a -backports one), and silently concatenating both values
+   ## would feed a wrong suite list into the snapshot probe.
+   if [ "${stanza_count}" -gt 1 ]; then
+      printf 'dm-update-frozen-snapshot: %s selector matched %s stanzas in %s; expected 1\n' \
+         "${which}" "${stanza_count}" "${file}" >&2
+      exit 2
+   fi
+   deb822_select "${file}" "${field}" "${which}"
 }
 
 ## True (exit 0) if snapshot ${1} serves ${archive} ${suite}'s Release with HTTP 200.
@@ -215,17 +228,17 @@ update_frozen_snapshot() {
    fi
 
    local suite security_suite current_ts new_ts frozen_uri
-   suite="$(deb822_field 'Suites' "${frozen_sources}" 1)"
-   security_suite="$(deb822_field 'Suites' "${frozen_sources}" 2)"
+   suite="$(deb822_field "${frozen_sources}" 'Suites' 'primary')"
+   security_suite="$(deb822_field "${frozen_sources}" 'Suites' 'security')"
    if [ -z "${suite}" ] || [ -z "${security_suite}" ]; then
       printf 'dm-update-frozen-snapshot: could not read Suites from %s\n' "${frozen_sources}" >&2
       return 1
    fi
 
-   ## The pinned timestamp is a URI path segment '.../debian-frozen/<TIMESTAMP>' in the first
-   ## stanza's URIs field. Parse that field with grep-dctrl (deb822), then pull the timestamp
-   ## token from the value -- a plain-text path segment, so grep is the right tool for that half.
-   frozen_uri="$(deb822_field 'URIs' "${frozen_sources}" 1)"
+   ## The pinned timestamp is a URI path segment '.../debian-frozen/<TIMESTAMP>' in the primary
+   ## stanza's URIs field. grep-dctrl extracts the field (deb822); the timestamp token inside
+   ## the value is a plain-text path segment, so grep is the right tool for that half.
+   frozen_uri="$(deb822_field "${frozen_sources}" 'URIs' 'primary')"
    current_ts="$(grep -oE '[0-9]{8}T[0-9]{6}Z' --max-count=1 <<< "${frozen_uri}" || true)"
    if [ -z "${current_ts}" ]; then
       printf 'dm-update-frozen-snapshot: no pinned timestamp found in %s\n' "${frozen_sources}" >&2
@@ -302,5 +315,14 @@ if [ "$#" -gt 0 ]; then
    usage >&2
    exit 2
 fi
+
+## Command-availability preflight (R-091): probe every external tool once here, not lazily at
+## the first call site. grep-dctrl is load-bearing -- it does all the deb822 parsing, with no
+## hand-rolled fallback -- so its absence must be one clear message, not a mid-run failure
+## after the network probing has already started.
+command -v grep-dctrl >/dev/null 2>&1 \
+   || { printf 'dm-update-frozen-snapshot: grep-dctrl not found; install dctrl-tools.\n' >&2; exit 2; }
+command -v scurl >/dev/null 2>&1 \
+   || { printf 'dm-update-frozen-snapshot: scurl not found; helper-scripts is required.\n' >&2; exit 2; }
 
 update_frozen_snapshot
