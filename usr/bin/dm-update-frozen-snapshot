@@ -74,54 +74,56 @@ EOF
 
 ## Print field ${2} of the single stanza in ${1} selected by ${3}:
 ##   security -> the stanza whose Suites name a '-security' suite
-##   primary  -> the stanza that does not
+##   primary  -> the stanza whose Suites name something else
 ##
-## grep-dctrl (dctrl-tools) does ALL the deb822 parsing here: paragraph boundaries, field
+## grep-dctrl (dctrl-tools) does ALL the deb822 work here: paragraph boundaries, field
 ## continuation lines, and the stanza selection itself. Nothing about the format is
 ## re-implemented in bash.
 ##
 ## Selecting by PREDICATE rather than by position is what makes this correct. Addressing
 ## stanzas by index over grep-dctrl's output -- 'sed -n "${n}p"' -- counts OUTPUT LINES, so a
-## wrapped field body makes stanza 1's continuation line answer as stanza 2. Verified against
-## real grep-dctrl output before this rewrite.
+## wrapped field body makes stanza 1's continuation line answer as stanza 2.
 ##
 ## The '-security' suffix is Debian's own suite-naming convention, so the predicate survives a
-## rename of the local approx repositories (debian-frozen / debian-security-frozen), which the
-## URIs field would not.
+## rename of the local approx repositories (debian-frozen / debian-security-frozen), which a
+## URIs predicate would not.
 ##
-## '--pattern=' rather than a positional pattern: the pattern begins with '-' and would
+## BOTH selectors are POSITIVE on Suites. A bare '--invert-match' would also select a stanza
+## that carries no Suites field at all, since an absent field cannot match the pattern; the
+## primary selector therefore reads "has a Suites AND it is not a -security one". This also
+## guarantees every selected stanza carries the field the stanza counter below relies on.
+##
+## '--pattern=' rather than a positional pattern: the pattern starts with '-' and would
 ## otherwise have to be defended from option parsing by argument order.
-deb822_select() {
-   local file="$1" field="$2" which="$3"
-   local -a filter=(
-      --field=Suites
-      --regex
-      --pattern=-security
-      --no-field-names
-      --show-field="${field}"
-   )
+## $1 = file, $2 = field name, $3 = selector (security|primary).
+deb822_field() {
+   local file="$1" field="$2" which="$3" status names stanza_count
+   local -a select=()
    case "${which}" in
       security)
+         select=( --field=Suites --regex --pattern=-security )
          ;;
       primary)
-         filter+=( --invert-match )
+         select=(
+            --field=Suites --regex --pattern=.
+            --and --not --field=Suites --regex --pattern=-security
+         )
          ;;
       *)
-         printf 'dm-update-frozen-snapshot: deb822_select: unknown selector %s\n' "${which}" >&2
+         printf 'dm-update-frozen-snapshot: deb822_field: unknown selector %s\n' "${which}" >&2
          exit 2
          ;;
    esac
-   grep-dctrl "${filter[@]}" -- "${file}"
-}
 
-## $1 = file, $2 = field name, $3 = selector (security|primary).
-deb822_field() {
-   local file="$1" field="$2" which="$3" status stanza_count
    ## Exit 1 means no stanza matched the selector; the caller's empty-result check reports
    ## that. Exit 2 is a parser or file error -- laundering it into an empty value would let a
    ## malformed .sources file read as "field absent" and silently take the not-found path.
+   ##
+   ## Captured on its own rather than piped straight into the counter: under pipefail a
+   ## pipeline reports the RIGHTMOST non-zero status, so a grep exit 1 downstream would mask
+   ## grep-dctrl's exit 2 here.
    status=0
-   stanza_count="$(deb822_select "${file}" 'Types' "${which}" | wc -l)" || status="$?"
+   names="$(grep-dctrl "${select[@]}" --show-field=Suites -- "${file}")" || status="$?"
    case "${status}" in
       0)
          ;;
@@ -134,16 +136,19 @@ deb822_field() {
          exit 2
          ;;
    esac
-   ## Every .sources stanza carries exactly one 'Types:', so counting its lines counts
-   ## STANZAS. More than one match means the selector is ambiguous for this file (a third
-   ## non-security stanza, say a -backports one), and silently concatenating both values
-   ## would feed a wrong suite list into the snapshot probe.
-   if [ "${stanza_count}" -gt 1 ]; then
-      printf 'dm-update-frozen-snapshot: %s selector matched %s stanzas in %s; expected 1\n' \
+
+   ## Count STANZAS, not lines. Field names are kept on purpose: a wrapped body adds INDENTED
+   ## continuation lines, which do not match '^Suites:', so exactly one line per stanza is
+   ## counted however the value is folded. Counting a field's value lines instead would
+   ## miscount a legally wrapped field as several stanzas.
+   stanza_count="$(grep --count '^Suites:' <<< "${names}" || true)"
+   if [ "${stanza_count}" -ne 1 ]; then
+      printf 'dm-update-frozen-snapshot: %s selector matched %s stanzas in %s; expected exactly 1\n' \
          "${which}" "${stanza_count}" "${file}" >&2
       exit 2
    fi
-   deb822_select "${file}" "${field}" "${which}"
+
+   grep-dctrl "${select[@]}" --no-field-names --show-field="${field}" -- "${file}"
 }
 
 ## True (exit 0) if snapshot ${1} serves ${archive} ${suite}'s Release with HTTP 200.
