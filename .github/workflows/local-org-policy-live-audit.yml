@@ -99,17 +99,14 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GHORG_AUDIT_TOKEN }}
         run: dm-github-org-policy --dry-run
 
-      ## The Claude review workflow's allowed-users gate is a list of
-      ## account names standing in for "holds write on this repo",
-      ## because Actions exposes no expression for repository
-      ## permission. A demoted roster member still passes that gate
-      ## and then hard-fails inside claude-code-action at the app-token
-      ## exchange. Verifying the list here is what keeps the
-      ## duplication honest.
-      - name: Verify the Claude review roster against live permissions
-        env:
-          GITHUB_TOKEN: ${{ secrets.GHORG_AUDIT_TOKEN }}
-        run: ./ci/claude-roster-verify.sh --org "${GITHUB_REPOSITORY_OWNER}"
+      ## The Claude review roster check deliberately does NOT live here.
+      ## It needs to list an org's repos and read collaborator
+      ## permissions, which wants an org-scoped token; the only one
+      ## named in this workflow is GHORG_AUDIT_TOKEN, a secret that has
+      ## never been created (this workflow has 0 runs, ever). A check
+      ## wired to a job that cannot start verifies nothing. It runs
+      ## operator-side instead, as `claude-roster-verify` in
+      ## dist-ai-config, where the bot token already has org access.
 
       - name: Emit step summary
         if: always()
