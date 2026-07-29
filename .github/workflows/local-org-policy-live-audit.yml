@@ -72,10 +72,20 @@ jobs:
     ## the explicit guard documents intent).
     if: ${{ github.repository == 'org-ai-assisted/developer-meta-files' }}
 
+    env:
+      DIST_AI_REF: ${{ github.repository == 'org-ai-assisted/dist-ai' && github.sha || 'master' }}
     steps:
       - name: Checkout developer-meta-files
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
         with:
+          persist-credentials: false
+
+      - name: Checkout dist-ai (shared CI helper binaries)
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          repository: org-ai-assisted/dist-ai
+          ref: ${{ env.DIST_AI_REF }}
+          path: .github/dist-ai
           persist-credentials: false
 
       - name: Install genmkfile + helper-scripts + self
@@ -117,7 +127,7 @@ jobs:
         env:
           JOB_STATUS: ${{ job.status }}
         run: |
-          ./ci/step-summary-emit.sh \
+          ./.github/dist-ai/usr/bin/step-summary-emit \
             --tool 'github-org tools (live policy check)' \
             --column-header field \
             --row "outcome=${JOB_STATUS}" \

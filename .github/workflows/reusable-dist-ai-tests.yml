@@ -20,9 +20,9 @@
 ## Debian/Python (e.g. helper-scripts' stcat uses Path.read_text(newline=)
 ## which is 3.13+). Same container choice as reusable-pre-push-static.yml.
 ##
-## Checkout layout: the caller repo, dist-ai, and developer-meta-files
-## are checked out as SIBLING subdirectories of GITHUB_WORKSPACE
-## (component/, dist-ai/, dmf/), NOT the caller at the workspace root
+## Checkout layout: the caller repo and dist-ai are checked out as
+## SIBLING subdirectories of GITHUB_WORKSPACE
+## (component/, dist-ai/), NOT the caller at the workspace root
 ## with dist-ai nested inside it. This is deliberate: a suite that runs
 ## pytest (e.g. privleap-tests) derives the test module name from the
 ## test file's path relative to pytest's rootdir; if the dist-ai suites
@@ -108,14 +108,6 @@ jobs:
           path: dist-ai
           persist-credentials: false
 
-      - name: Checkout developer-meta-files (summary script)
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
-        with:
-          repository: org-ai-assisted/developer-meta-files
-          ref: master
-          path: dmf
-          persist-credentials: false
-
       - name: Load per-repo config (.github/dm-consumer.yml)
         id: cfg
         ## Runtime read of the caller's per-repo config (reusable-coverity.yml
@@ -169,7 +161,7 @@ jobs:
         env:
           JOB_STATUS: ${{ job.status }}
         run: |
-          dmf/ci/step-summary-emit.sh \
+          dist-ai/usr/bin/step-summary-emit \
             --tool 'dist-ai tests' \
             --column-header field \
             --row "outcome=${JOB_STATUS}" \

@@ -18,7 +18,7 @@
 ## Excludes:
 ##
 ##   - .git/
-##   - .github/dmf/ (the dmf orchestration checkout that the
+##   - .github/dmf/ and .github/dist-ai/ (helper checkouts the
 ##     calling workflow stages alongside the consumer source)
 ##   - Submodule directories (paths read from .gitmodules)
 ##
@@ -40,6 +40,7 @@ shopt -s shift_verbose
 exclude_args=(
    -not -path './.git/*'
    -not -path './.github/dmf/*'
+   -not -path './.github/dist-ai/*'
 )
 
 ## Append submodule paths from .gitmodules if present. Each
