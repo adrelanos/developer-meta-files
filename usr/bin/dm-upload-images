@@ -14,7 +14,7 @@ shopt -s shift_verbose
 true "INFO: Currently running script: ${BASH_SOURCE[0]} $*"
 
 MYDIR="$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" && pwd )"
-cd -- "$MYDIR"
+cd -- "${MYDIR}"
 
 ## 'helper-scripts' resolves via HELPER_SCRIPTS_PATH (set by help-steps/pre
 ## for a from-source build); this source runs BEFORE 'pre' below, so fall back
@@ -23,9 +23,9 @@ cd -- "$MYDIR"
 ## environment. This script may run as the installed '/usr/bin' copy, so a
 ## '$MYDIR'-relative path cannot locate 'helper-scripts'.
 # shellcheck source=../../../helper-scripts/usr/libexec/helper-scripts/strings.bsh
-source "${HELPER_SCRIPTS_PATH:-$HOME/derivative-maker/packages/kicksecure/helper-scripts}/usr/libexec/helper-scripts/strings.bsh"
-source "$HOME/derivative-maker/help-steps/pre"
-source "$HOME/derivative-maker/help-steps/variables"
+source "${HELPER_SCRIPTS_PATH:-${HOME}/derivative-maker/packages/kicksecure/helper-scripts}/usr/libexec/helper-scripts/strings.bsh"
+source "${HOME}/derivative-maker/help-steps/pre"
+source "${HOME}/derivative-maker/help-steps/variables"
 
 ## Build upload_file_list (reset) for ONE image file: the image plus its
 ## signatures, torrent and checksums. Called once per (file, location) pair from
@@ -34,11 +34,11 @@ show_files() {
    local file_name_item="$1"
    upload_file_list=()
 
-   if [ -z "$file_name_item" ]; then
+   if [ -z "${file_name_item}" ]; then
       return 0
    fi
 
-   test -f "$file_name_item"
+   test -f "${file_name_item}"
 
    upload_file_list+=("${file_name_item}")
    upload_file_list+=("${file_name_item}.asc")
@@ -63,17 +63,17 @@ show_files() {
 
    local upload_file_item
    for upload_file_item in "${upload_file_list[@]}"; do
-      test -f "$upload_file_item"
+      test -f "${upload_file_item}"
    done
 }
 
 upload_files() {
-   if [ "$dist_build_installer_dist" = "true" ]; then
+   if [ "${dist_build_installer_dist}" = "true" ]; then
       dist_server_with_upload_location_item_with_version_maybe="${dist_server_with_upload_location_item}/"
    else
       dist_server_with_upload_location_item_with_version_maybe="${dist_server_with_upload_location_item}/${dist_build_version}/"
    fi
-   true "dist_server_with_upload_location_item_with_version_maybe: $dist_server_with_upload_location_item_with_version_maybe"
+   true "dist_server_with_upload_location_item_with_version_maybe: ${dist_server_with_upload_location_item_with_version_maybe}"
 
    if [ ! "${build_upload_noninteractive:-}" = "true" ]; then
       true "${cyan}INFO: Press any enter to continue.${reset}"
@@ -95,7 +95,7 @@ upload_files() {
       ## (and grow forever) across calls to upload_files.
       sleep_seconds="$(( attempts_counter * 5 ))"
 
-      if [ "$rsync_dry_run_maybe" = "--dry-run" ]; then
+      if [ "${rsync_dry_run_maybe}" = "--dry-run" ]; then
          true "${cyan}INFO: --dry-run only...${reset}"
       else
          true "${cyan}INFO: uploading...${reset}"
@@ -107,20 +107,25 @@ upload_files() {
       ## Use a dedicated loop variable so the current pair's
       ## dist_server_with_upload_location_item (the rsync target) is not clobbered.
       local dns_probe_item
-      for dns_probe_item in $dist_server_with_upload_location_list; do
-         nslookup "$dns_probe_item" || true
+      for dns_probe_item in ${dist_server_with_upload_location_list}; do
+         nslookup "${dns_probe_item}" || true
       done
 
       rsync_exit_code="0"
-      $rsync_cmd \
-         $rsync_dry_run_maybe \
-         $rsync_opts \
+      ## rsync_dry_run_maybe must stay UNQUOTED. It is "--dry-run" on the first pass and is
+      ## set to "" for the second, real pass; quoted, the empty value would be handed to
+      ## rsync as an EMPTY ARGUMENT rather than vanishing, and rsync reads that as an empty
+      ## source path and fails the upload.
+      # shellcheck disable=SC2248
+      ${rsync_cmd} \
+         ${rsync_dry_run_maybe} \
+         ${rsync_opts} \
          "${upload_file_list[@]}" \
-         "$dist_server_with_upload_location_item_with_version_maybe" \
+         "${dist_server_with_upload_location_item_with_version_maybe}" \
          || { rsync_exit_code="$?" ; true; };
 
-      if [ "$rsync_exit_code" = "0" ]; then
-         if [ "$rsync_dry_run_maybe" = "--dry-run" ]; then
+      if [ "${rsync_exit_code}" = "0" ]; then
+         if [ "${rsync_dry_run_maybe}" = "--dry-run" ]; then
             if [ ! "${build_upload_noninteractive:-}" = "true" ]; then
                true "${cyan}INFO: Press any enter to continue.${reset}"
                read -r temp
@@ -131,19 +136,19 @@ upload_files() {
          break
       fi
 
-      if [ "$attempts_counter" -ge "$attempts_max" ]; then
+      if [ "${attempts_counter}" -ge "${attempts_max}" ]; then
          error "${bold}${red}ERROR: Upload failed.${reset}"
          ## Allow to ignore the error such as after fixing the internet connection.
          continue
       fi
 
-      sleep "$sleep_seconds" || true
+      sleep "${sleep_seconds}" || true
 
    done
 }
 
 main() {
-   if [ ! "$dist_build_image_upload_supported" = "true" ]; then
+   if [ ! "${dist_build_image_upload_supported}" = "true" ]; then
       if [ "${CI:-}" = "true" ]; then
          true "upload support for this --target is not yet implemented."
          exit 0
@@ -152,11 +157,11 @@ main() {
       fi
    fi
 
-   if [ "$dist_build_version" = "" ]; then
+   if [ "${dist_build_version}" = "" ]; then
       error "Variable dist_build_version is empty."
    fi
 
-   if [ "$dist_server_with_upload_location_list" = "" ]; then
+   if [ "${dist_server_with_upload_location_list}" = "" ]; then
       error "Variable dist_server_with_upload_location_list is empty."
    fi
 
@@ -166,8 +171,8 @@ main() {
    ## repeats the file once per server.
    local index
    for index in "${!dist_build_files_to_upload[@]}"; do
-      dist_server_with_upload_location_item="${dist_build_upload_locations[$index]}"
-      show_files "${dist_build_files_to_upload[$index]}"
+      dist_server_with_upload_location_item="${dist_build_upload_locations[${index}]}"
+      show_files "${dist_build_files_to_upload[${index}]}"
       upload_files
    done
 

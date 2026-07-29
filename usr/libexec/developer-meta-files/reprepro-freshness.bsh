@@ -31,15 +31,15 @@ dm_reprepro_published_source_version() {
    repository_name="$3"
 
    query_output="$(
-      export derivative_repository_name="$repository_name"
-      "$dist_developer_meta_files_folder/usr/bin/dm-reprepro-wrapper" \
-         --architecture source list "$apt_codename" "$source_pkg" 2>/dev/null || true
+      export derivative_repository_name="${repository_name}"
+      "${dist_developer_meta_files_folder}/usr/bin/dm-reprepro-wrapper" \
+         --architecture source list "${apt_codename}" "${source_pkg}" 2>/dev/null || true
    )"
 
    ## reprepro reports e.g.: local|main|source: sdwdate 1.2.3-1
-   source_line="$(printf '%s\n' "$query_output" | grep -- "source:")" || true
-   [ -n "$source_line" ] || return 0
-   read -r -a fields <<< "$source_line"
+   source_line="$(printf '%s\n' "${query_output}" | grep -- "source:")" || true
+   [ -n "${source_line}" ] || return 0
+   read -r -a fields <<< "${source_line}"
    printf '%s\n' "${fields[-1]}"
 }
 
@@ -48,7 +48,7 @@ dm_reprepro_published_source_version() {
 ## builds rebuild exactly the changed packages -- no package names, no changelog.
 dm_package_source_hash() {
    local package_source_dir="$1"
-   ( cd -- "$package_source_dir" 2>/dev/null \
+   ( cd -- "${package_source_dir}" 2>/dev/null \
        && find . -type f -not -path './.git/*' -print0 \
           | LC_ALL=C sort -z \
           | xargs -0 -r sha256sum \
@@ -68,18 +68,18 @@ dm_source_hash_manifest_path() {
 ## Look up the recorded source hash for a source package (empty if none).
 dm_source_hash_lookup() {
    local manifest="$1" source_pkg="$2"
-   [ -f "$manifest" ] || return 0
-   awk -v p="$source_pkg" '$1 == p { print $2; exit }' "$manifest"
+   [ -f "${manifest}" ] || return 0
+   awk -v p="${source_pkg}" '$1 == p { print $2; exit }' "${manifest}"
 }
 
 ## Record/replace a source package's hash in the manifest (call after publishing).
 dm_source_hash_record() {
    local manifest="$1" source_pkg="$2" hash="$3" tmp
-   mkdir --parents -- "$(dirname -- "$manifest")"
+   mkdir --parents -- "$(dirname -- "${manifest}")"
    tmp="$(mktemp)"
-   { [ -f "$manifest" ] && grep -v -- "^${source_pkg} " "$manifest" || true ; \
-     printf '%s %s\n' "$source_pkg" "$hash" ; } > "$tmp"
-   mv -- "$tmp" "$manifest"
+   { [ -f "${manifest}" ] && grep -v -- "^${source_pkg} " "${manifest}" || true ; \
+     printf '%s %s\n' "${source_pkg}" "${hash}" ; } > "${tmp}"
+   mv -- "${tmp}" "${manifest}"
 }
 
 ## Decide whether a package source tree needs (re)building.
@@ -97,28 +97,28 @@ dm_package_needs_rebuild() {
    apt_codename="$2"
    repository_name="$3"
 
-   changelog_version="$(dpkg-parsechangelog --show-field Version --file "$package_source_dir/debian/changelog")"
-   source_pkg="$(dpkg-parsechangelog --show-field Source --file "$package_source_dir/debian/changelog")"
+   changelog_version="$(dpkg-parsechangelog --show-field Version --file "${package_source_dir}/debian/changelog")"
+   source_pkg="$(dpkg-parsechangelog --show-field Source --file "${package_source_dir}/debian/changelog")"
 
-   published_version="$(dm_reprepro_published_source_version "$apt_codename" "$source_pkg" "$repository_name")"
+   published_version="$(dm_reprepro_published_source_version "${apt_codename}" "${source_pkg}" "${repository_name}")"
 
    ## Absent or a different changelog version -> rebuild.
-   if [ -z "$published_version" ] || ! dpkg --compare-versions "$changelog_version" eq "$published_version"; then
-      true "INFO: rebuild $source_pkg: changelog $changelog_version, published ${published_version:-none}."
+   if [ -z "${published_version}" ] || ! dpkg --compare-versions "${changelog_version}" eq "${published_version}"; then
+      true "INFO: rebuild ${source_pkg}: changelog ${changelog_version}, published ${published_version:-none}."
       return 0
    fi
 
    ## Same version already published: rebuild only if the source content changed
    ## since it was last built. Unknown (no manifest entry) is treated as changed,
    ## so a first build after adopting this repopulates the manifest safely.
-   manifest="$(dm_source_hash_manifest_path "$apt_codename")"
-   current_hash="$(dm_package_source_hash "$package_source_dir")"
-   stored_hash="$(dm_source_hash_lookup "$manifest" "$source_pkg")"
-   if [ -z "$stored_hash" ] || [ "$stored_hash" != "$current_hash" ]; then
-      true "INFO: rebuild $source_pkg: source content changed since last build (hash mismatch)."
+   manifest="$(dm_source_hash_manifest_path "${apt_codename}")"
+   current_hash="$(dm_package_source_hash "${package_source_dir}")"
+   stored_hash="$(dm_source_hash_lookup "${manifest}" "${source_pkg}")"
+   if [ -z "${stored_hash}" ] || [ "${stored_hash}" != "${current_hash}" ]; then
+      true "INFO: rebuild ${source_pkg}: source content changed since last build (hash mismatch)."
       return 0
    fi
 
-   true "INFO: skip $source_pkg: version $changelog_version published and source unchanged."
+   true "INFO: skip ${source_pkg}: version ${changelog_version} published and source unchanged."
    return 1
 }

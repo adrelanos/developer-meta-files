@@ -38,28 +38,28 @@ adduser --quiet --system --group checkmirrors || true
 
 as_user="sudo --non-interactive -u checkmirrors"
 
-$as_user touch /home/checkmirrors/version.txt
+${as_user} touch /home/checkmirrors/version.txt
 
-$as_user scurl $curl_built_in_args --url "https://www.whonix.org/w/index.php?title=Template:VersionNew&stable=0&action=raw" --output /home/checkmirrors/version.txt --silent
+${as_user} scurl ${curl_built_in_args} --url "https://www.whonix.org/w/index.php?title=Template:VersionNew&stable=0&action=raw" --output /home/checkmirrors/version.txt --silent
 
-$as_user str_replace "<noinclude>[[Category:MultiWiki]]</noinclude>" "" /home/checkmirrors/version.txt >/dev/null
+${as_user} str_replace "<noinclude>[[Category:MultiWiki]]</noinclude>" "" /home/checkmirrors/version.txt >/dev/null
 
 version=$(stcat /home/checkmirrors/version.txt)
 
 #stecho "version: '$version'"
 
-for mirror_item in $mirror_list ; do
+for mirror_item in ${mirror_list} ; do
    link="${mirror_item}/${version}/Whonix-LXQt-${version}.ova"
-   stecho "link: $link"
+   stecho "link: ${link}"
 
    curl_exit_code=0
 
    ## 2> /home/checkmirrors/stderr.txt \
 
    scurl \
-      $curl_built_in_args \
+      ${curl_built_in_args} \
       --write-out "%{speed_download}" \
-      --url "$link" \
+      --url "${link}" \
       --retry 0 \
       --max-time 30 \
       --output /dev/null \
@@ -69,20 +69,20 @@ for mirror_item in $mirror_list ; do
    stdout=$(stcat /home/checkmirrors/stdout.txt)
    #stderr=$(stcat /home/checkmirrors/stderr.txt)
 
-   stecho "stdout: '$stdout'"
+   stecho "stdout: '${stdout}'"
    stecho "stderr: '${stderr:-}'"
 
    ## Curl return bytes per second as per curl default.
-   bytes_per_second="$stdout"
-   if ! is_whole_number "$bytes_per_second"; then
+   bytes_per_second="${stdout}"
+   if ! is_whole_number "${bytes_per_second}"; then
      bytes_per_second=0
    fi
-   kb_per_second="$(( $bytes_per_second / 1024 ))"
+   kb_per_second="$(( ${bytes_per_second} / 1024 ))"
 
-   mb_per_second="$(( $bytes_per_second / 1024 / 1024 ))"
+   mb_per_second="$(( ${bytes_per_second} / 1024 / 1024 ))"
 
-   stecho "kb_per_second: '$kb_per_second'"
-   stecho "mb_per_second: '$mb_per_second'"
+   stecho "kb_per_second: '${kb_per_second}'"
+   stecho "mb_per_second: '${mb_per_second}'"
 done
 
 stecho ""

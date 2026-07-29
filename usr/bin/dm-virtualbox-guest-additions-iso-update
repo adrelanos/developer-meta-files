@@ -15,19 +15,19 @@ true "INFO: Currently running script: ${BASH_SOURCE[0]} $*"
 
 MYDIR="$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" && pwd )"
 
-if [ "$MYDIR" = "/usr/bin" ]; then
+if [ "${MYDIR}" = "/usr/bin" ]; then
    true "INFO: Run from: /usr/bin"
    ## XXX: hardcoded path
-   derivative_maker_source_code_dir="$HOME/derivative-maker"
+   derivative_maker_source_code_dir="${HOME}/derivative-maker"
 else
    true "INFO: Run from: source code folder"
-   derivative_maker_source_code_dir="$(cd -- "$MYDIR" && cd -- "../../../../../" && pwd)"
+   derivative_maker_source_code_dir="$(cd -- "${MYDIR}" && cd -- "../../../../../" && pwd)"
 fi
 
 export dist_build_source_run=true
 export dist_build_one_parsed=true
-source "$derivative_maker_source_code_dir/help-steps/pre"
-source "$derivative_maker_source_code_dir/help-steps/variables"
+source "${derivative_maker_source_code_dir}/help-steps/pre"
+source "${derivative_maker_source_code_dir}/help-steps/variables"
 
 ## 'helper-scripts' resolves via HELPER_SCRIPTS_PATH (exported by help-steps/pre
 ## above) for a from-source build; empty falls back to the installed system path.
@@ -80,25 +80,25 @@ dm_virtualbox_guest_additions_iso_download() {
   test -d "${base_folder}"
 
   ## Copy the VirtualBox repository sources and key into the chroot. Fix permissions on both files.
-  $SUDO_TO_ROOT cp -- "${dist_build_sources_list_oracle}" "${base_folder}/etc/apt/sources.list.d/oracle.sources"
-  $SUDO_TO_ROOT chmod -- 644 "${base_folder}/etc/apt/sources.list.d/oracle.sources"
-  $SUDO_TO_ROOT cp -- "${derivative_maker_source_code_dir}/build_sources/oracle_vbox_2016.asc" "${base_folder}/usr/share/keyrings/oracle_vbox_2016.asc"
-  $SUDO_TO_ROOT chmod 644 -- "${base_folder}/usr/share/keyrings/oracle_vbox_2016.asc"
+  ${SUDO_TO_ROOT} cp -- "${dist_build_sources_list_oracle}" "${base_folder}/etc/apt/sources.list.d/oracle.sources"
+  ${SUDO_TO_ROOT} chmod -- 644 "${base_folder}/etc/apt/sources.list.d/oracle.sources"
+  ${SUDO_TO_ROOT} cp -- "${derivative_maker_source_code_dir}/build_sources/oracle_vbox_2016.asc" "${base_folder}/usr/share/keyrings/oracle_vbox_2016.asc"
+  ${SUDO_TO_ROOT} chmod 644 -- "${base_folder}/usr/share/keyrings/oracle_vbox_2016.asc"
 
   ## Sanity test.
-  test -n "$DIST_APTGETOPT_SERIALIZED"
-  test -n "$SUDO_TO_ROOT"
+  test -n "${DIST_APTGETOPT_SERIALIZED}"
+  test -n "${SUDO_TO_ROOT}"
 
   ## Update the apt sources within the chroot.
-  $SUDO_TO_ROOT \
+  ${SUDO_TO_ROOT} \
     ${COWBUILDER_PREFIX:-} \
       ${UNSHARE_PID_NS:-} \
       cowbuilder \
-        --architecture "$dist_build_multiarch_package_item" \
-        --configfile "$dist_build_pbuilder_config_file" \
+        --architecture "${dist_build_multiarch_package_item}" \
+        --configfile "${dist_build_pbuilder_config_file}" \
         --execute \
-        --basepath "$base_folder" \
-        --buildplace "$cow_folder" \
+        --basepath "${base_folder}" \
+        --buildplace "${cow_folder}" \
         --save-after-login \
         -- \
         /usr/bin/apt-get "${DIST_APTGETOPT[@]}" update
@@ -157,15 +157,15 @@ dm_virtualbox_guest_additions_iso_download() {
 
   true 'INFO: Remote VirtualBox version is newer than local VirtualBox Guest Additions version, downloading package...'
 
-  $SUDO_TO_ROOT \
+  ${SUDO_TO_ROOT} \
     ${COWBUILDER_PREFIX:-} \
       ${UNSHARE_PID_NS:-} \
       cowbuilder \
-        --architecture "$dist_build_multiarch_package_item" \
-        --configfile "$dist_build_pbuilder_config_file" \
+        --architecture "${dist_build_multiarch_package_item}" \
+        --configfile "${dist_build_pbuilder_config_file}" \
         --execute \
-        --basepath "$base_folder" \
-        --buildplace "$cow_folder" \
+        --basepath "${base_folder}" \
+        --buildplace "${cow_folder}" \
         --save-after-login \
         -- \
         /usr/bin/apt-get "${DIST_APTGETOPT[@]}" download -- "${vbox_apt_package}"
