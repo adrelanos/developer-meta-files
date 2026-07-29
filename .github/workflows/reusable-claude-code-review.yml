@@ -79,6 +79,32 @@
 ## 'id-token: write' is what the OIDC exchange needs - without it the
 ## action fails with "Could not fetch an OIDC token".
 ##
+## ## The "cache write denied" warning is CORRECT - do not silence it
+##
+## Every run ends with a yellow annotation:
+##
+##   Cache reservation failed: cache write denied:
+##     token has no writable scopes
+##
+## It comes from the oven-sh/setup-bun step INSIDE claude-code-action,
+## which tries to save its ~32 MB Bun download to the Actions cache.
+## The permissions block below grants no 'actions:' scope, so the save
+## is refused. Cache RESTORE is unaffected and still hits.
+##
+## Adding 'actions: write' would silence it and is the wrong fix. Per
+## agents/github-actions.md G-A-007, actions/cache extracts archives
+## without integrity checks, so a job holding a cache-writable
+## ACTIONS_RUNTIME_TOKEN can poison entries the default branch then
+## consumes. This is the one workflow that feeds untrusted PR content
+## to an agent with tool access, i.e. exactly where code execution is
+## most plausible - it is the last job in the org that should be able
+## to write the cache.
+##
+## The action exposes no input to skip its bun cache, so the warning
+## cannot be removed without either widening permissions or supplying
+## our own bun via 'path_to_bun_executable'. Neither is worth the
+## second of download it saves. Leave the warning.
+##
 ## ## The actor must hold WRITE on the consuming repository
 ##
 ## The gateway refuses the exchange for an actor without write
