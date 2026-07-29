@@ -229,8 +229,13 @@ latest_valid_snapshot() {
    local suite="$1" security_suite="$2" listing status timestamp
    local -a candidates=()
 
+   ## --max-filesize bounds a hostile or broken server streaming unbounded data into this
+   ## command substitution. 465 KB is the real payload today and it grows by one ~18-byte
+   ## entry per snapshot, so 8 MB is centuries of headroom. Caveat worth knowing: curl
+   ## enforces this up front from Content-Length, and mid-transfer for a chunked response,
+   ## so it bounds the damage rather than making it impossible.
    status=0
-   listing="$(scurl --silent --show-error --location --max-time 120 \
+   listing="$(scurl --silent --show-error --location --max-time 120 --max-filesize 8000000 \
       "${SNAPSHOT_MR}/timestamp/?archive=debian")" || status="$?"
    if [ "${status}" -ne 0 ]; then
       printf 'dm-update-frozen-snapshot: could not fetch %s/timestamp/?archive=debian (exit %s)\n' \
@@ -256,8 +261,13 @@ latest_valid_snapshot() {
          [0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]T[0-9][0-9][0-9][0-9][0-9][0-9]Z)
             ;;
          *)
+            ## The value is server-controlled and about to be printed to an operator's
+            ## terminal, so it goes through sanitize-string first: a hostile entry could
+            ## otherwise carry ANSI escapes or a U+202E right-to-left override and spoof
+            ## what the operator reads. The length cap also stops a megabyte-long "entry"
+            ## from flooding the screen.
             printf 'dm-update-frozen-snapshot: unexpected timestamp shape from the api: %s\n' \
-               "${timestamp}" >&2
+               "$(printf '%s' "${timestamp}" | sanitize-string 80)" >&2
             return 1
             ;;
       esac
@@ -303,6 +313,21 @@ update_frozen_snapshot() {
       return 1
    fi
 
+   ## ROLLBACK GUARD. Everything above this point trusts snapshot.debian.org to say which
+   ## snapshot is newest, and a pin that moves BACKWARDS is a downgrade: an older snapshot is
+   ## just as validly signed, so apt's signature check cannot notice, yet it reinstates
+   ## package versions whose vulnerabilities have since been fixed. That is the classic
+   ## rollback attack, and it is the one outcome a hostile or malfunctioning listing could
+   ## still cause after the shape checks -- those prove a timestamp is well-formed, not that
+   ## it is an advance. Time only moves forward, so refuse and let a human look.
+   ## Stripping T/Z leaves YYYYMMDDHHMMSS, which compares correctly as an integer.
+   if [ "${new_ts//[TZ]/}" -lt "${current_ts//[TZ]/}" ]; then
+      printf 'dm-update-frozen-snapshot: REFUSING to move the pin backwards: %s -> %s\n' \
+         "${current_ts}" "${new_ts}" >&2
+      printf 'dm-update-frozen-snapshot: snapshot.debian.org offered an OLDER snapshot than the current pin.\n' >&2
+      printf 'dm-update-frozen-snapshot: that is a downgrade (older but validly signed packages); investigate before pinning it.\n' >&2
+      return 1
+   fi
    if [ "${new_ts}" = "${current_ts}" ]; then
       printf 'dm-update-frozen-snapshot: already at the newest valid snapshot (%s); nothing to do.\n' "${current_ts}"
       return 0
@@ -375,6 +400,8 @@ command -v grep-dctrl >/dev/null 2>&1 \
    || { printf 'dm-update-frozen-snapshot: grep-dctrl not found; install dctrl-tools.\n' >&2; exit 2; }
 command -v scurl >/dev/null 2>&1 \
    || { printf 'dm-update-frozen-snapshot: scurl not found; helper-scripts is required.\n' >&2; exit 2; }
+command -v sanitize-string >/dev/null 2>&1 \
+   || { printf 'dm-update-frozen-snapshot: sanitize-string not found; helper-scripts is required.\n' >&2; exit 2; }
 command -v jq >/dev/null 2>&1 \
    || { printf 'dm-update-frozen-snapshot: jq not found; required to parse the snapshot.debian.org api.\n' >&2; exit 2; }
 
