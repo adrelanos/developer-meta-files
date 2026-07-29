@@ -155,7 +155,7 @@ deb822_field() {
    grep-dctrl "${select[@]}" --no-field-names --show-field="${field}" -- "${file}"
 }
 
-## True (exit 0) if snapshot ${1} serves ${archive} ${suite}'s Release with HTTP 200.
+## True (exit 0) if snapshot ${1} serves ${archive} ${suite}'s Release (HTTP 200 or 302).
 ## $1 = timestamp, $2 = archive (debian|debian-security), $3 = suite.
 snapshot_serves() {
    local timestamp="$1" archive="$2" suite="$3" code status
@@ -168,8 +168,13 @@ snapshot_serves() {
    ## freeze rather than a downgrade, but it is still silent).
    ##
    ## stderr is NOT discarded: --show-error exists to explain exactly this failure.
+   ## --location is deliberately ABSENT. scurl pins the scheme to https but not the HOST, so
+   ## following redirects would let snapshot.debian.org hand the request to any other https
+   ## server. Nothing here needs the body: an existing Release answers 302 (the redirect to
+   ## the content-addressed /file/<sha1>/ copy) and a missing one answers 404, so the status
+   ## alone decides, and the redirect is never taken.
    status=0
-   code="$(scurl --silent --show-error --location --output /dev/null \
+   code="$(scurl --silent --show-error --output /dev/null \
       --write-out '%{http_code}' --max-time 60 \
       "${SNAPSHOT_BASE}/${archive}/${timestamp}/dists/${suite}/Release")" || status="$?"
    if [ "${status}" -ne 0 ]; then
@@ -181,7 +186,7 @@ snapshot_serves() {
    ## server problem, not evidence the suite is missing -- treating it as "not served"
    ## would re-probe a rate-limited snapshot.debian.org for every candidate. Abort instead.
    case "${code}" in
-      200)
+      200|302)
          return 0
          ;;
       404)
@@ -272,7 +277,7 @@ latest_valid_snapshot() {
    ## enforces this up front from Content-Length, and mid-transfer for a chunked response,
    ## so it bounds the damage rather than making it impossible.
    status=0
-   listing="$(scurl --silent --show-error --location --max-time 120 --max-filesize 8000000 \
+   listing="$(scurl --silent --show-error --max-time 120 --max-filesize 8000000 \
       "${SNAPSHOT_MR}/timestamp/?archive=debian")" || status="$?"
    if [ "${status}" -ne 0 ]; then
       printf 'dm-update-frozen-snapshot: could not fetch %s/timestamp/?archive=debian (exit %s)\n' \
@@ -405,14 +410,28 @@ update_frozen_snapshot() {
       return 0
    fi
 
-   ## Rewrite atomically: create the temp BESIDE the target (same filesystem, so 'mv' is atomic) and
-   ## copy the target's mode first -- mktemp defaults to 0600, and a plain /tmp temp + cross-filesystem
-   ## mv would silently make the sources file 0600 (unreadable to other build accounts in a shared
-   ## checkout) and non-atomic. Replace the exact old timestamp token (it appears only in the two
-   ## frozen URIs), leaving the rest of the file untouched.
+   ## Resolve a symlink to the file it points at BEFORE writing. Shared-checkout layouts do
+   ## point build_sources/ entries at a common tree, and 'mv'ing onto a symlink replaces the
+   ## LINK with a regular file: the real sources file keeps its old pin, the build keeps using
+   ## it, and the diff looks applied. The '-r' test earlier does not catch this because a
+   ## symlink to a readable file is readable.
+   frozen_sources="$(readlink --canonicalize -- "${frozen_sources}")"
+
+   ## Rewrite as close to atomically as a shell reasonably gets: create the temp BESIDE the
+   ## target (same filesystem, so the rename is atomic in the namespace) and copy the
+   ## target's mode first -- mktemp defaults to 0600, and a plain /tmp temp + cross-filesystem
+   ## mv would silently make the sources file 0600 (unreadable to other build accounts in a
+   ## shared checkout) and non-atomic. Replace the exact old timestamp token, which the check
+   ## above proved is shared by both frozen URIs, leaving the rest of the file untouched.
+   ##
+   ## Honest limit: the rename is atomic, the DURABILITY is not. Without an fsync of the temp
+   ## before the rename, a crash in that window can leave a truncated or empty sources file on
+   ## some filesystems. 'sync' below closes that at the cost of one flush on a tool that runs
+   ## occasionally by hand.
    frozen_tmp_file="$(mktemp -- "${frozen_sources}.XXXXXX")"
    chmod --reference="${frozen_sources}" -- "${frozen_tmp_file}"
    sed "s|${current_ts}|${new_ts}|g" -- "${frozen_sources}" > "${frozen_tmp_file}"
+   sync -- "${frozen_tmp_file}"
    mv -- "${frozen_tmp_file}" "${frozen_sources}"
    ## 'mv' consumed the temp; clear the global so the EXIT cleanup is a no-op.
    frozen_tmp_file=''
