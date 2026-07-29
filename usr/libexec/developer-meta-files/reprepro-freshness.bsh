@@ -65,23 +65,46 @@ dm_source_hash_manifest_path() {
    printf '%s\n' "${binary_build_folder_dist}/packages-build-status/source-hashes.${1}.txt"
 }
 
+## Manifest lines are written by dm_source_hash_record below as '<source_pkg> <hash>', one
+## space, never any other whitespace -- so splitting on the FIRST space is exact, and both
+## helpers below compare the package with '=' rather than any pattern syntax. That exactness
+## is the point: 'grep -v -- "^${source_pkg} "' read the name as a basic regular expression,
+## where '.' matches any character, so recording a hash for 'foo.bar' silently dropped an
+## unrelated 'fooXbar' entry.
+
 ## Look up the recorded source hash for a source package (empty if none).
 dm_source_hash_lookup() {
-   local manifest="$1" source_pkg="$2"
+   local manifest="$1" source_pkg="$2" line manifest_pkg manifest_hash
    [ -f "${manifest}" ] || return 0
-   awk -v p="${source_pkg}" '$1 == p { print $2; exit }' "${manifest}"
+   ## '|| [ -n "${line}" ]' so a final line with no trailing newline is still examined.
+   while IFS= read -r line || [ -n "${line}" ]; do
+      manifest_pkg="${line%% *}"
+      if [ "${manifest_pkg}" = "${source_pkg}" ]; then
+         manifest_hash="${line#* }"
+         printf '%s\n' "${manifest_hash%% *}"
+         return 0
+      fi
+   done < "${manifest}"
+   return 0
 }
 
 ## Record/replace a source package's hash in the manifest (call after publishing).
 dm_source_hash_record() {
-   local manifest="$1" source_pkg="$2" hash="$3" tmp
+   local manifest="$1" source_pkg="$2" hash="$3" tmp line manifest_pkg
    mkdir --parents -- "$(dirname -- "${manifest}")"
    tmp="$(mktemp)"
-   ## Exact FIELD match, matching dm_source_hash_lookup above. 'grep' would read source_pkg
-   ## as a basic regular expression, where '.' is any character, so recording a hash for
-   ## 'foo.bar' silently drops an unrelated 'fooXbar' entry from the manifest.
-   { [ -f "${manifest}" ] && awk -v p="${source_pkg}" '$1 != p' "${manifest}" || true ; \
-     printf '%s %s\n' "${source_pkg}" "${hash}" ; } > "${tmp}"
+   if [ -f "${manifest}" ]; then
+      while IFS= read -r line || [ -n "${line}" ]; do
+         manifest_pkg="${line%% *}"
+         if [ "${manifest_pkg}" = "${source_pkg}" ]; then
+            continue
+         fi
+         ## Echo the line VERBATIM rather than reassembling it from fields, so an entry this
+         ## function does not own is never reformatted.
+         printf '%s\n' "${line}"
+      done < "${manifest}" > "${tmp}"
+   fi
+   printf '%s %s\n' "${source_pkg}" "${hash}" >> "${tmp}"
    mv -- "${tmp}" "${manifest}"
 }
 
