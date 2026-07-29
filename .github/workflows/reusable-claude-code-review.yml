@@ -100,10 +100,22 @@
 ## most plausible - it is the last job in the org that should be able
 ## to write the cache.
 ##
-## The action exposes no input to skip its bun cache, so the warning
-## cannot be removed without either widening permissions or supplying
-## our own bun via 'path_to_bun_executable'. Neither is worth the
-## second of download it saves. Leave the warning.
+## The action exposes no input to skip its bun cache. Setting
+## 'path_to_bun_executable' WOULD remove the warning -- it makes the
+## setup-bun step conditional-out entirely, so nothing tries to write
+## the cache -- but it was evaluated and rejected:
+##
+## - The action hardcodes 'bun-version: 1.3.14' for its own install
+##   and performs NO validation on a supplied executable. We would
+##   silently own a version-compatibility contract with the action's
+##   internals, renegotiated on every SHA bump, with nothing to detect
+##   skew: it surfaces as the agent breaking oddly, not as a clear
+##   error.
+## - We would have to fetch and pin bun ourselves, adding a
+##   supply-chain surface to maintain.
+##
+## That is a real, recurring maintenance hazard traded for a cosmetic
+## warning and a second of download. Leave the warning.
 ##
 ## ## The actor must hold WRITE on the consuming repository
 ##
