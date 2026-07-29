@@ -133,7 +133,7 @@ find_artifact() {
       printf '%s\n' "$?" > "$find_status_file"
    )
    find_status="$(cat -- "$find_status_file")"
-   rm --force -- "$find_status_file"
+   safe-rm --force -- "$find_status_file"
    if [ "$find_status" != "0" ]; then
       printf '%s\n' "${0##*/}: find failed (exit ${find_status}) under ${dir}; refusing to compare a possibly incomplete match set" >&2
       exit 2
@@ -415,6 +415,14 @@ unpack_cleanup() {
    unpack_b=""
 }
 
+## Chains both cleanups under one name. R-051 wants a trap body that is a function, not an
+## inline 'a; b' -- the same shape the unpack-only trap below already uses.
+# shellcheck disable=SC2317  # invoked only via trap, which shellcheck does not trace
+filesystem_and_unpack_cleanup() {
+   filesystem_mounts_teardown
+   unpack_cleanup
+}
+
 if [ "${target}" = "qcow2" ]; then
    unpack_a="$(mktemp --directory --tmpdir=/var/tmp)"
    unpack_b="$(mktemp --directory --tmpdir=/var/tmp)"
@@ -444,7 +452,7 @@ if [ -n "${inner_a}" ] && [ -n "${inner_b}" ]; then
    ## Release the devices and mounts even if something below dies unexpectedly; without
    ## this an aborted run leaves an attached nbd device and a mounted image behind. Chained
    ## with the unpack cleanup so registering this does not discard that one.
-   trap 'filesystem_mounts_teardown; unpack_cleanup' EXIT
+   trap filesystem_and_unpack_cleanup EXIT
    if filesystem_mounts_setup "${inner_a}" "${inner_b}"; then
       {
          printf '%s\n' "(comparing the mounted filesystems; the disk images themselves exceed diffoscope's memory)"
