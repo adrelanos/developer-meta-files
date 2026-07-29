@@ -128,8 +128,12 @@ find_artifact() {
    ## sibling as the only match and the script would silently hash the wrong image.
    local find_status_file find_status
    find_status_file="$(mktemp)"
+   ## '-H' dereferences the START POINT only. With find's default '-P' a symlinked --dir-a
+   ## is itself of type 'l', find does not descend it, and the run dies with "found 0" on a
+   ## directory that plainly holds the artifact. '-H' does NOT follow symlinks encountered
+   ## inside the tree, so it cannot wander out of the build directory.
    mapfile -t matches < <(
-      find "${dir}" -type f -name "${artifact_glob}"
+      find -H "${dir}" -type f -name "${artifact_glob}"
       printf '%s\n' "$?" > "${find_status_file}"
    )
    find_status="$(cat -- "${find_status_file}")"
@@ -138,7 +142,16 @@ find_artifact() {
       printf '%s\n' "${0##*/}: find failed (exit ${find_status}) under ${dir}; refusing to compare a possibly incomplete match set" >&2
       exit 2
    fi
-   mapfile -t matches < <(printf '%s\n' ${matches[@]+"${matches[@]}"} | LC_ALL=C sort)
+   ## Sort ONLY a non-empty set. 'printf "%s\n"' with no arguments still runs the format
+   ## once and emits a single newline, so piping an EMPTY match set through it produced an
+   ## array holding one EMPTY STRING. That reads as "exactly one match" to the guard below,
+   ## which then let a missing artifact through: found_artifact was "", sha256sum failed on
+   ## it, and errexit exited 1 -- the code the caller and the CI workflow read as "artifacts
+   ## DIFFER". A missing or unmatched artifact is a setup error (2), never a reproducibility
+   ## failure.
+   if [ "${#matches[@]}" -gt 0 ]; then
+      mapfile -t matches < <(printf '%s\n' "${matches[@]}" | LC_ALL=C sort)
+   fi
    if [ "${#matches[@]}" -ne 1 ]; then
       printf '%s\n' "${0##*/}: expected exactly one ${artifact_glob} under ${dir}, found ${#matches[@]}" >&2
       exit 2
@@ -180,10 +193,17 @@ if ! : > "${report}" 2>/dev/null; then
    exit 2
 fi
 
+## sha256sum ESCAPES its output line when the path holds a backslash or a newline: it
+## prefixes the whole line with '\' and doubles the backslashes in the name. '${sha%% *}'
+## keeps that prefix, so the hash reads '\<hex>', the two sides can never compare equal, and
+## a bit-identical pair is reported as DIFFERING. Strip the marker; '#\\' removes at most one
+## leading backslash and is a no-op for every ordinary path.
 sha_a="$(sha256sum -- "${artifact_a}")"
 sha_a="${sha_a%% *}"
+sha_a="${sha_a#\\}"
 sha_b="$(sha256sum -- "${artifact_b}")"
 sha_b="${sha_b%% *}"
+sha_b="${sha_b#\\}"
 
 {
    printf '%s\n' "reproducibility artifact comparison"
@@ -267,12 +287,35 @@ fi
 diffoscope_bounded() {
    local privilege_prefix="${3:-}"
    ## Shared bounds for both routes. Subshell so 'ulimit' does not leak to this shell.
-   ## rlimits survive the exec into sudo, so the cap still applies to diffoscope itself.
+   ## rlimits survive the exec into sudo, so the cap still applies to diffoscope itself
+   ## (verified: 'ulimit -v 8000000' then 'sudo bash -c "ulimit -v"' reports 8000000).
+   ##
+   ## ORDER IS LOAD-BEARING -- 'timeout' must run INSIDE the privilege prefix, and the
+   ## environment must be set with 'env' INSIDE it too. Both were wrong the other way round:
+   ##
+   ## - 'timeout ... sudo ... diffoscope' makes an UNPRIVILEGED timeout the parent of a ROOT
+   ##   child. sudo forwards SIGTERM, so the 900s bound appeared to work, but the
+   ##   '--kill-after' SIGKILL lands on SUDO, and this shell may not signal the root-owned
+   ##   diffoscope. A diffoscope that does not die on SIGTERM is therefore orphaned to PID 1
+   ##   still holding the mounts open, so the umount below fails with EBUSY, the nbd
+   ##   disconnect then pulls the device out from under a live mount, and the run exits
+   ##   leaking both. Later runs find no free device and silently degrade to the direct
+   ##   route -- the OOM path the mounted route exists to avoid. Verified: with the child
+   ##   ignoring SIGTERM, this shape leaves it alive and reparented to PID 1; the shape below
+   ##   reaps it.
+   ## - 'TMPDIR=/var/tmp sudo ... diffoscope' does not reach diffoscope at all: sudo's
+   ##   'env_reset' drops it (measured: the root child saw '/tmp/user/0', a tmpfs). That
+   ##   silently defeated the spill-to-real-disk mitigation on exactly the route that needs
+   ##   it. 'sudo TMPDIR=... cmd' without 'env' does not fix it either -- sudo drops the
+   ##   assignment SILENTLY rather than refusing, so it looks correct and is not.
+   ##
+   ## Unprefixed (direct route) this is plain 'env TMPDIR=... timeout ... diffoscope', which
+   ## is what the direct route already had.
    (
       ulimit -v 8000000 || true
-      TMPDIR=/var/tmp \
+      ${privilege_prefix} \
+      env TMPDIR=/var/tmp \
       timeout --kill-after=30 900 \
-         ${privilege_prefix} \
          diffoscope --text - --max-report-size 4194304 --max-diff-block-lines 512 \
          --max-diff-input-lines 100000 --max-diff-block-lines-saved 10000 \
          --exclude 'boot/initrd*' --exclude 'boot/vmlinuz*' \
@@ -387,16 +430,59 @@ filesystem_mounts_setup() {
    return 1
 }
 
+## Unmount, retrying briefly. Even with 'timeout' now on the privileged side, the SIGKILL
+## that frees the mount goes to diffoscope's process GROUP while 'timeout' waits only for its
+## direct child, so a helper diffoscope shelled out to can still hold the mount for a moment
+## after timeout returns. Non-zero means the mount is STILL held.
+mount_point_release() {
+   local mount_point="$1" attempt status=0
+   ## The EXIT trap runs this again AFTER the rmdir below, so a mount point that no longer
+   ## exists is normal and is already released -- not something to probe or warn about.
+   [ -d "${mount_point}" ] || return 0
+   mountpoint --quiet -- "${mount_point}" || status="$?"
+   ## 32 is mountpoint's "not a mountpoint": already released, which is the normal case when
+   ## setup failed between the two mounts. 0 means it IS mounted. Any other status means the
+   ## probe itself failed, and an unprovable mount must count as STILL HELD so the caller
+   ## leaves the device attached rather than disconnecting one it cannot show is idle.
+   if [ "${status}" = "32" ]; then
+      return 0
+   fi
+   if [ "${status}" != "0" ]; then
+      printf '%s\n' "${0##*/}: cannot determine whether ${mount_point} is mounted (mountpoint exit ${status})" >&2
+      return 1
+   fi
+   for attempt in $(seq 1 25); do
+      if sudo --non-interactive umount -- "${mount_point}" 2>/dev/null; then
+         return 0
+      fi
+      sleep 0.2
+   done
+   return 1
+}
+
 filesystem_mounts_teardown() {
-   sudo --non-interactive umount -- "${mount_a}" 2>/dev/null || true
-   sudo --non-interactive umount -- "${mount_b}" 2>/dev/null || true
+   local released_a="yes" released_b="yes"
+   mount_point_release "${mount_a}" || released_a="no"
+   mount_point_release "${mount_b}" || released_b="no"
+   ## Disconnect ONLY a device whose mount actually went away. 'qemu-nbd --disconnect' on a
+   ## still-mounted device rips the backing store out from under a live filesystem; leaving
+   ## the device attached is the lesser harm, and saying so is what lets the leak be found
+   ## instead of surfacing later as an unexplained "no free nbd device".
    if [ -n "${nbd_a}" ]; then
-      sudo --non-interactive qemu-nbd --disconnect "${nbd_a}" >/dev/null 2>&1 || true
-      nbd_a=""
+      if [ "${released_a}" = "yes" ]; then
+         sudo --non-interactive qemu-nbd --disconnect "${nbd_a}" >/dev/null 2>&1 || true
+         nbd_a=""
+      else
+         printf '%s\n' "${0##*/}: ${mount_a} is still mounted; leaving ${nbd_a} attached rather than disconnecting a live mount" >&2
+      fi
    fi
    if [ -n "${nbd_b}" ]; then
-      sudo --non-interactive qemu-nbd --disconnect "${nbd_b}" >/dev/null 2>&1 || true
-      nbd_b=""
+      if [ "${released_b}" = "yes" ]; then
+         sudo --non-interactive qemu-nbd --disconnect "${nbd_b}" >/dev/null 2>&1 || true
+         nbd_b=""
+      else
+         printf '%s\n' "${0##*/}: ${mount_b} is still mounted; leaving ${nbd_b} attached rather than disconnecting a live mount" >&2
+      fi
    fi
 }
 
@@ -431,8 +517,12 @@ if [ "${target}" = "qcow2" ]; then
    ## image; cleaning up only on the success path leaves that behind for the rest of the run
    ## and after it exits.
    trap unpack_cleanup EXIT
-   if tar --extract --xz --file "${artifact_a}" --directory "${unpack_a}" 2>/dev/null \
-      && tar --extract --xz --file "${artifact_b}" --directory "${unpack_b}" 2>/dev/null; then
+   ## tar's stderr goes to the REPORT, not to /dev/null. A truncated or corrupt archive is
+   ## the difference between "the filesystem route was unavailable" and "the artifact is
+   ## damaged", and discarding the message leaves the reader unable to tell which happened.
+   ## tar is silent on a clean extraction, so this adds nothing to the normal report.
+   if tar --extract --xz --file "${artifact_a}" --directory "${unpack_a}" 2>> "${report}" \
+      && tar --extract --xz --file "${artifact_b}" --directory "${unpack_b}" 2>> "${report}"; then
       mapfile -t qcow2_members_a < <(find "${unpack_a}" -type f -name '*.qcow2' | LC_ALL=C sort)
       mapfile -t qcow2_members_b < <(find "${unpack_b}" -type f -name '*.qcow2' | LC_ALL=C sort)
       ## Exactly one image per side, or fall back. A unified build ships SEVERAL qcow2
