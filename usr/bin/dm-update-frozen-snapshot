@@ -323,10 +323,12 @@ latest_valid_snapshot() {
       ## below rejects that but is one hand-written pattern, and a mistake in it would be
       ## caught by nothing else. Verified against both sets of inputs.
       ##
-      ## Their stderr is suppressed and the diagnostic re-emitted below through
-      ## sanitize-string: check_is_not_empty_and_only_one_line reports the offending value
-      ## with a plain printf, which would put server-controlled bytes on the terminal
-      ## unescaped -- the exact thing the sanitising is here to prevent.
+      ## Their stderr is suppressed and one diagnostic emitted below instead. The original
+      ## reason was that check_is_not_empty_and_only_one_line echoed the rejected value with
+      ## a plain printf; that is fixed at the source now (strings.bsh reports through stecho),
+      ## so this no longer guards a hole. It stays because the installed helper-scripts on a
+      ## given build host may predate that fix, and because one specific message about an api
+      ## entry beats two generic ones about a variable name.
       if ! check_is_not_empty_and_only_one_line timestamp 2>/dev/null \
          || ! check_is_alpha_numeric timestamp 2>/dev/null; then
          printf 'dm-update-frozen-snapshot: rejected an unsafe entry from the api: %s\n' \
