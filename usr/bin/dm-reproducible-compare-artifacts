@@ -567,7 +567,12 @@ if [ -n "${inner_a}" ] && [ -n "${inner_b}" ]; then
       if [ "${diffoscope_rc}" = "1" ]; then
          explained="yes"
       elif [ "${diffoscope_rc}" = "0" ]; then
-         printf '%s\n' "(the mounted root filesystems are IDENTICAL, so the difference is outside them -- container metadata, qcow2 header, partition table or bootloader; comparing the artifacts directly)" >> "${report}"
+         ## Do NOT claim the difference is outside the root filesystems: this route EXCLUDES
+         ## boot/vmlinuz* and boot/initrd*, and a regenerated initrd is the single most common
+         ## non-reproducible artifact there is. rc 0 cannot tell "identical" from "every
+         ## difference was excluded", so name both possibilities instead of misdirecting the
+         ## reader away from the likeliest cause.
+         printf '%s\n' "(the mounted root filesystems showed no difference outside the excluded kernel and initrd paths, so the difference is either IN those excluded files (boot/vmlinuz*, boot/initrd*) or outside the filesystems entirely -- container metadata, qcow2 header, partition table or bootloader; comparing the artifacts directly)" >> "${report}"
       else
          printf '%s\n' "(the mounted comparison failed with exit ${diffoscope_rc}; comparing the artifacts directly instead)" >> "${report}"
       fi
