@@ -44,10 +44,11 @@ here rather than duplicating.
 
 ## Tests
 
-Comprehensive suites for two tools live in the dist-ai repo, not here
-(https://github.com/org-ai-assisted/dist-ai). Run against this checkout:
+Comprehensive suites for two tools are too high-volume for human review and
+live in the AI-maintained dist-ai repo, not here
+(https://github.com/org-ai-assisted/dist-ai). Run each against this checkout:
 
-    git-meld-tests "$PWD/usr/bin/git-meld"
-    dm-virtualbox-wiki-links-tests "$PWD/usr/bin/dm-virtualbox-update-local-and-wiki-links"
+    git-meld-tests "$PWD/usr/bin/git-meld"                                                   # usr/share/git-meld-tests/
+    dm-virtualbox-wiki-links-tests "$PWD/usr/bin/dm-virtualbox-update-local-and-wiki-links"   # usr/share/dm-virtualbox-wiki-links-tests/
 
 CI wiring: see the ci (github/gh) skill.

@@ -202,15 +202,16 @@ on:
     inputs:
       ## Org-canonical reviewer roster. Single source of truth -
       ## consumer wrappers inherit this default rather than
-      ## redeclaring the list per repo. Every entry must hold write
-      ## on the consuming repo, or the OIDC token exchange 401s and
-      ## the job fails red; verify with
-      ##   GET /repos/<owner>/<repo>/collaborators/<user>/permission
-      ## before adding a name here.
+      ## redeclaring the list per repo. Every entry must hold write on
+      ## every consuming repo, or the OIDC token exchange 401s and the
+      ## job fails RED after this gate has already passed it through.
+      ## `claude-roster-verify` (dist-ai-config) checks this list
+      ## against live permissions; run it after editing the list, and
+      ## grant write before adding a name rather than after.
       allowed-users:
         required: false
         type: string
-        default: "adrelanos,assisted-by-ai"
+        default: "adrelanos,ArrayBolt3,assisted-by-ai"
       timeout-minutes:
         required: false
         type: number
