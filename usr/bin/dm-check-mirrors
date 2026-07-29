@@ -54,8 +54,9 @@ for mirror_item in ${mirror_list} ; do
 
    curl_exit_code=0
 
-   ## 2> /home/checkmirrors/stderr.txt \
-
+   ## Capture stderr too. It is the only place curl explains WHY a mirror failed
+   ## (DNS, TLS, timeout), and the report below printed an always-empty value while
+   ## the redirection sat commented out -- so a broken mirror could not be diagnosed.
    scurl \
       ${curl_built_in_args} \
       --write-out "%{speed_download}" \
@@ -64,13 +65,15 @@ for mirror_item in ${mirror_list} ; do
       --max-time 30 \
       --output /dev/null \
       1> /home/checkmirrors/stdout.txt \
+      2> /home/checkmirrors/stderr.txt \
       || { curl_exit_code=$? ; true; };
 
    stdout=$(stcat /home/checkmirrors/stdout.txt)
-   #stderr=$(stcat /home/checkmirrors/stderr.txt)
+   stderr=$(stcat /home/checkmirrors/stderr.txt)
 
+   stecho "curl_exit_code: '${curl_exit_code}'"
    stecho "stdout: '${stdout}'"
-   stecho "stderr: '${stderr:-}'"
+   stecho "stderr: '${stderr}'"
 
    ## Curl return bytes per second as per curl default.
    bytes_per_second="${stdout}"

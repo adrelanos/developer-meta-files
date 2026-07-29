@@ -173,6 +173,20 @@ main() {
    for index in "${!dist_build_files_to_upload[@]}"; do
       dist_server_with_upload_location_item="${dist_build_upload_locations[${index}]}"
       show_files "${dist_build_files_to_upload[${index}]}"
+      ## show_files() returns early with an EMPTY upload_file_list when the image path is
+      ## empty (an unset binary_image_*_file still appends an entry, keeping the parallel
+      ## arrays the same length). rsync invoked with a destination but no source files just
+      ## LISTS the remote directory and exits 0, so the build would read a silent no-op as a
+      ## successful upload.
+      if [ "${#upload_file_list[@]}" -eq 0 ]; then
+         error "${bold}${red}ERROR: no files to upload for index ${index}; the image path is empty.${reset}"
+      fi
+      ## An empty destination makes the rsync target "/${dist_build_version}/" -- an absolute
+      ## LOCAL path. rsync would then copy the images into the build host's filesystem root
+      ## instead of uploading them, and still exit 0.
+      if [ -z "${dist_server_with_upload_location_item}" ]; then
+         error "${bold}${red}ERROR: empty upload destination for index ${index}.${reset}"
+      fi
       upload_files
    done
 

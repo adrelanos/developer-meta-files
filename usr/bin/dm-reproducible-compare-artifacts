@@ -501,12 +501,30 @@ unpack_cleanup() {
    unpack_b=""
 }
 
-## Chains both cleanups under one name. R-051 wants a trap body that is a function, not an
-## inline 'a; b' -- the same shape the unpack-only trap below already uses.
+## 'rmdir', never a recursive delete -- see the note at the final rmdir below. Registered as
+## an EXIT trap the moment the directories exist, because they are created for EVERY target
+## while the traps below are installed only on the qcow2 path: an iso or virtualbox run that
+## is killed (the documented OOM case) otherwise leaks two mktemp directories every time.
+# shellcheck disable=SC2317  # invoked only via trap, which shellcheck does not trace
+mount_points_cleanup() {
+   rmdir -- "${mount_a}" "${mount_b}" 2>/dev/null || true
+}
+trap mount_points_cleanup EXIT
+
+## Chains the cleanups under one name. R-051 wants a trap body that is a function, not an
+## inline 'a; b'. Each of these REPLACES the trap above, so every one of them must also drop
+## the mount points, and must do so LAST -- rmdir cannot remove a still-mounted directory.
+# shellcheck disable=SC2317  # invoked only via trap, which shellcheck does not trace
+unpack_and_mount_points_cleanup() {
+   unpack_cleanup
+   mount_points_cleanup
+}
+
 # shellcheck disable=SC2317  # invoked only via trap, which shellcheck does not trace
 filesystem_and_unpack_cleanup() {
    filesystem_mounts_teardown
    unpack_cleanup
+   mount_points_cleanup
 }
 
 if [ "${target}" = "qcow2" ]; then
@@ -516,20 +534,37 @@ if [ "${target}" = "qcow2" ]; then
    ## and yield no qcow2, and either way these hold a partially expanded multi-gigabyte disk
    ## image; cleaning up only on the success path leaves that behind for the rest of the run
    ## and after it exits.
-   trap unpack_cleanup EXIT
+   trap unpack_and_mount_points_cleanup EXIT
    ## tar's stderr goes to the REPORT, not to /dev/null. A truncated or corrupt archive is
    ## the difference between "the filesystem route was unavailable" and "the artifact is
    ## damaged", and discarding the message leaves the reader unable to tell which happened.
    ## tar is silent on a clean extraction, so this adds nothing to the normal report.
    if tar --extract --xz --file "${artifact_a}" --directory "${unpack_a}" 2>> "${report}" \
       && tar --extract --xz --file "${artifact_b}" --directory "${unpack_b}" 2>> "${report}"; then
-      mapfile -t qcow2_members_a < <(find "${unpack_a}" -type f -name '*.qcow2' | LC_ALL=C sort)
-      mapfile -t qcow2_members_b < <(find "${unpack_b}" -type f -name '*.qcow2' | LC_ALL=C sort)
+      ## Capture find's exit status, the same guard find_artifact already carries: inside a
+      ## process substitution neither errexit nor pipefail sees it, so an unreadable
+      ## subdirectory would yield a PARTIAL member list -- and a partial list that happens to
+      ## hold exactly one qcow2 reads as success and mounts the WRONG pair. Sorting inside
+      ## the substitution keeps an empty result an empty array.
+      qcow2_status_file="$(mktemp)"
+      mapfile -t qcow2_members_a < <(
+         find "${unpack_a}" -type f -name '*.qcow2' | LC_ALL=C sort
+         printf '%s\n' "${PIPESTATUS[0]}" > "${qcow2_status_file}"
+      )
+      qcow2_status_a="$(cat -- "${qcow2_status_file}")"
+      mapfile -t qcow2_members_b < <(
+         find "${unpack_b}" -type f -name '*.qcow2' | LC_ALL=C sort
+         printf '%s\n' "${PIPESTATUS[0]}" > "${qcow2_status_file}"
+      )
+      qcow2_status_b="$(cat -- "${qcow2_status_file}")"
+      safe-rm --force -- "${qcow2_status_file}"
       ## Exactly one image per side, or fall back. A unified build ships SEVERAL qcow2
       ## members (dm-prepare-release adds both Gateway and Workstation when vm_multiple is
       ## true); taking the lexicographically first would compare one pair and silently
       ## ignore a mismatch confined to another, while still claiming the diff was explained.
-      if [ "${#qcow2_members_a[@]}" -eq 1 ] && [ "${#qcow2_members_b[@]}" -eq 1 ]; then
+      if [ "${qcow2_status_a}" != "0" ] || [ "${qcow2_status_b}" != "0" ]; then
+         printf '%s\n' "(could not reliably enumerate the archive's qcow2 members (find exited ${qcow2_status_a}/${qcow2_status_b}); comparing the artifacts directly instead)" >> "${report}"
+      elif [ "${#qcow2_members_a[@]}" -eq 1 ] && [ "${#qcow2_members_b[@]}" -eq 1 ]; then
          inner_a="${qcow2_members_a[0]}"
          inner_b="${qcow2_members_b[0]}"
       else

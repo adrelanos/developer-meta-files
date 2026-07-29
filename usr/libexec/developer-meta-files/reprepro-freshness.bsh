@@ -37,23 +37,44 @@ dm_reprepro_published_source_version() {
    )"
 
    ## reprepro reports e.g.: local|main|source: sdwdate 1.2.3-1
-   source_line="$(printf '%s\n' "${query_output}" | grep -- "source:")" || true
+   ## Match the literal '|source: ' FIELD rather than a bare 'source:' anywhere in the line,
+   ## and take the FIRST match explicitly -- reprepro prints one line per component, so a
+   ## package published in more than one yields several and the 'read' below would silently
+   ## consume only one of them regardless.
+   source_line="$(printf '%s\n' "${query_output}" | grep --fixed-strings -- "|source: " | head -n 1)" || true
    [ -n "${source_line}" ] || return 0
    read -r -a fields <<< "${source_line}"
-   printf '%s\n' "${fields[-1]}"
+   ## Expect exactly '<codename>|<component>|source:' '<pkg>' '<version>'. Taking the LAST
+   ## token blindly meant an added field in a future reprepro output format would be returned
+   ## as if it were the version, and dpkg --compare-versions would then act on garbage.
+   ## Report "not published" instead, which errs toward rebuilding.
+   [ "${#fields[@]}" -eq 3 ] || return 0
+   printf '%s\n' "${fields[2]}"
 }
 
 ## Deterministic content hash of a package source tree: every non-VCS file's path
 ## AND content. Detects an edit that did NOT bump debian/changelog, so local debug
 ## builds rebuild exactly the changed packages -- no package names, no changelog.
+## Content alone is not enough. 'find -type f' does not match SYMLINKS at all, and sha256sum
+## hashes bytes only, so retargeting a symlink or a chmod produced an IDENTICAL hash and the
+## rebuild gate skipped a package that really had changed. Three streams are folded in:
+## entry type + mode + path for every entry, symlink targets, and regular-file content.
 dm_package_source_hash() {
    local package_source_dir="$1"
-   ( cd -- "${package_source_dir}" 2>/dev/null \
-       && find . -type f -not -path './.git/*' -print0 \
-          | LC_ALL=C sort -z \
-          | xargs -0 -r sha256sum \
-          | sha256sum \
-          | cut -d ' ' -f 1 ) || printf '%s\n' "nohash"
+   ( cd -- "${package_source_dir}" 2>/dev/null || exit 1
+     {
+        ## Type, permission bits and path of EVERY entry, so a chmod, a new empty directory,
+        ## or a file replaced by a symlink all move the digest. NUL-terminated and sorted
+        ## under LC_ALL=C so the result is deterministic and safe for odd filenames.
+        find . -path './.git' -prune -o -printf '%y %m %p\0' | LC_ALL=C sort -z
+        ## Symlink TARGETS, which no amount of content hashing can see.
+        find . -path './.git' -prune -o -type l -printf '%p -> %l\0' | LC_ALL=C sort -z
+        ## Regular-file content, as before.
+        find . -path './.git' -prune -o -type f -print0 \
+           | LC_ALL=C sort -z \
+           | xargs -0 -r sha256sum
+     } | sha256sum | cut -d ' ' -f 1
+   ) || printf '%s\n' "nohash"
 }
 
 ## Per-codename source-hash manifest. Kept under binary_build_folder_dist, which
