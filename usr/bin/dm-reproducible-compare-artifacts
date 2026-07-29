@@ -212,50 +212,89 @@ fi
 ## Falls back to comparing the artifacts directly when the filesystem route is unavailable
 ## (no nbd, no root, a target that is not a disk image), so a restricted environment still
 ## gets the previous best-effort behaviour rather than no explanation at all.
+## $3 (optional) prefixes the diffoscope invocation. The MOUNTED route needs 'sudo': the
+## kernel enforces the image's own ownership on a real mount, so an unprivileged diffoscope
+## cannot read root-owned mode-0600 files -- /etc/shadow, /etc/gshadow, the ssh host keys --
+## which are exactly the files whose divergence matters most. The artifact route needs no
+## privilege: those files are owned by the invoking user.
 diffoscope_bounded() {
+   local privilege_prefix="${3:-}"
    ## Shared bounds for both routes. Subshell so 'ulimit' does not leak to this shell.
+   ## rlimits survive the exec into sudo, so the cap still applies to diffoscope itself.
    (
       ulimit -v 8000000 || true
       TMPDIR=/var/tmp \
       timeout --kill-after=30 900 \
+         ${privilege_prefix} \
          diffoscope --text - --max-report-size 4194304 --max-diff-block-lines 512 \
          --max-diff-input-lines 100000 --max-diff-block-lines-saved 10000 \
          --exclude 'boot/initrd*' --exclude 'boot/vmlinuz*' \
-         -- "$1" "$2"
+         -- "${1}" "${2}"
    )
 }
 
-## Mount both images read-only and diff the filesystems. Echoes the two mount points on
-## success; non-zero means the caller should fall back.
+## Devices this run claimed. Only these are ever disconnected: this tool also runs on a
+## developer machine (ci/reproducible-build-twice calls it), where /dev/nbd0 may already
+## hold an unrelated image -- disconnecting that would rip it out from under a live mount.
+nbd_a=""
+nbd_b=""
+
+## Claim a free nbd device. '/sys/block/<dev>/pid' exists only while a qemu-nbd is attached
+## to it, so its absence is the free test. A racing claimer just makes the connect below
+## fail, which falls back rather than stealing the device.
+nbd_device_claim() {
+   local candidate
+   for candidate in /dev/nbd* ; do
+      [ -b "${candidate}" ] || continue
+      if [ -e "/sys/block/${candidate##*/}/pid" ]; then
+         continue
+      fi
+      printf '%s\n' "${candidate}"
+      return 0
+   done
+   return 1
+}
+
+## Mount both images read-only so the filesystems can be diffed. Non-zero means the caller
+## should fall back to comparing the artifacts directly.
 filesystem_mounts_setup() {
-   local image_a="$1" image_b="$2" partition
+   local image_a="$1" image_b="$2" partition partition_b
    sudo --non-interactive modprobe nbd max_part=16 || return 1
-   sudo --non-interactive mkdir --parents -- "$mount_a" "$mount_b" || return 1
-   sudo --non-interactive qemu-nbd --read-only --connect=/dev/nbd0 -- "$image_a" || return 1
-   sudo --non-interactive qemu-nbd --read-only --connect=/dev/nbd1 -- "$image_b" || return 1
+   sudo --non-interactive mkdir --parents -- "${mount_a}" "${mount_b}" || return 1
+   nbd_a="$(nbd_device_claim)" || return 1
+   sudo --non-interactive qemu-nbd --read-only --connect="${nbd_a}" -- "${image_a}" || return 1
+   nbd_b="$(nbd_device_claim)" || return 1
+   sudo --non-interactive qemu-nbd --read-only --connect="${nbd_b}" -- "${image_b}" || return 1
    ## Give the kernel a moment to publish the partitions the new devices expose.
    sleep 2
    ## The rootfs partition is not at a fixed index across targets; take the first that
-   ## mounts and carries a root filesystem.
-   for partition in /dev/nbd0p* ; do
-      [ -b "$partition" ] || continue
-      sudo --non-interactive mount --read-only -- "$partition" "$mount_a" 2>/dev/null || continue
-      if [ -d "$mount_a/etc" ]; then
-         partition="${partition/nbd0/nbd1}"
-         if sudo --non-interactive mount --read-only -- "$partition" "$mount_b" 2>/dev/null; then
+   ## mounts and carries a root filesystem. Both images are the same target built twice, so
+   ## B's rootfs is at the same index as A's.
+   for partition in "${nbd_a}"p* ; do
+      [ -b "${partition}" ] || continue
+      sudo --non-interactive mount --read-only -- "${partition}" "${mount_a}" 2>/dev/null || continue
+      if [ -d "${mount_a}/etc" ]; then
+         partition_b="${nbd_b}p${partition##*p}"
+         if sudo --non-interactive mount --read-only -- "${partition_b}" "${mount_b}" 2>/dev/null; then
             return 0
          fi
       fi
-      sudo --non-interactive umount -- "$mount_a" 2>/dev/null || true
+      sudo --non-interactive umount -- "${mount_a}" 2>/dev/null || true
    done
    return 1
 }
 
 filesystem_mounts_teardown() {
-   sudo --non-interactive umount -- "$mount_a" 2>/dev/null || true
-   sudo --non-interactive umount -- "$mount_b" 2>/dev/null || true
-   sudo --non-interactive qemu-nbd --disconnect /dev/nbd0 >/dev/null 2>&1 || true
-   sudo --non-interactive qemu-nbd --disconnect /dev/nbd1 >/dev/null 2>&1 || true
+   sudo --non-interactive umount -- "${mount_a}" 2>/dev/null || true
+   sudo --non-interactive umount -- "${mount_b}" 2>/dev/null || true
+   if [ -n "${nbd_a}" ]; then
+      sudo --non-interactive qemu-nbd --disconnect "${nbd_a}" >/dev/null 2>&1 || true
+      nbd_a=""
+   fi
+   if [ -n "${nbd_b}" ]; then
+      sudo --non-interactive qemu-nbd --disconnect "${nbd_b}" >/dev/null 2>&1 || true
+      nbd_b=""
+   fi
 }
 
 mount_a="$(mktemp --directory)"
@@ -267,37 +306,80 @@ explained="no"
 
 ## The released qcow2 artifact is a 'tar --xz' holding the image; unpack both so the disk
 ## images themselves can be attached.
-if [ "$target" = "qcow2" ]; then
+unpack_cleanup() {
+   safe-rm --recursive --force -- "${unpack_a:-}" "${unpack_b:-}" 2>/dev/null || true
+   unpack_a=""
+   unpack_b=""
+}
+
+if [ "${target}" = "qcow2" ]; then
    unpack_a="$(mktemp --directory --tmpdir=/var/tmp)"
    unpack_b="$(mktemp --directory --tmpdir=/var/tmp)"
-   if tar --extract --xz --file "$artifact_a" --directory "$unpack_a" 2>/dev/null \
-      && tar --extract --xz --file "$artifact_b" --directory "$unpack_b" 2>/dev/null; then
-      inner_a="$(find "$unpack_a" -type f -name '*.qcow2' | LC_ALL=C sort)"
-      inner_a="${inner_a%%$'\n'*}"
-      inner_b="$(find "$unpack_b" -type f -name '*.qcow2' | LC_ALL=C sort)"
-      inner_b="${inner_b%%$'\n'*}"
+   ## Register the cleanup the moment the directories exist. Extraction can fail, or succeed
+   ## and yield no qcow2, and either way these hold a partially expanded multi-gigabyte disk
+   ## image; cleaning up only on the success path leaves that behind for the rest of the run
+   ## and after it exits.
+   trap unpack_cleanup EXIT
+   if tar --extract --xz --file "${artifact_a}" --directory "${unpack_a}" 2>/dev/null \
+      && tar --extract --xz --file "${artifact_b}" --directory "${unpack_b}" 2>/dev/null; then
+      mapfile -t qcow2_members_a < <(find "${unpack_a}" -type f -name '*.qcow2' | LC_ALL=C sort)
+      mapfile -t qcow2_members_b < <(find "${unpack_b}" -type f -name '*.qcow2' | LC_ALL=C sort)
+      ## Exactly one image per side, or fall back. A unified build ships SEVERAL qcow2
+      ## members (dm-prepare-release adds both Gateway and Workstation when vm_multiple is
+      ## true); taking the lexicographically first would compare one pair and silently
+      ## ignore a mismatch confined to another, while still claiming the diff was explained.
+      if [ "${#qcow2_members_a[@]}" -eq 1 ] && [ "${#qcow2_members_b[@]}" -eq 1 ]; then
+         inner_a="${qcow2_members_a[0]}"
+         inner_b="${qcow2_members_b[0]}"
+      else
+         printf '%s\n' "(archive holds ${#qcow2_members_a[@]} qcow2 member(s); the filesystem route handles exactly one, comparing the artifacts directly instead)" >> "${report}"
+      fi
    fi
 fi
 
-if [ -n "$inner_a" ] && [ -n "$inner_b" ]; then
-   filesystem_mounts_teardown
-   if filesystem_mounts_setup "$inner_a" "$inner_b"; then
-      printf '%s\n' "(comparing the mounted filesystems; the disk images themselves exceed diffoscope's memory)" >> "$report"
-      diffoscope_bounded "$mount_a" "$mount_b" >> "$report" 2>&1 || diffoscope_rc="$?"
-      explained="yes"
+if [ -n "${inner_a}" ] && [ -n "${inner_b}" ]; then
+   ## Release the devices and mounts even if something below dies unexpectedly; without
+   ## this an aborted run leaves an attached nbd device and a mounted image behind. Chained
+   ## with the unpack cleanup so registering this does not discard that one.
+   trap 'filesystem_mounts_teardown; unpack_cleanup' EXIT
+   if filesystem_mounts_setup "${inner_a}" "${inner_b}"; then
+      {
+         printf '%s\n' "(comparing the mounted filesystems; the disk images themselves exceed diffoscope's memory)"
+         ## The two trees are mounted from two different nbd devices, so every path diffoscope
+         ## reports also shows a 'Device:' stat difference. That is an artifact of HOW the
+         ## comparison is done, not a difference between the builds -- say so, rather than
+         ## letting a reader conclude the device number is the finding.
+         printf '%s\n' "(ignore 'Device:' lines below: the two trees are on different nbd devices, so that field always differs)"
+      } >> "${report}"
+      diffoscope_bounded "${mount_a}" "${mount_b}" "sudo --non-interactive" >> "${report}" 2>&1 \
+         || diffoscope_rc="$?"
+      ## diffoscope exits 0 when it finds NOTHING. The artifacts demonstrably differ, so an
+      ## identical pair of root filesystems means the difference lives OUTSIDE them -- tar
+      ## metadata, the qcow2 header, the partition table, the bootloader sectors, the ESP.
+      ## That is not an explanation; fall through to the direct comparison instead of
+      ## announcing one and printing nothing.
+      if [ "${diffoscope_rc}" = "0" ]; then
+         printf '%s\n' "(the mounted root filesystems are IDENTICAL, so the difference is outside them -- container metadata, qcow2 header, partition table or bootloader; comparing the artifacts directly)" >> "${report}"
+      else
+         explained="yes"
+      fi
    fi
    filesystem_mounts_teardown
-   safe-rm --recursive --force -- "${unpack_a:-}" "${unpack_b:-}" 2>/dev/null || true
+   unpack_cleanup
 fi
 
-if [ "$explained" = "no" ]; then
-   diffoscope_bounded "$artifact_a" "$artifact_b" >> "$report" 2>&1 || diffoscope_rc="$?"
+if [ "${explained}" = "no" ]; then
+   diffoscope_bounded "${artifact_a}" "${artifact_b}" >> "${report}" 2>&1 || diffoscope_rc="$?"
 fi
 
-safe-rm --recursive --force -- "$mount_a" "$mount_b" 2>/dev/null || true
+## 'rmdir', not a recursive delete: after teardown these must be EMPTY mount points, and
+## rmdir refuses a non-empty directory. A recursive delete here would descend INTO a still
+## mounted image if an unmount had failed -- survivable only because the mounts are
+## read-only, which is not a property to depend on.
+rmdir -- "${mount_a}" "${mount_b}" 2>/dev/null || true
 
-if [ "$diffoscope_rc" -gt 1 ]; then
-   printf '%s\n' "(diffoscope could not explain the diff (exit ${diffoscope_rc}); the sha256 mismatch above is the verdict)" >> "$report"
+if [ "${diffoscope_rc}" -gt 1 ]; then
+   printf '%s\n' "(diffoscope could not explain the diff (exit ${diffoscope_rc}); the sha256 mismatch above is the verdict)" >> "${report}"
 fi
 
 exit 1
