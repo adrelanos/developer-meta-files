@@ -875,6 +875,35 @@ starting with it (`/tmpfs`, `/tmp.bak`) is not matched. Comment lines
 are excluded -- prose about `/tmp` is not a path.
 
 
+**R-190: A substantial interpreter program does not belong in a
+shell heredoc.** If the embedded body is more than ~5 lines, put it
+in its own file with a shebang and call it.
+
+    ## Bad -- invisible to every tool that would check it:
+    summary="$(python3 - "${report}" <<'PY'
+    ...40 lines of parsing...
+    PY
+    )"
+
+    ## Good:
+    summary="$("${helper_dir}/report-summary.py" "${report}")"
+
+Why: this is R-100's defect in the other direction. ruff and pyrefly
+only see real `*.py` files; coverage.py cannot measure a heredoc at
+all; and no unit test can import a function that has no importable
+home, so the body can only be exercised through the whole shell tool.
+A 40-line parser embedded this way is typically the part that decides
+what the tool concludes, and it is the part with no tests.
+
+Resolve the helper RELATIVE to the calling script (prefer an in-tree
+copy, fall back to the installed path) so editing the repo takes
+effect without installing, and fail loudly when neither exists. A
+silent fallback to a stale installed copy is worse than no fallback.
+
+Short glue stays inline: a one-line `python3 -c` is not a program.
+
+Waiver: `## style-ok: allow-inline-interpreter` anywhere in the file.
+
 ## Python files
 
 **R-180: A Python file carries a shebang and is executable.**
