@@ -77,7 +77,10 @@ dm_source_hash_record() {
    local manifest="$1" source_pkg="$2" hash="$3" tmp
    mkdir --parents -- "$(dirname -- "${manifest}")"
    tmp="$(mktemp)"
-   { [ -f "${manifest}" ] && grep -v -- "^${source_pkg} " "${manifest}" || true ; \
+   ## Exact FIELD match, matching dm_source_hash_lookup above. 'grep' would read source_pkg
+   ## as a basic regular expression, where '.' is any character, so recording a hash for
+   ## 'foo.bar' silently drops an unrelated 'fooXbar' entry from the manifest.
+   { [ -f "${manifest}" ] && awk -v p="${source_pkg}" '$1 != p' "${manifest}" || true ; \
      printf '%s %s\n' "${source_pkg}" "${hash}" ; } > "${tmp}"
    mv -- "${tmp}" "${manifest}"
 }
