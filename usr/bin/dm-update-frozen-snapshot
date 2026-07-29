@@ -42,6 +42,8 @@ shopt -s shift_verbose
 ## enforces '--proto =https --tlsv1.3' and so rejects any plain-HTTP hop -- including a redirect --
 ## keeping this base URL https end to end.
 SNAPSHOT_BASE='https://snapshot.debian.org/archive'
+## The machine-readable api lives at the site root, not under /archive/.
+SNAPSHOT_MR='https://snapshot.debian.org/mr'
 
 source_root="${HOME}/derivative-maker"
 dry_run='false'
@@ -192,58 +194,73 @@ snapshot_serves_all() {
    return 0
 }
 
-## Print the canonical snapshot timestamp that ${1} resolves to in the ${2} archive.
-##
-## snapshot.debian.org accepts ANY timestamp, not only instants at which a snapshot was
-## actually taken: it 302s to the newest snapshot at or BEFORE the one asked for. Verified
-## live -- GET /archive/debian/20260715T120000Z/ answers
-## 'Location: /archive/debian/20260715T082259Z/' -- and stated on its front page ("available
-## timestamp which is before the time you specified").
-##
-## That is what makes an arbitrary pin reproducible: snapshots are immutable and only ever
-## gain LATER timestamps, so nothing can ever become a nearer preceding match for a pin
-## already written. A pinned instant resolves to the same snapshot forever.
-## $1 = timestamp to resolve, $2 = archive. Non-zero if the archive does not resolve it.
-canonical_snapshot() {
-   local timestamp="$1" archive="$2" location
-   ## --location is deliberately ABSENT: the 302 target IS the answer, so the redirect must
-   ## not be followed.
-   location="$(scurl --silent --show-error --max-time 60 --output /dev/null \
-      --write-out '%header{location}' \
-      "${SNAPSHOT_BASE}/${archive}/${timestamp}/" 2>/dev/null)" || return 1
-   ## '/archive/debian/<TS>/' -> '<TS>'. Fail rather than echo a partial match if the shape
-   ## ever changes.
-   location="${location%/}"
-   location="${location##*/}"
-   case "${location}" in
-      [0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]T[0-9][0-9][0-9][0-9][0-9][0-9]Z)
-         printf '%s\n' "${location}"
-         ;;
-      *)
-         return 1
-         ;;
-   esac
-}
+## How many of the newest snapshots to consider before giving up. A snapshot that exists but
+## does not yet serve every pinned suite (mid-sync, or a suite briefly absent) is the only
+## reason to look past the newest one, and the loop exits on the first that serves, so this
+## is a bound on a pathological case rather than a normal cost.
+SNAPSHOT_CANDIDATES=20
 
 ## Print the newest snapshot timestamp (YYYYMMDDTHHMMSSZ) that serves BOTH the primary suite
 ## (debian) and the security suite (debian-security).
 ##
-## Asks the service to resolve "now", rather than enumerating candidates. The previous
-## implementation scraped the '?year=&month=' HTML listing with a regex, sorted the extracted
-## tokens, and walked this month then last month with calendar arithmetic anchored on the
-## 15th to dodge a month-length rollover bug. All of that existed only to find a timestamp
-## that a snapshot actually exists at -- which the service does not require.
+## Candidates come from snapshot.debian.org's MACHINE-READABLE api,
+## '/mr/timestamp/?archive=debian' -- a documented JSON endpoint (added Aug 2024) that
+## returns every timestamp for one archive, oldest first. '?archive=' matters: the unfiltered
+## endpoint ships all eight archives, 1.9 MB, where one archive is 465 KB.
 ##
-## The step-back list covers the one case resolution cannot: a snapshot that exists but does
-## not yet serve every pinned suite (a mid-sync or briefly absent suite). Bounded and
-## explicit; if none of them serves, that is a real event for a human, not something to
-## retry into.
+## Deliberately NOT derived from either of the two things this replaced:
+##
+##   - the '?year=&month=' HTML listing, regex-scraped for timestamp tokens and walked with
+##     calendar arithmetic. Parsing a page meant for humans, plus a month-length rollover
+##     bug class to defend against.
+##   - the 302 that '/archive/debian/<any-timestamp>/' issues to the newest snapshot at or
+##     before that instant. It works and it is documented in prose, but it is a redirect
+##     side-effect read out of a Location header, and it computes the answer server-side
+##     where nothing local can check it.
+##
+## Reading the list and taking the newest entries makes the selection explicit and locally
+## verifiable, which is what a reproducibility pin should be. The service's own resolution is
+## still what USES the pin: any timestamp resolves to the newest snapshot at or before it, and
+## since snapshots are immutable and only ever gain later timestamps, nothing can become a
+## nearer preceding match for a pin already written. A pinned instant resolves to the same
+## snapshot forever, in each archive independently.
 ## $1 = primary suite, $2 = security suite. Non-zero if none found.
 latest_valid_snapshot() {
-   local suite="$1" security_suite="$2" offset probe_ts timestamp
-   for offset in 0 1 3 7 30; do
-      probe_ts="$(date --utc --date="-${offset} days" '+%Y%m%dT%H%M%SZ')"
-      timestamp="$(canonical_snapshot "${probe_ts}" 'debian')" || continue
+   local suite="$1" security_suite="$2" listing status timestamp
+   local -a candidates=()
+
+   status=0
+   listing="$(scurl --silent --show-error --location --max-time 120 \
+      "${SNAPSHOT_MR}/timestamp/?archive=debian")" || status="$?"
+   if [ "${status}" -ne 0 ]; then
+      printf 'dm-update-frozen-snapshot: could not fetch %s/timestamp/?archive=debian (exit %s)\n' \
+         "${SNAPSHOT_MR}" "${status}" >&2
+      return 1
+   fi
+
+   ## jq, not a regex over the response text: the point of using the machine-readable
+   ## endpoint is to parse it as the structured document it is.
+   mapfile -t candidates < <(printf '%s' "${listing}" \
+      | jq --raw-output --argjson want "${SNAPSHOT_CANDIDATES}" \
+         '.result.debian | reverse | .[0:$want] | .[]')
+
+   if [ "${#candidates[@]}" -eq 0 ]; then
+      printf 'dm-update-frozen-snapshot: no timestamps in the snapshot.debian.org listing; refusing to guess\n' >&2
+      return 1
+   fi
+
+   for timestamp in "${candidates[@]}"; do
+      ## Guard the shape before it can reach a URL. A malformed entry must fail loudly here,
+      ## not be pasted into a request or, worse, written into the pin.
+      case "${timestamp}" in
+         [0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]T[0-9][0-9][0-9][0-9][0-9][0-9]Z)
+            ;;
+         *)
+            printf 'dm-update-frozen-snapshot: unexpected timestamp shape from the api: %s\n' \
+               "${timestamp}" >&2
+            return 1
+            ;;
+      esac
       if snapshot_serves_all "${timestamp}" 'debian' "${suite}" \
          && snapshot_serves_all "${timestamp}" 'debian-security' "${security_suite}"; then
          printf '%s\n' "${timestamp}"
@@ -358,5 +375,7 @@ command -v grep-dctrl >/dev/null 2>&1 \
    || { printf 'dm-update-frozen-snapshot: grep-dctrl not found; install dctrl-tools.\n' >&2; exit 2; }
 command -v scurl >/dev/null 2>&1 \
    || { printf 'dm-update-frozen-snapshot: scurl not found; helper-scripts is required.\n' >&2; exit 2; }
+command -v jq >/dev/null 2>&1 \
+   || { printf 'dm-update-frozen-snapshot: jq not found; required to parse the snapshot.debian.org api.\n' >&2; exit 2; }
 
 update_frozen_snapshot
