@@ -16,6 +16,10 @@ set -o errtrace
 shopt -s inherit_errexit
 shopt -s shift_verbose
 
+## Both libraries resolve via their PATH variable for a from-source build; empty falls back
+## to the installed system path. Consequence worth knowing when testing a change to a lib
+## from a checkout: with the variable unset this runs the INSTALLED copy, so an edit here
+## has no effect until DEVELOPER_META_FILES_PATH points at the checkout.
 # shellcheck source=../libexec/developer-meta-files/github-org-lib.bsh
 source "${DEVELOPER_META_FILES_PATH:-}"/usr/libexec/developer-meta-files/github-org-lib.bsh
 # shellcheck source=../libexec/developer-meta-files/github-policy-lib.bsh
