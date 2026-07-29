@@ -88,8 +88,11 @@ case "$target" in
       artifact_glob="*.ova"
       ;;
    qcow2)
-      ## The qcow2 target ships the image COMPRESSED: dm-prepare-release xz-packs
-      ## the bare '.qcow2' into '<image>.qcow2.libvirt.xz' and removes the bare
+      ## The qcow2 target ships the image COMPRESSED: dm-prepare-release packs the
+      ## '.qcow2' into '<image>.qcow2.libvirt.xz' -- a 'tar --xz' archive holding the
+      ## image alongside the libvirt xml and licence files, NOT a bare xz stream
+      ## (verified by extracting a real artifact; the filesystem route below depends
+      ## on it being a tar) -- and removes the bare
       ## file, so only the '.xz' is present in the release artifact (unlike iso's
       ## bare '.iso' and virtualbox's bare '.ova'). Compare that shipped artifact;
       ## diffoscope descends into the xz to localize any inner qcow2/filesystem
@@ -150,6 +153,15 @@ fi
 ## compare would miss.
 if [ "$report" -ef "$artifact_a" ] || [ "$report" -ef "$artifact_b" ]; then
    printf '%s\n' "${0##*/}: --output would overwrite an input artifact ($report)" >&2
+   exit 2
+fi
+
+## Prove the report is writable BEFORE hashing. Otherwise the redirection below fails under
+## errexit and the script exits 1 -- which the caller and the CI workflow read as "artifacts
+## differ", turning an unwritable --output path into a false reproducibility failure. Setup
+## errors are 2.
+if ! : > "$report" 2>/dev/null; then
+   printf '%s\n' "${0##*/}: --output is not writable: $report" >&2
    exit 2
 fi
 
@@ -229,6 +241,7 @@ diffoscope_bounded() {
          diffoscope --text - --max-report-size 4194304 --max-diff-block-lines 512 \
          --max-diff-input-lines 100000 --max-diff-block-lines-saved 10000 \
          --exclude 'boot/initrd*' --exclude 'boot/vmlinuz*' \
+         --exclude 'initrd*' --exclude 'vmlinuz*' \
          -- "${1}" "${2}"
    )
 }
@@ -243,10 +256,24 @@ nbd_b=""
 ## to it, so its absence is the free test. A racing claimer just makes the connect below
 ## fail, which falls back rather than stealing the device.
 nbd_device_claim() {
-   local candidate
+   local candidate candidate_name
    for candidate in /dev/nbd* ; do
       [ -b "${candidate}" ] || continue
-      if [ -e "/sys/block/${candidate##*/}/pid" ]; then
+      candidate_name="${candidate##*/}"
+      ## Whole-disk devices only. '/dev/nbd*' also matches PARTITION nodes ('/dev/nbd0p1'),
+      ## which are block devices and whose '/sys/block/nbd0p1/pid' never exists (a partition
+      ## lives at '/sys/block/nbd0/nbd0p1'), so a partition of a BUSY device reads as free.
+      ## Verified: with nbd0 attached, the glob yields nbd0, nbd0p1, nbd1 ... and nbd0p1 was
+      ## reported free -- the connect then fails and the whole route is abandoned to the
+      ## fallback, which is the OOM path this route exists to avoid.
+      case "${candidate_name}" in
+         nbd[0-9]*p[0-9]*)
+            continue
+            ;;
+      esac
+      ## A device with no sysfs node cannot be probed for busy-ness; skip rather than guess.
+      [ -d "/sys/block/${candidate_name}" ] || continue
+      if [ -e "/sys/block/${candidate_name}/pid" ]; then
          continue
       fi
       printf '%s\n' "${candidate}"
@@ -255,27 +282,64 @@ nbd_device_claim() {
    return 1
 }
 
+## Wait for a just-attached device to publish its sysfs state and partitions. A fixed sleep
+## either wastes time or, on a loaded host, returns before the partition nodes exist -- which
+## silently loses the route.
+nbd_device_settle() {
+   local device="$1" name attempt partition
+   name="${device##*/}"
+   ## Two separate waits, because they complete at different times. '/sys/block/<dev>/pid'
+   ## appears almost immediately once qemu-nbd attaches; the PARTITION nodes are published
+   ## later, by the kernel's partition scan. Waiting only for 'pid' returns before
+   ## '<device>p*' exists, the caller's partition loop then matches nothing, and the route is
+   ## silently abandoned -- which is exactly what a fixed 'sleep 2' had been hiding.
+   for attempt in $(seq 1 50); do
+      if [ -e "/sys/block/${name}/pid" ]; then
+         break
+      fi
+      sleep 0.2
+   done
+   [ -e "/sys/block/${name}/pid" ] || return 1
+   ## Then wait for at least one partition node. Not fatal if none ever appear: an image
+   ## whose filesystem sits on the whole device has none, and the caller fails cleanly.
+   for attempt in $(seq 1 50); do
+      for partition in "${device}"p* ; do
+         if [ -b "${partition}" ]; then
+            return 0
+         fi
+      done
+      sleep 0.2
+   done
+   return 0
+}
+
 ## Mount both images read-only so the filesystems can be diffed. Non-zero means the caller
 ## should fall back to comparing the artifacts directly.
 filesystem_mounts_setup() {
    local image_a="$1" image_b="$2" partition partition_b
    sudo --non-interactive modprobe nbd max_part=16 || return 1
    sudo --non-interactive mkdir --parents -- "${mount_a}" "${mount_b}" || return 1
+   ## '--format' is pinned rather than probed. qemu-nbd runs as ROOT here, probing would let
+   ## a crafted artifact be read as a different format, and a qcow2 'backing_file' would make
+   ## root open an arbitrary host path whose contents then surface in the report. The caller
+   ## already selected this route by target, so the format is known.
    nbd_a="$(nbd_device_claim)" || return 1
-   sudo --non-interactive qemu-nbd --read-only --connect="${nbd_a}" -- "${image_a}" || return 1
+   sudo --non-interactive qemu-nbd --read-only --format=qcow2 --connect="${nbd_a}" -- "${image_a}" || return 1
+   ## Claim B only AFTER A is attached AND its sysfs 'pid' is visible, otherwise the claim
+   ## can hand back the device A just took (publication is asynchronous).
+   nbd_device_settle "${nbd_a}" || return 1
    nbd_b="$(nbd_device_claim)" || return 1
-   sudo --non-interactive qemu-nbd --read-only --connect="${nbd_b}" -- "${image_b}" || return 1
-   ## Give the kernel a moment to publish the partitions the new devices expose.
-   sleep 2
+   sudo --non-interactive qemu-nbd --read-only --format=qcow2 --connect="${nbd_b}" -- "${image_b}" || return 1
+   nbd_device_settle "${nbd_b}" || return 1
    ## The rootfs partition is not at a fixed index across targets; take the first that
    ## mounts and carries a root filesystem. Both images are the same target built twice, so
    ## B's rootfs is at the same index as A's.
    for partition in "${nbd_a}"p* ; do
       [ -b "${partition}" ] || continue
-      sudo --non-interactive mount --read-only -- "${partition}" "${mount_a}" 2>/dev/null || continue
+      sudo --non-interactive mount --read-only --options nodev,nosuid,noexec -- "${partition}" "${mount_a}" 2>/dev/null || continue
       if [ -d "${mount_a}/etc" ]; then
          partition_b="${nbd_b}p${partition##*p}"
-         if sudo --non-interactive mount --read-only -- "${partition_b}" "${mount_b}" 2>/dev/null; then
+         if sudo --non-interactive mount --read-only --options nodev,nosuid,noexec -- "${partition_b}" "${mount_b}" 2>/dev/null; then
             return 0
          fi
       fi
@@ -358,10 +422,17 @@ if [ -n "${inner_a}" ] && [ -n "${inner_b}" ]; then
       ## metadata, the qcow2 header, the partition table, the bootloader sectors, the ESP.
       ## That is not an explanation; fall through to the direct comparison instead of
       ## announcing one and printing nothing.
-      if [ "${diffoscope_rc}" = "0" ]; then
+      ## Only rc 1 -- diffoscope FOUND differences -- is an explanation. rc 0 means the root
+      ## filesystems are identical, so the difference lives outside them. Anything higher is a
+      ## crash, an OOM or a timeout. In both non-1 cases the direct comparison must still run:
+      ## treating a crash as "explained" would suppress the documented fallback and leave the
+      ## report saying only that it could not explain.
+      if [ "${diffoscope_rc}" = "1" ]; then
+         explained="yes"
+      elif [ "${diffoscope_rc}" = "0" ]; then
          printf '%s\n' "(the mounted root filesystems are IDENTICAL, so the difference is outside them -- container metadata, qcow2 header, partition table or bootloader; comparing the artifacts directly)" >> "${report}"
       else
-         explained="yes"
+         printf '%s\n' "(the mounted comparison failed with exit ${diffoscope_rc}; comparing the artifacts directly instead)" >> "${report}"
       fi
    fi
    filesystem_mounts_teardown
