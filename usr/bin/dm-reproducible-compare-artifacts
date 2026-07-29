@@ -197,16 +197,105 @@ fi
 ##   differs, and say nothing useful about the cause; and
 ## - keep the temp dir on real disk. A tmpfs $TMPDIR charges diffoscope's spill files to
 ##   RAM, which is the failure this is trying to avoid.
+## Bounding diffoscope was still not enough, and raising the bound does not help either:
+## measured on this exact pair of images, 'ulimit -v 8000000' yields MemoryError (exit 2)
+## in 53s, and REMOVING the ulimit yields SIGKILL from the kernel OOM killer (exit 137) in
+## 152s. Feeding it two 100 GB sparse disk images is simply beyond the memory available,
+## and diffoscope 306 from trixie-backports (already what the lane installs) behaves the
+## same -- the streaming fix does not cover container descent.
+##
+## What does work, same binary and same ulimit: attach each image read-only and hand
+## diffoscope the two MOUNT POINTS. Its working set then stays at one file pair at a time
+## instead of the whole container. Measured on the same images: exit 1 (differs) in 181s
+## with a report naming the exact differing file.
+##
+## Falls back to comparing the artifacts directly when the filesystem route is unavailable
+## (no nbd, no root, a target that is not a disk image), so a restricted environment still
+## gets the previous best-effort behaviour rather than no explanation at all.
+diffoscope_bounded() {
+   ## Shared bounds for both routes. Subshell so 'ulimit' does not leak to this shell.
+   (
+      ulimit -v 8000000 || true
+      TMPDIR=/var/tmp \
+      timeout --kill-after=30 900 \
+         diffoscope --text - --max-report-size 4194304 --max-diff-block-lines 512 \
+         --max-diff-input-lines 100000 --max-diff-block-lines-saved 10000 \
+         --exclude 'boot/initrd*' --exclude 'boot/vmlinuz*' \
+         -- "$1" "$2"
+   )
+}
+
+## Mount both images read-only and diff the filesystems. Echoes the two mount points on
+## success; non-zero means the caller should fall back.
+filesystem_mounts_setup() {
+   local image_a="$1" image_b="$2" partition
+   sudo --non-interactive modprobe nbd max_part=16 || return 1
+   sudo --non-interactive mkdir --parents -- "$mount_a" "$mount_b" || return 1
+   sudo --non-interactive qemu-nbd --read-only --connect=/dev/nbd0 -- "$image_a" || return 1
+   sudo --non-interactive qemu-nbd --read-only --connect=/dev/nbd1 -- "$image_b" || return 1
+   ## Give the kernel a moment to publish the partitions the new devices expose.
+   sleep 2
+   ## The rootfs partition is not at a fixed index across targets; take the first that
+   ## mounts and carries a root filesystem.
+   for partition in /dev/nbd0p* ; do
+      [ -b "$partition" ] || continue
+      sudo --non-interactive mount --read-only -- "$partition" "$mount_a" 2>/dev/null || continue
+      if [ -d "$mount_a/etc" ]; then
+         partition="${partition/nbd0/nbd1}"
+         if sudo --non-interactive mount --read-only -- "$partition" "$mount_b" 2>/dev/null; then
+            return 0
+         fi
+      fi
+      sudo --non-interactive umount -- "$mount_a" 2>/dev/null || true
+   done
+   return 1
+}
+
+filesystem_mounts_teardown() {
+   sudo --non-interactive umount -- "$mount_a" 2>/dev/null || true
+   sudo --non-interactive umount -- "$mount_b" 2>/dev/null || true
+   sudo --non-interactive qemu-nbd --disconnect /dev/nbd0 >/dev/null 2>&1 || true
+   sudo --non-interactive qemu-nbd --disconnect /dev/nbd1 >/dev/null 2>&1 || true
+}
+
+mount_a="$(mktemp --directory)"
+mount_b="$(mktemp --directory)"
+inner_a=""
+inner_b=""
 diffoscope_rc=0
-(
-   ulimit -v 8000000 || true
-   TMPDIR=/var/tmp \
-   timeout --kill-after=30 900 \
-      diffoscope --text - --max-report-size 4194304 --max-diff-block-lines 512 \
-      --max-diff-input-lines 100000 --max-diff-block-lines-saved 10000 \
-      --exclude 'boot/initrd*' --exclude 'boot/vmlinuz*' \
-      -- "$artifact_a" "$artifact_b"
-) >> "$report" 2>&1 || diffoscope_rc="$?"
+explained="no"
+
+## The released qcow2 artifact is a 'tar --xz' holding the image; unpack both so the disk
+## images themselves can be attached.
+if [ "$target" = "qcow2" ]; then
+   unpack_a="$(mktemp --directory --tmpdir=/var/tmp)"
+   unpack_b="$(mktemp --directory --tmpdir=/var/tmp)"
+   if tar --extract --xz --file "$artifact_a" --directory "$unpack_a" 2>/dev/null \
+      && tar --extract --xz --file "$artifact_b" --directory "$unpack_b" 2>/dev/null; then
+      inner_a="$(find "$unpack_a" -type f -name '*.qcow2' | LC_ALL=C sort)"
+      inner_a="${inner_a%%$'\n'*}"
+      inner_b="$(find "$unpack_b" -type f -name '*.qcow2' | LC_ALL=C sort)"
+      inner_b="${inner_b%%$'\n'*}"
+   fi
+fi
+
+if [ -n "$inner_a" ] && [ -n "$inner_b" ]; then
+   filesystem_mounts_teardown
+   if filesystem_mounts_setup "$inner_a" "$inner_b"; then
+      printf '%s\n' "(comparing the mounted filesystems; the disk images themselves exceed diffoscope's memory)" >> "$report"
+      diffoscope_bounded "$mount_a" "$mount_b" >> "$report" 2>&1 || diffoscope_rc="$?"
+      explained="yes"
+   fi
+   filesystem_mounts_teardown
+   safe-rm --recursive --force -- "${unpack_a:-}" "${unpack_b:-}" 2>/dev/null || true
+fi
+
+if [ "$explained" = "no" ]; then
+   diffoscope_bounded "$artifact_a" "$artifact_b" >> "$report" 2>&1 || diffoscope_rc="$?"
+fi
+
+safe-rm --recursive --force -- "$mount_a" "$mount_b" 2>/dev/null || true
+
 if [ "$diffoscope_rc" -gt 1 ]; then
    printf '%s\n' "(diffoscope could not explain the diff (exit ${diffoscope_rc}); the sha256 mismatch above is the verdict)" >> "$report"
 fi
