@@ -37,17 +37,17 @@ shopt -s shift_verbose
 ## cleanup path (a fixed '.XXXXXX' path beside the sources file, never user input);
 ## safe-rm is not sourced by this standalone tool.
 
-## HTTPS, not HTTP: over plain HTTP a network attacker or untrusted proxy could forge the month
-## listing and the per-snapshot Release checks, pinning an attacker-selected stale or nonexistent
-## timestamp. The downloads below go through scurl (the project's hardened curl wrapper), which
-## enforces '--proto =https --tlsv1.3' and so rejects any plain-HTTP hop -- including a redirect --
-## keeping this base URL https end to end.
 ## Generic string validators, used ALONGSIDE this tool's own exact-shape checks. Resolves via
 ## HELPER_SCRIPTS_PATH for a from-source build, else the installed path. Available wherever
 ## sanitize-string and scurl are: all three ship in helper-scripts.
 # shellcheck source=../../../helper-scripts/usr/libexec/helper-scripts/strings.bsh
 source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/strings.bsh
 
+## HTTPS, not HTTP: over plain HTTP a network attacker or untrusted proxy could forge the month
+## listing and the per-snapshot Release checks, pinning an attacker-selected stale or nonexistent
+## timestamp. The downloads below go through scurl (the project's hardened curl wrapper), which
+## enforces '--proto =https --tlsv1.3' and so rejects any plain-HTTP hop -- including a redirect --
+## keeping this base URL https end to end.
 SNAPSHOT_BASE='https://snapshot.debian.org/archive'
 ## The machine-readable api lives at the site root, not under /archive/.
 SNAPSHOT_MR='https://snapshot.debian.org/mr'
@@ -249,28 +249,18 @@ SNAPSHOT_CANDIDATES=20
 ## returns every timestamp for one archive, oldest first. '?archive=' matters: the unfiltered
 ## endpoint ships all eight archives, 1.9 MB, where one archive is 465 KB.
 ##
-## Deliberately NOT derived from either of the two things this replaced:
-##
-##   - the '?year=&month=' HTML listing, regex-scraped for timestamp tokens and walked with
-##     calendar arithmetic. Parsing a page meant for humans, plus a month-length rollover
-##     bug class to defend against.
-##   - the 302 that '/archive/debian/<any-timestamp>/' issues to the newest snapshot at or
-##     before that instant. It works and it is documented in prose, but it is a redirect
-##     side-effect read out of a Location header, and it computes the answer server-side
-##     where nothing local can check it.
-##
-## Reading the list and taking the newest entries makes the selection explicit and locally
+## Reading the list and taking the newest entries keeps the selection explicit and locally
 ## verifiable, which is what a reproducibility pin should be. The service's own resolution is
-## still what USES the pin: any timestamp resolves to the newest snapshot at or before it, and
-## since snapshots are immutable and only ever gain later timestamps, nothing can become a
-## nearer preceding match for a pin already written. A pinned instant resolves to the same
-## snapshot forever, in each archive independently.
-## Result goes into LATEST_SNAPSHOT rather than stdout, deliberately. Called as
-## '$(latest_valid_snapshot ...)' it ran in a SUBSHELL, where snapshot_serves' 'exit 2' --
-## its abort on a 429, a 5xx or a transport failure -- terminated only that subshell. The
-## caller then reported "no snapshot serving both suites found", turning a rate limit into a
-## message blaming the suites, and exited 1 instead of 2. Running in the current shell makes
-## those aborts mean what they say.
+## what USES the pin: any timestamp resolves to the newest snapshot at or before it, and since
+## snapshots are immutable and only ever gain later timestamps, nothing can become a nearer
+## preceding match for a pin already written. A pinned instant resolves to the same snapshot
+## forever, in each archive independently.
+##
+## The result goes into LATEST_SNAPSHOT rather than stdout so this runs in the CURRENT shell.
+## Under '$(latest_valid_snapshot ...)' it would run in a subshell, where snapshot_serves'
+## 'exit 2' -- its abort on a 429, a 5xx or a transport failure -- would end only that
+## subshell, and the caller would report "no snapshot serving both suites" with exit 1,
+## blaming the suites for a rate limit.
 ## $1 = primary suite, $2 = security suite. Non-zero if none found.
 LATEST_SNAPSHOT=''
 latest_valid_snapshot() {
