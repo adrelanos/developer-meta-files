@@ -873,3 +873,33 @@ non-comment line of a changed shell file. A path that merely ends in
 or in HOME (`${build_dir}/tmp`, `$(pwd)/tmp`, `~/tmp`), or a longer name
 starting with it (`/tmpfs`, `/tmp.bak`) is not matched. Comment lines
 are excluded -- prose about `/tmp` is not a path.
+
+
+## Python files
+
+**R-180: A Python file carries a shebang and is executable.**
+
+    #!/usr/bin/python3 -Bsu
+
+Both halves, for every `*.py` -- library modules included, not just the
+entry points in `usr/bin/`.
+
+Why: so a module can be run directly while debugging, instead of
+having to reconstruct an invocation for it. The mode is what makes the
+shebang mean anything; a shebang on a non-executable file is a
+statement the filesystem contradicts.
+
+Exempt: an EMPTY file. A zero-byte `__init__.py` is a package marker,
+not code, and has nothing to interpret.
+
+Caveat: a module using RELATIVE imports still cannot be run as a plain
+script -- `./mod.py` reports "attempted relative import with no known
+parent package", because a script has no package context. Use
+`python3 -m package.mod` for those. The shebang and mode are still
+required: they document the interpreter and keep the file uniform.
+
+Enforcement is split across three checks, which is why the rule is
+stated as a pair. `check-shebang-scripts-are-executable` fails a
+shebang without the mode; `check-executables-have-shebangs` fails the
+mode without a shebang; R-180 in the pre-push gate fails a file with
+NEITHER, which would otherwise slip past both.
