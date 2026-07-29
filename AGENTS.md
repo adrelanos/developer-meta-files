@@ -37,7 +37,7 @@ feedback loop.
 | Task | File |
 | --- | --- |
 | github-org-* / dm-github-* tools | [`agents/github-org-tools.md`](agents/github-org-tools.md) |
-| Canonical-vs-mirror policy split | [`agents/github-policy-canonical-vs-mirror.md`](agents/github-policy-canonical-vs-mirror.md) |
+| Org kinds and the policy each gets | [`agents/github-policy-org-kinds.md`](agents/github-policy-org-kinds.md) |
 
 Other repos (derivative-maker, helper-scripts, etc.) cross-link
 here rather than duplicating.

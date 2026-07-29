@@ -214,7 +214,7 @@ apply_repo_policy() {
    ## PERSON / BOT ruleset-rules split (required_signatures on /
    ## off respectively) and the per-kind bypass split (User actor
    ## on PERSON, '[]' on BOT) both live in agents/github-policy-
-   ## canonical-vs-mirror.md.
+   ## github-policy-org-kinds.md.
    rules_var="POLICY_RULESET_RULES_${target_kind^^}"
 
    if check_variable_name "${rules_var}"; then

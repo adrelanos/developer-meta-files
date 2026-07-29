@@ -122,7 +122,7 @@ readonly POLICY_ACTIONS_SCOPE_LABEL='actions enabled=all, allowed=selected'
 ## allowlist follow-up: allowed_actions is moot when Actions are off
 ## (and GET /selected-actions returns 409 while enabled_repositories !=
 ## "selected", which audit_org_state already tolerates). See
-## agents/github-policy-canonical-vs-mirror.md.
+## agents/github-policy-org-kinds.md.
 readonly POLICY_ACTIONS_DISABLED_ORG='{
    enabled_repositories: "none"
 }'
@@ -254,6 +254,23 @@ readonly POLICY_REPO_MIRROR_ENDPOINT='/repos/__OWNER__/__REPO__'
 readonly POLICY_REPO_MIRROR_METHOD='PATCH'
 readonly POLICY_REPO_MIRROR_LABEL='MIRROR: wiki/issues/projects/discussions off, secret-scan on'
 
+## PROJECT orgs hold first-party code that originates here, so the reasons MIRROR turns
+## things off do not apply: there is no upstream to file issues against and no canonical
+## repo already raising the alerts. Issues stay on. Wiki and discussions stay off, matching
+## SOURCE, which also keeps documentation out of the repo wiki.
+readonly POLICY_REPO_PROJECT='{
+   has_wiki: false,
+   has_issues: true,
+   has_discussions: false,
+   security_and_analysis: {
+      secret_scanning: { status: "enabled" },
+      secret_scanning_push_protection: { status: "enabled" }
+   }
+}'
+readonly POLICY_REPO_PROJECT_ENDPOINT='/repos/__OWNER__/__REPO__'
+readonly POLICY_REPO_PROJECT_METHOD='PATCH'
+readonly POLICY_REPO_PROJECT_LABEL='PROJECT: wiki/discussions off, issues on, secret-scan on'
+
 ## SOURCE-only. MIRROR running these would duplicate every alert the
 ## canonical SOURCE repo already raises.
 ##
@@ -297,7 +314,7 @@ readonly POLICY_USER_EMAIL_PRIVATE_LABEL='hide primary email from public profile
 ## features OFF. dm-github-org-policy fans these out on kind=='mirror'
 ## so every --apply reconciles the state.
 ##
-## G-035: see agents/github-policy-canonical-vs-mirror.md.
+## G-035: see agents/github-policy-org-kinds.md.
 
 readonly POLICY_REPO_DEPENDABOT_ALERTS_OFF='{}'
 readonly POLICY_REPO_DEPENDABOT_ALERTS_OFF_ENDPOINT='/repos/__OWNER__/__REPO__/vulnerability-alerts'
@@ -315,6 +332,13 @@ readonly POLICY_REPO_PVR_OFF='{}'
 readonly POLICY_REPO_PVR_OFF_ENDPOINT='/repos/__OWNER__/__REPO__/private-vulnerability-reporting'
 readonly POLICY_REPO_PVR_OFF_METHOD='DELETE'
 readonly POLICY_REPO_PVR_OFF_LABEL='disable private vulnerability reporting'
+
+## PROJECT orgs publish code nobody else maintains, so a researcher has no upstream to
+## report to privately. The OFF variant above stays correct for SOURCE and MIRROR.
+readonly POLICY_REPO_PVR_ON='{}'
+readonly POLICY_REPO_PVR_ON_ENDPOINT='/repos/__OWNER__/__REPO__/private-vulnerability-reporting'
+readonly POLICY_REPO_PVR_ON_METHOD='PUT'
+readonly POLICY_REPO_PVR_ON_LABEL='enable private vulnerability reporting'
 
 ## Branch + tag ruleset bypass actor list.
 ##
@@ -357,6 +381,7 @@ readonly POLICY_REPO_PVR_OFF_LABEL='disable private vulnerability reporting'
 ## consumes these.
 readonly POLICY_RULESET_BYPASS_SOURCE='[{"actor_id":1,"actor_type":"OrganizationAdmin","bypass_mode":"always"}]'
 readonly POLICY_RULESET_BYPASS_MIRROR='[{"actor_id":1,"actor_type":"OrganizationAdmin","bypass_mode":"always"}]'
+readonly POLICY_RULESET_BYPASS_PROJECT='[{"actor_id":1,"actor_type":"OrganizationAdmin","bypass_mode":"always"}]'
 
 ## Branch + tag ruleset body shapes. POSTed to
 ## /orgs/{org}/rulesets or /repos/{owner}/{repo}/rulesets via the
@@ -419,6 +444,12 @@ readonly POLICY_RULESET_RULES_SOURCE='[
    {"type": "required_signatures"}
 ]'
 readonly POLICY_RULESET_RULES_MIRROR='[
+   {"type": "deletion"},
+   {"type": "non_fast_forward"}
+]'
+## Same rules as MIRROR: signed commits are not required, because a PROJECT org is where
+## the bot authors code directly and its commits are unsigned.
+readonly POLICY_RULESET_RULES_PROJECT='[
    {"type": "deletion"},
    {"type": "non_fast_forward"}
 ]'
@@ -604,7 +635,7 @@ readonly POLICY_REPO_TOPICS_LABEL='topics'
 ## its own `queries:` value and ignores the org default-setup
 ## recommendation.
 ##
-## See agents/github-policy-canonical-vs-mirror.md "SOURCE-side
+## See agents/github-policy-org-kinds.md "SOURCE-side
 ## UI-only operator flips" for the per-setting rationale.
 
 readonly POLICY_GROUPED_SECURITY_UPDATES_LABEL='Dependabot grouped security updates: enable in UI (one PR per ecosystem instead of one per dep)'
