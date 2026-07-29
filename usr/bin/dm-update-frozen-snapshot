@@ -31,7 +31,8 @@ set -o errtrace
 shopt -s inherit_errexit
 shopt -s shift_verbose
 
-## style-ok: no-has -- standalone operator tool; does not source derivative-maker helper-scripts.
+## style-ok: no-has -- operator tool; sources only strings.bsh from helper-scripts (below),
+## not the derivative-maker help-steps stack, so 'has' is not available here.
 ## style-ok: no-safe-rm -- the only removal is the mktemp'd rewrite temp on the EXIT
 ## cleanup path (a fixed '.XXXXXX' path beside the sources file, never user input);
 ## safe-rm is not sourced by this standalone tool.
@@ -41,6 +42,12 @@ shopt -s shift_verbose
 ## timestamp. The downloads below go through scurl (the project's hardened curl wrapper), which
 ## enforces '--proto =https --tlsv1.3' and so rejects any plain-HTTP hop -- including a redirect --
 ## keeping this base URL https end to end.
+## Generic string validators, used ALONGSIDE this tool's own exact-shape checks. Resolves via
+## HELPER_SCRIPTS_PATH for a from-source build, else the installed path. Available wherever
+## sanitize-string and scurl are: all three ship in helper-scripts.
+# shellcheck source=../../../helper-scripts/usr/libexec/helper-scripts/strings.bsh
+source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/strings.bsh
+
 SNAPSHOT_BASE='https://snapshot.debian.org/archive'
 ## The machine-readable api lives at the site root, not under /archive/.
 SNAPSHOT_MR='https://snapshot.debian.org/mr'
@@ -309,8 +316,26 @@ latest_valid_snapshot() {
    fi
 
    for timestamp in "${candidates[@]}"; do
-      ## Guard the shape before it can reach a URL. A malformed entry must fail loudly here,
-      ## not be pasted into a request or, worse, written into the pin.
+      ## TWO independent gates on every server-supplied entry, because neither subsumes the
+      ## other. strings.bsh rejects the injection classes -- empty, multi-line, path
+      ## traversal, command substitution, shell metacharacters, ANSI escapes -- but accepts
+      ## anything alphanumeric, so 'not-a-timestamp' sails through it. The exact-shape case
+      ## below rejects that but is one hand-written pattern, and a mistake in it would be
+      ## caught by nothing else. Verified against both sets of inputs.
+      ##
+      ## Their stderr is suppressed and the diagnostic re-emitted below through
+      ## sanitize-string: check_is_not_empty_and_only_one_line reports the offending value
+      ## with a plain printf, which would put server-controlled bytes on the terminal
+      ## unescaped -- the exact thing the sanitising is here to prevent.
+      if ! check_is_not_empty_and_only_one_line timestamp 2>/dev/null \
+         || ! check_is_alpha_numeric timestamp 2>/dev/null; then
+         printf 'dm-update-frozen-snapshot: rejected an unsafe entry from the api: %s\n' \
+            "$(printf '%s' "${timestamp}" | sanitize-string 80)" >&2
+         return 1
+      fi
+
+      ## Guard the exact shape before it can reach a URL. A malformed entry must fail loudly
+      ## here, not be pasted into a request or, worse, written into the pin.
       case "${timestamp}" in
          [0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]T[0-9][0-9][0-9][0-9][0-9][0-9]Z)
             ;;
