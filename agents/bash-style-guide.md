@@ -807,3 +807,69 @@ selected, the exit status is 0 even if an error occurred." Silencing
 errors is not acceptable. To silence grep's *output* (but not exit
 code), append `>/dev/null 2>&1` to the end of the grep command. To
 prevent grep from looking for more than one match, use `--max-count=1`.
+
+
+## Temporary files
+
+**R-170: Never hardcode `/tmp`. Initialise `TMP` once, then use
+`"${TMP}/..."`.**
+
+`libpam-tmpdir` gives every login session a private, mode-0700 temp
+directory (`/tmp/user/<uid>`) and exports it as all four of `TMP`,
+`TMPDIR`, `TEMP` and `TEMPDIR`. A path that names `/tmp` directly opts
+out of that and writes into the world-writable root instead.
+
+Set it at the top, with the other variable initialisations:
+
+    [ -v TMP ] || TMP=/tmp
+
+Then at every use site:
+
+    work_dir="$(mktemp --directory -- "${TMP}/myscript.XXXXXX")"
+    log_file="${TMP}/myscript.log"
+
+Bad -- the fallback repeated inline at each use site:
+
+    work_dir="$(mktemp --directory -- "${TMPDIR:-/tmp}/myscript.XXXXXX")"
+
+Why: one initialisation is one place to audit and one place to change;
+the inline form restates the `/tmp` default at every call, so a script
+with six temp paths has six chances to disagree with itself. It is also
+the same set-at-source discipline R-021 applies to every other variable,
+rather than a `${var:-default}` guard per reference.
+
+`mktemp` already honours `TMPDIR`, so keep using it -- it needs no
+`/tmp` of its own.
+
+**The four temp-dir variable initialisations are the only place the
+literal belongs.** All of these are correct and are not violations:
+
+    [ -v TMP ] || TMP=/tmp
+    export TMPDIR=/tmp
+    readonly TEMP="/tmp"
+    bw+=(--setenv TMPDIR /tmp)          # bwrap namespace construction
+
+**R-171: To use `/tmp` for anything else, waive the rule explicitly.**
+Put `## style-ok: no-tmp-hardcode` anywhere in the script; the pre-push
+gate then skips R-170 for that file (same mechanism as R-120's
+`## style-ok: no-safe-rm`).
+
+Reserve it for paths that are not redirectable temp paths at all:
+
+- `/tmp/.X11-unix` and `/tmp/.X<n>-lock` -- fixed by the X11 protocol;
+  libX11 looks there and nowhere else, so it cannot follow `TMPDIR`.
+- Namespace construction (`bwrap --tmpfs /tmp`): the private tmpfs has
+  no per-user subdirectory, so `/tmp` is the only path that exists
+  inside it.
+- Administering the `/tmp` mount itself (`mount -o remount ... /tmp`) --
+  that is the backing filesystem, not a path a variable could point
+  elsewhere.
+
+Not waiver material: a temp file that simply predates the rule.
+
+Enforcement: the pre-push gate flags `/tmp` as an absolute path on a
+non-comment line of a changed shell file. A path that merely ends in
+`/tmp` (`debian/tmp`, `/var/tmp`, `./tmp`), one rooted in an expansion
+or in HOME (`${build_dir}/tmp`, `$(pwd)/tmp`, `~/tmp`), or a longer name
+starting with it (`/tmpfs`, `/tmp.bak`) is not matched. Comment lines
+are excluded -- prose about `/tmp` is not a path.
