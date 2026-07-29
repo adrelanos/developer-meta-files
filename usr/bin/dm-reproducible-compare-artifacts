@@ -123,7 +123,22 @@ find_artifact() {
       printf '%s\n' "${0##*/}: no such directory: $dir" >&2
       exit 2
    fi
-   mapfile -t matches < <(find "$dir" -type f -name "$artifact_glob" | LC_ALL=C sort)
+   ## Capture find's exit status. Inside a process substitution neither errexit nor pipefail
+   ## sees it, so an unreadable subdirectory holding the REAL artifact would leave a stale
+   ## sibling as the only match and the script would silently hash the wrong image.
+   local find_status_file find_status
+   find_status_file="$(mktemp)"
+   mapfile -t matches < <(
+      find "$dir" -type f -name "$artifact_glob"
+      printf '%s\n' "$?" > "$find_status_file"
+   )
+   find_status="$(cat -- "$find_status_file")"
+   rm --force -- "$find_status_file"
+   if [ "$find_status" != "0" ]; then
+      printf '%s\n' "${0##*/}: find failed (exit ${find_status}) under ${dir}; refusing to compare a possibly incomplete match set" >&2
+      exit 2
+   fi
+   mapfile -t matches < <(printf '%s\n' ${matches[@]+"${matches[@]}"} | LC_ALL=C sort)
    if [ "${#matches[@]}" -ne 1 ]; then
       printf '%s\n' "${0##*/}: expected exactly one ${artifact_glob} under ${dir}, found ${#matches[@]}" >&2
       exit 2
@@ -180,7 +195,12 @@ sha_b="${sha_b%% *}"
 } > "$report"
 
 if [ "$sha_a" = "$sha_b" ]; then
-   printf '%s\n' "RESULT: identical (reproducible)" | tee --append -- "$report"
+   ## Not 'printf | tee': under errexit+pipefail a failed tee (full filesystem, closed
+   ## stdout) exits non-zero BEFORE the 'exit 0' below, and the caller reads that as
+   ## "artifacts differ" for a bit-identical pair. Append and echo separately, and let
+   ## neither failure change the verdict -- the hashes already decided it.
+   printf '%s\n' "RESULT: identical (reproducible)" >> "$report" || true
+   printf '%s\n' "RESULT: identical (reproducible)" || true
    exit 0
 fi
 
@@ -224,6 +244,21 @@ fi
 ## Falls back to comparing the artifacts directly when the filesystem route is unavailable
 ## (no nbd, no root, a target that is not a disk image), so a restricted environment still
 ## gets the previous best-effort behaviour rather than no explanation at all.
+## TRUST MODEL -- read before changing the mounted route.
+##
+## This route hands the artifact to root-privileged parsers: qemu-nbd parses the qcow2
+## header as root, mount hands the filesystem superblock to the HOST KERNEL driver as root,
+## and diffoscope then fans out to dozens of format parsers as root. 'nodev,nosuid,noexec'
+## bound what the MOUNTED TREE can do; they do nothing about bugs in the parsers themselves,
+## and '--format=qcow2' does not stop a qcow2 backing_file reaching an arbitrary host path.
+##
+## That is acceptable ONLY while both artifacts are locally built and therefore trusted,
+## which is the case for the local-build CI lane and ci/reproducible-build-twice. It is NOT
+## acceptable for a THIRD-PARTY artifact -- the dm-reproducible-verify flow downloads one
+## side. Do not extend this route to a downloaded image without moving the parsing off the
+## host: libguestfs/guestfish runs the same inspection inside a disposable VM with no host
+## root, which also removes the sudo below and the unkillable-privileged-child problem.
+##
 ## $3 (optional) prefixes the diffoscope invocation. The MOUNTED route needs 'sudo': the
 ## kernel enforces the image's own ownership on a real mount, so an unprivileged diffoscope
 ## cannot read root-owned mode-0600 files -- /etc/shadow, /etc/gshadow, the ssh host keys --
@@ -319,10 +354,14 @@ filesystem_mounts_setup() {
    local image_a="$1" image_b="$2" partition partition_b
    sudo --non-interactive modprobe nbd max_part=16 || return 1
    sudo --non-interactive mkdir --parents -- "${mount_a}" "${mount_b}" || return 1
-   ## '--format' is pinned rather than probed. qemu-nbd runs as ROOT here, probing would let
-   ## a crafted artifact be read as a different format, and a qcow2 'backing_file' would make
-   ## root open an arbitrary host path whose contents then surface in the report. The caller
-   ## already selected this route by target, so the format is known.
+   ## '--format' is pinned rather than probed, which removes raw/qcow2 format CONFUSION on a
+   ## crafted artifact. It does NOT make this route safe against a hostile image, and an
+   ## earlier version of this comment wrongly claimed it did: '--format' pins only the
+   ## TOP-LEVEL driver, while the qcow2 driver still honours the 'backing_file' header and
+   ## its format extension, and backing names go through bdrv_open -- so 'json:{...}' and
+   ## protocol URLs are still accepted. A crafted qcow2 with an unallocated cluster layout
+   ## and 'backing_file=/etc/shadow' would surface host bytes through the mount and into the
+   ## report. See the trust-model note at the top of this route.
    nbd_a="$(nbd_device_claim)" || return 1
    sudo --non-interactive qemu-nbd --read-only --format=qcow2 --connect="${nbd_a}" -- "${image_a}" || return 1
    ## Claim B only AFTER A is attached AND its sysfs 'pid' is visible, otherwise the claim
@@ -440,7 +479,16 @@ if [ -n "${inner_a}" ] && [ -n "${inner_b}" ]; then
 fi
 
 if [ "${explained}" = "no" ]; then
+   ## Reset first. 'diffoscope_rc' is only ASSIGNED on failure, so a value left over from a
+   ## failed mounted route would survive a SUCCESSFUL direct comparison and make the verdict
+   ## below claim the diff could not be explained when it just was.
+   diffoscope_rc=0
    diffoscope_bounded "${artifact_a}" "${artifact_b}" >> "${report}" 2>&1 || diffoscope_rc="$?"
+   ## diffoscope exits 0 when it finds nothing. Reaching here means the artifacts differ, so
+   ## say why that is not a contradiction rather than leaving a diff-less report unexplained.
+   if [ "${diffoscope_rc}" = "0" ]; then
+      printf '%s\n' "(diffoscope reported no differences; the mismatch is in bytes it does not descend into, or in a path excluded above)" >> "${report}"
+   fi
 fi
 
 ## 'rmdir', not a recursive delete: after teardown these must be EMPTY mount points, and
