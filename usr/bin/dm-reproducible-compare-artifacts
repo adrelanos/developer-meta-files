@@ -76,11 +76,11 @@ while [ "$#" -gt 0 ]; do
    esac
 done
 
-if [ -z "$target" ] || [ -z "$dir_a" ] || [ -z "$dir_b" ] || [ -z "$report" ]; then
+if [ -z "${target}" ] || [ -z "${dir_a}" ] || [ -z "${dir_b}" ] || [ -z "${report}" ]; then
    usage
 fi
 
-case "$target" in
+case "${target}" in
    iso)
       artifact_glob="*.iso"
       ;;
@@ -101,7 +101,7 @@ case "$target" in
       artifact_glob="*.qcow2.libvirt.xz"
       ;;
    *)
-      printf '%s\n' "${0##*/}: unknown target: $target (want iso|virtualbox|qcow2)" >&2
+      printf '%s\n' "${0##*/}: unknown target: ${target} (want iso|virtualbox|qcow2)" >&2
       usage
       ;;
 esac
@@ -118,9 +118,9 @@ find_artifact() {
    local -a matches=()
    ## A directory whose name starts with '-' would be read by find(1) as an option
    ## or expression; prefix './' so it is unambiguously a path operand.
-   [ "${dir#-}" = "$dir" ] || dir="./$dir"
-   if [ ! -d "$dir" ]; then
-      printf '%s\n' "${0##*/}: no such directory: $dir" >&2
+   [ "${dir#-}" = "${dir}" ] || dir="./${dir}"
+   if [ ! -d "${dir}" ]; then
+      printf '%s\n' "${0##*/}: no such directory: ${dir}" >&2
       exit 2
    fi
    ## Capture find's exit status. Inside a process substitution neither errexit nor pipefail
@@ -129,12 +129,12 @@ find_artifact() {
    local find_status_file find_status
    find_status_file="$(mktemp)"
    mapfile -t matches < <(
-      find "$dir" -type f -name "$artifact_glob"
-      printf '%s\n' "$?" > "$find_status_file"
+      find "${dir}" -type f -name "${artifact_glob}"
+      printf '%s\n' "$?" > "${find_status_file}"
    )
-   find_status="$(cat -- "$find_status_file")"
-   safe-rm --force -- "$find_status_file"
-   if [ "$find_status" != "0" ]; then
+   find_status="$(cat -- "${find_status_file}")"
+   safe-rm --force -- "${find_status_file}"
+   if [ "${find_status}" != "0" ]; then
       printf '%s\n' "${0##*/}: find failed (exit ${find_status}) under ${dir}; refusing to compare a possibly incomplete match set" >&2
       exit 2
    fi
@@ -146,18 +146,18 @@ find_artifact() {
    found_artifact="${matches[0]}"
 }
 
-find_artifact "$dir_a"
-artifact_a="$found_artifact"
-find_artifact "$dir_b"
-artifact_b="$found_artifact"
+find_artifact "${dir_a}"
+artifact_a="${found_artifact}"
+find_artifact "${dir_b}"
+artifact_b="${found_artifact}"
 
 ## Reject a setup where both sides are the SAME file: hashing one image twice is
 ## trivially "identical" and would mask a misconfigured comparison (e.g. --dir-a
 ## and --dir-b naming the same directory) as a genuine reproducibility pass. Use
 ## '-ef' (same device + inode), which also catches hard links and bind mounts that
 ## a canonical-path string compare would miss. Setup error, not a diff result.
-if [ "$artifact_a" -ef "$artifact_b" ]; then
-   printf '%s\n' "${0##*/}: A and B are the same file ($artifact_a); need two independent builds" >&2
+if [ "${artifact_a}" -ef "${artifact_b}" ]; then
+   printf '%s\n' "${0##*/}: A and B are the same file (${artifact_a}); need two independent builds" >&2
    exit 2
 fi
 
@@ -166,8 +166,8 @@ fi
 ## make the two sides falsely compare equal. '-ef' is false when $report does not
 ## exist yet (nothing to clobber) and catches a hard-linked alias that a pathname
 ## compare would miss.
-if [ "$report" -ef "$artifact_a" ] || [ "$report" -ef "$artifact_b" ]; then
-   printf '%s\n' "${0##*/}: --output would overwrite an input artifact ($report)" >&2
+if [ "${report}" -ef "${artifact_a}" ] || [ "${report}" -ef "${artifact_b}" ]; then
+   printf '%s\n' "${0##*/}: --output would overwrite an input artifact (${report})" >&2
    exit 2
 fi
 
@@ -175,31 +175,31 @@ fi
 ## errexit and the script exits 1 -- which the caller and the CI workflow read as "artifacts
 ## differ", turning an unwritable --output path into a false reproducibility failure. Setup
 ## errors are 2.
-if ! : > "$report" 2>/dev/null; then
-   printf '%s\n' "${0##*/}: --output is not writable: $report" >&2
+if ! : > "${report}" 2>/dev/null; then
+   printf '%s\n' "${0##*/}: --output is not writable: ${report}" >&2
    exit 2
 fi
 
-sha_a="$(sha256sum -- "$artifact_a")"
+sha_a="$(sha256sum -- "${artifact_a}")"
 sha_a="${sha_a%% *}"
-sha_b="$(sha256sum -- "$artifact_b")"
+sha_b="$(sha256sum -- "${artifact_b}")"
 sha_b="${sha_b%% *}"
 
 {
    printf '%s\n' "reproducibility artifact comparison"
-   printf '  target: %s\n' "$target"
-   printf '  A: %s\n' "$artifact_a"
-   printf '     sha256 %s\n' "$sha_a"
-   printf '  B: %s\n' "$artifact_b"
-   printf '     sha256 %s\n' "$sha_b"
-} > "$report"
+   printf '  target: %s\n' "${target}"
+   printf '  A: %s\n' "${artifact_a}"
+   printf '     sha256 %s\n' "${sha_a}"
+   printf '  B: %s\n' "${artifact_b}"
+   printf '     sha256 %s\n' "${sha_b}"
+} > "${report}"
 
-if [ "$sha_a" = "$sha_b" ]; then
+if [ "${sha_a}" = "${sha_b}" ]; then
    ## Not 'printf | tee': under errexit+pipefail a failed tee (full filesystem, closed
    ## stdout) exits non-zero BEFORE the 'exit 0' below, and the caller reads that as
    ## "artifacts differ" for a bit-identical pair. Append and echo separately, and let
    ## neither failure change the verdict -- the hashes already decided it.
-   printf '%s\n' "RESULT: identical (reproducible)" >> "$report" || true
+   printf '%s\n' "RESULT: identical (reproducible)" >> "${report}" || true
    printf '%s\n' "RESULT: identical (reproducible)" || true
    exit 0
 fi
@@ -207,7 +207,7 @@ fi
 {
    printf '%s\n' "RESULT: artifacts DIFFER (not bit-reproducible)"
    printf '%s\n' "diffoscope explanation follows (best-effort; may be truncated or skipped):"
-} | tee --append -- "$report"
+} | tee --append -- "${report}"
 
 ## Explain the mismatch. diffoscope is heavy: decompressing two multi-GB images
 ## can exhaust the runner's RAM and get the whole job OOM/SIGTERM-killed (observed
