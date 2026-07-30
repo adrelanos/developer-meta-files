@@ -57,12 +57,12 @@ dry_run='false'
 
 ## Files carrying the pin as a literal timestamp, rewritten together, relative to
 ## --source-root. The FIRST is authoritative: the current pin is read from it and every other
-## must already agree before anything is written. The others are optional -- a tree without
-## the docker apt config is still valid -- but strict when present, because a pin file left
-## behind on an old snapshot is the failure this list exists to prevent.
+## must already agree before anything is written. The rest are optional when absent -- an
+## older tree may not carry them -- but strict when present, because a pin file left behind on
+## an old snapshot is the failure this list exists to prevent.
 PIN_FILES=(
    'build_sources/debian_stable_frozen_clearnet.sources'
-   'docker/apt/debian.sources'
+   'build_sources/debian_stable_frozen_direct_clearnet.sources'
 )
 
 ## Plain one-line copy of the pin. Consumers 'cat' this instead of parsing a URI path segment
