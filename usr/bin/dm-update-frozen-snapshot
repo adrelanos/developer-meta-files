@@ -241,13 +241,29 @@ snapshot_serves_all() {
 ## is a bound on a pathological case rather than a normal cost.
 SNAPSHOT_CANDIDATES=20
 
+## Archives whose timestamp listings are MERGED into one candidate set. A snapshot exists in
+## exactly the archives that were synced at that instant, so a security-only push yields a
+## timestamp present in 'debian-security' and absent from 'debian'. Drawing candidates from the
+## main archive alone makes such a snapshot unreachable -- and that is precisely the snapshot a
+## DSA needs, so the tool would propose a pin predating the fix and report success. DSA-6404-1
+## (expat, 30 Jul 2026) is that case: the newest common timestamp carried no fixed expat at all,
+## so the bump would have been a silent no-op.
+##
+## Merging is sound because the service resolves a pin per archive INDEPENDENTLY, to the newest
+## snapshot at or before it: a security-only timestamp resolves to itself in 'debian-security'
+## and to the preceding snapshot in 'debian'. snapshot_serves_all still proves every pinned suite
+## is served in BOTH archives before a timestamp can win, so widening the candidate set cannot
+## weaken the check that follows it.
+SNAPSHOT_ARCHIVES=( 'debian' 'debian-security' )
+
 ## Print the newest snapshot timestamp (YYYYMMDDTHHMMSSZ) that serves BOTH the primary suite
 ## (debian) and the security suite (debian-security).
 ##
 ## Candidates come from snapshot.debian.org's MACHINE-READABLE api,
-## '/mr/timestamp/?archive=debian' -- a documented JSON endpoint (added Aug 2024) that
+## '/mr/timestamp/?archive=<archive>' -- a documented JSON endpoint (added Aug 2024) that
 ## returns every timestamp for one archive, oldest first. '?archive=' matters: the unfiltered
-## endpoint ships all eight archives, 1.9 MB, where one archive is 465 KB.
+## endpoint ships all eight archives, 1.9 MB, where one archive is 465 KB. Every archive in
+## SNAPSHOT_ARCHIVES is queried and the results merged (see there for why).
 ##
 ## Reading the list and taking the newest entries keeps the selection explicit and locally
 ## verifiable, which is what a reproducibility pin should be. The service's own resolution is
@@ -264,41 +280,74 @@ SNAPSHOT_CANDIDATES=20
 ## $1 = primary suite, $2 = security suite. Non-zero if none found.
 LATEST_SNAPSHOT=''
 latest_valid_snapshot() {
-   local suite="$1" security_suite="$2" listing status timestamp
-   local -a candidates=()
+   local suite="$1" security_suite="$2" listing status timestamp archive extracted
+   local -a candidates=() merged=() chunk=()
    LATEST_SNAPSHOT=''
 
-   ## --max-filesize bounds a hostile or broken server streaming unbounded data into this
-   ## command substitution. 465 KB is the real payload today and it grows by one ~18-byte
-   ## entry per snapshot, so 8 MB is centuries of headroom. Caveat worth knowing: curl
-   ## enforces this up front from Content-Length, and mid-transfer for a chunked response,
-   ## so it bounds the damage rather than making it impossible.
-   status=0
-   listing="$(scurl --silent --show-error --max-time 120 --max-filesize 8000000 \
-      "${SNAPSHOT_MR}/timestamp/?archive=debian")" || status="$?"
-   if [ "${status}" -ne 0 ]; then
-      printf 'dm-update-frozen-snapshot: could not fetch %s/timestamp/?archive=debian (exit %s)\n' \
-         "${SNAPSHOT_MR}" "${status}" >&2
-      return 1
-   fi
+   for archive in "${SNAPSHOT_ARCHIVES[@]}"; do
+      ## --max-filesize bounds a hostile or broken server streaming unbounded data into this
+      ## command substitution. 465 KB is the real payload today and it grows by one ~18-byte
+      ## entry per snapshot, so 8 MB is centuries of headroom. Caveat worth knowing: curl
+      ## enforces this up front from Content-Length, and mid-transfer for a chunked response,
+      ## so it bounds the damage rather than making it impossible.
+      status=0
+      listing="$(scurl --silent --show-error --max-time 120 --max-filesize 8000000 \
+         "${SNAPSHOT_MR}/timestamp/?archive=${archive}")" || status="$?"
+      if [ "${status}" -ne 0 ]; then
+         printf 'dm-update-frozen-snapshot: could not fetch %s/timestamp/?archive=%s (exit %s)\n' \
+            "${SNAPSHOT_MR}" "${archive}" "${status}" >&2
+         return 1
+      fi
 
-   ## jq, not a regex over the response text: the point of using the machine-readable
-   ## endpoint is to parse it as the structured document it is.
-   ## jq's status is captured before mapfile, not inside a process substitution where
-   ## neither errexit nor pipefail can see it. Otherwise a schema change or an HTML error
-   ## page yields an empty array and gets reported as "no timestamps in the listing" --
-   ## fail-closed, but blaming the archive for a parse failure.
-   local extracted
+      ## jq, not a regex over the response text: the point of using the machine-readable
+      ## endpoint is to parse it as the structured document it is.
+      ## jq's status is captured before mapfile, not inside a process substitution where
+      ## neither errexit nor pipefail can see it. Otherwise a schema change or an HTML error
+      ## page yields an empty array and gets reported as "no timestamps in the listing" --
+      ## fail-closed, but blaming the archive for a parse failure.
+      ##
+      ## The archive name keys the result object, so it is passed as data ('--arg') rather
+      ## than spliced into the filter: 'debian-security' inside a '.result.<name>' path would
+      ## parse as a subtraction.
+      status=0
+      extracted="$(printf '%s' "${listing}" \
+         | jq --raw-output --arg archive "${archive}" \
+            '.result[$archive] | .[]')" || status="$?"
+      if [ "${status}" -ne 0 ]; then
+         printf 'dm-update-frozen-snapshot: could not parse the %s listing (jq exit %s); the api schema may have changed\n' \
+            "${archive}" "${status}" >&2
+         return 1
+      fi
+
+      ## An archive with no timestamps is a schema or endpoint problem, not an empty archive.
+      ## Refuse rather than silently narrowing the candidate set back to one archive, which is
+      ## the exact failure this merge exists to remove.
+      if [ -z "${extracted}" ]; then
+         printf 'dm-update-frozen-snapshot: no timestamps for archive %s; refusing to guess\n' \
+            "${archive}" >&2
+         return 1
+      fi
+
+      chunk=()
+      mapfile -t chunk <<< "${extracted}"
+      merged+=( "${chunk[@]}" )
+   done
+
+   ## Newest first, duplicates collapsed. The timestamps are fixed-width 'YYYYMMDDTHHMMSSZ',
+   ## so a lexicographic reverse sort IS chronological. Sorted in full and then truncated in
+   ## bash rather than piped through 'head': 'sort | head' would hand sort a closed pipe once
+   ## head had its lines, and pipefail would turn that SIGPIPE into a spurious failure.
    status=0
-   extracted="$(printf '%s' "${listing}" \
-      | jq --raw-output --argjson want "${SNAPSHOT_CANDIDATES}" \
-         '.result.debian | reverse | .[0:$want] | .[]')" || status="$?"
+   extracted="$(printf '%s\n' "${merged[@]}" | sort --reverse --unique)" || status="$?"
    if [ "${status}" -ne 0 ]; then
-      printf 'dm-update-frozen-snapshot: could not parse the snapshot.debian.org listing (jq exit %s); the api schema may have changed\n' \
+      printf 'dm-update-frozen-snapshot: could not order the merged snapshot listing (exit %s)\n' \
          "${status}" >&2
       return 1
    fi
    mapfile -t candidates <<< "${extracted}"
+   if [ "${#candidates[@]}" -gt "${SNAPSHOT_CANDIDATES}" ]; then
+      candidates=( "${candidates[@]:0:${SNAPSHOT_CANDIDATES}}" )
+   fi
 
    if [ "${#candidates[@]}" -eq 0 ]; then
       printf 'dm-update-frozen-snapshot: no timestamps in the snapshot.debian.org listing; refusing to guess\n' >&2
