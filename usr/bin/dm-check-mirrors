@@ -8,7 +8,10 @@ set -o errtrace
 shopt -s inherit_errexit
 shopt -s shift_verbose
 
-source /usr/libexec/helper-scripts/strings.bsh
+## 'helper-scripts' resolves via HELPER_SCRIPTS_PATH for a from-source build;
+## empty falls back to the installed system path.
+# shellcheck source=../../../helper-scripts/usr/libexec/helper-scripts/strings.bsh
+source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/strings.bsh
 
 curl_built_in_args="\
       --location \
@@ -35,51 +38,54 @@ adduser --quiet --system --group checkmirrors || true
 
 as_user="sudo --non-interactive -u checkmirrors"
 
-$as_user touch /home/checkmirrors/version.txt
+${as_user} touch /home/checkmirrors/version.txt
 
-$as_user scurl $curl_built_in_args --url "https://www.whonix.org/w/index.php?title=Template:VersionNew&stable=0&action=raw" --output /home/checkmirrors/version.txt --silent
+${as_user} scurl ${curl_built_in_args} --url "https://www.whonix.org/w/index.php?title=Template:VersionNew&stable=0&action=raw" --output /home/checkmirrors/version.txt --silent
 
-$as_user str_replace "<noinclude>[[Category:MultiWiki]]</noinclude>" "" /home/checkmirrors/version.txt >/dev/null
+${as_user} str_replace "<noinclude>[[Category:MultiWiki]]</noinclude>" "" /home/checkmirrors/version.txt >/dev/null
 
 version=$(stcat /home/checkmirrors/version.txt)
 
 #stecho "version: '$version'"
 
-for mirror_item in $mirror_list ; do
+for mirror_item in ${mirror_list} ; do
    link="${mirror_item}/${version}/Whonix-LXQt-${version}.ova"
-   stecho "link: $link"
+   stecho "link: ${link}"
 
    curl_exit_code=0
 
-   ## 2> /home/checkmirrors/stderr.txt \
-
+   ## Capture stderr too. It is the only place curl explains WHY a mirror failed
+   ## (DNS, TLS, timeout), and the report below printed an always-empty value while
+   ## the redirection sat commented out -- so a broken mirror could not be diagnosed.
    scurl \
-      $curl_built_in_args \
+      ${curl_built_in_args} \
       --write-out "%{speed_download}" \
-      --url "$link" \
+      --url "${link}" \
       --retry 0 \
       --max-time 30 \
       --output /dev/null \
       1> /home/checkmirrors/stdout.txt \
+      2> /home/checkmirrors/stderr.txt \
       || { curl_exit_code=$? ; true; };
 
    stdout=$(stcat /home/checkmirrors/stdout.txt)
-   #stderr=$(stcat /home/checkmirrors/stderr.txt)
+   stderr=$(stcat /home/checkmirrors/stderr.txt)
 
-   stecho "stdout: '$stdout'"
-   stecho "stderr: '${stderr:-}'"
+   stecho "curl_exit_code: '${curl_exit_code}'"
+   stecho "stdout: '${stdout}'"
+   stecho "stderr: '${stderr}'"
 
    ## Curl return bytes per second as per curl default.
-   bytes_per_second="$stdout"
-   if ! is_whole_number "$bytes_per_second"; then
+   bytes_per_second="${stdout}"
+   if ! is_whole_number "${bytes_per_second}"; then
      bytes_per_second=0
    fi
-   kb_per_second="$(( $bytes_per_second / 1024 ))"
+   kb_per_second="$(( ${bytes_per_second} / 1024 ))"
 
-   mb_per_second="$(( $bytes_per_second / 1024 / 1024 ))"
+   mb_per_second="$(( ${bytes_per_second} / 1024 / 1024 ))"
 
-   stecho "kb_per_second: '$kb_per_second'"
-   stecho "mb_per_second: '$mb_per_second'"
+   stecho "kb_per_second: '${kb_per_second}'"
+   stecho "mb_per_second: '${mb_per_second}'"
 done
 
 stecho ""

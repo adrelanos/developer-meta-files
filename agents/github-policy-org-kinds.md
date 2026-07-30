@@ -1,42 +1,67 @@
-# Canonical vs mirror policy split (AI-Assisted)
+# Org kinds and the policy each gets (AI-Assisted)
 
-The dm-github-* tool family applies the same baseline policy to two
-classes of repository, with a small set of deliberate diffs driven
-by canonical-vs-mirror role. Companion to
-[github-org-tools.md](github-org-tools.md).
+The dm-github-* tool family applies one baseline policy, with a small
+set of deliberate diffs driven by what the target actually holds.
+Companion to [github-org-tools.md](github-org-tools.md). The kind
+names here are the values `org_kind()` returns, so this document and
+the code share one vocabulary.
 
-The four roles are:
+The five roles are:
 
 | Role | Where it lives | Tool that touches it |
 | --- | --- | --- |
 | SOURCE | Kicksecure, Whonix orgs | dm-github-org-policy, kind=source |
 | MIRROR | org-ai-assisted org | dm-github-org-policy, kind=mirror |
+| PROJECT | secure-terminal, output-lies orgs | dm-github-org-policy, kind=project |
 | PERSON | PERSON_USERS array | dm-github-personal-policy, target_kind=person |
 | BOT | BOT_USERS array | dm-github-personal-policy, target_kind=bot |
 
-Only SOURCE is canonical. The other three are mirrors of upstream
-work. The deliberate diffs below all follow from that single split.
+The distinction that drives every diff below is whether the code has
+somewhere ELSE to be maintained:
+
+- **MIRROR** holds forks of SOURCE. Issues, alerts and vulnerability
+  reports belong upstream, so they are turned OFF here: raising them
+  on a fork only duplicates what the canonical repo already reports.
+- **SOURCE** and **PROJECT** both hold code that is maintained where
+  it lives. A PROJECT org is not a copy of anything -- it holds one
+  self-contained first-party project (the secure-terminal app, the
+  output-lies site) with no upstream to file against. So both keep
+  issues, Dependabot alerts and private vulnerability reporting ON.
+
+MIRROR is therefore the only kind that switches those off, and
+"mirror" means specifically "mirrors Kicksecure / Whonix" -- not
+"any org that is not SOURCE".
 
 ## Free-plan code-security replacements
 
 Applied per-repo on the org side after the org-level Code Security
-Configurations API turned out to be PAID PLAN ONLY. SOURCE-only on
-purpose: a mirror running these would duplicate every alert the
-canonical SOURCE repo already raises. Empirically tested on Free
-2026-05.
+Configurations API turned out to be PAID PLAN ONLY. Enabled wherever
+the code is actually maintained (SOURCE, PROJECT) and disabled where
+it is a copy (MIRROR): a mirror running these would duplicate every
+alert the canonical SOURCE repo already raises. Empirically tested on
+Free 2026-05.
 
-| Feature | SOURCE | MIRROR | PERSON | BOT |
-| --- | --- | --- | --- | --- |
-| Dependabot alerts (`PUT /vulnerability-alerts` enable, `DELETE` on MIRROR) | on | actively disabled | off | off |
-| Dependabot security updates (`PUT /automated-security-fixes` enable, `DELETE` on MIRROR) | on | actively disabled | off | off |
-| Private vulnerability reporting (PVR) - `DELETE /private-vulnerability-reporting` everywhere | actively disabled | actively disabled | off | off |
-| `secret_scanning` + push protection (in PATCH body) | on | on | on | on |
-| Branch + tag rulesets (`POST /repos/{}/{}/rulesets`) | on | on | on | on |
+| Feature | SOURCE | MIRROR | PROJECT | PERSON | BOT |
+| --- | --- | --- | --- | --- | --- |
+| Dependabot alerts (`PUT /vulnerability-alerts` enable, `DELETE` on MIRROR) | on | actively disabled | on | off | off |
+| Dependabot security updates (`PUT /automated-security-fixes` enable, `DELETE` on MIRROR) | on | actively disabled | on | off | off |
+| Private vulnerability reporting (PVR) | actively disabled | actively disabled | **on** | off | off |
+| `secret_scanning` + push protection (in PATCH body) | on | on | on | on | on |
+| Branch + tag rulesets (`POST /repos/{}/{}/rulesets`) | on | on | on | on | on |
+| `has_issues` | on | off | on | - | - |
+| `has_wiki` / `has_discussions` | off | off | off | - | - |
+
+PROJECT is the only kind that ENABLES private vulnerability
+reporting. SOURCE disables it because Kicksecure and Whonix take
+security reports through their own documented channel, not GitHub;
+a PROJECT org has no such channel, so GitHub's is the one a
+researcher can find.
 
 Notes:
 
 - Dependabot off on MIRROR/PERSON/BOT for the split-inbox /
-  duplicate-notifications reason. On MIRROR `apply_repo_policy`
+  duplicate-notifications reason; ON for PROJECT, which has no
+  upstream inbox to split against. On MIRROR `apply_repo_policy`
   actively DELETEs the two Dependabot settings (every `--apply`
   reconciles), so leftovers from older un-gated runs or
   accidental UI flips are cleaned up. Order: DEPENDABOT_FIXES_OFF
@@ -67,7 +92,7 @@ Notes:
   required_signatures rule both pivot on role (see Summary table
   below).
 
-## Summary of intentional canonical-vs-mirror splits
+## Summary of intentional per-kind splits
 
 | Axis | Canonical (SOURCE) | Mirror (MIRROR / PERSON / BOT) |
 | --- | --- | --- |

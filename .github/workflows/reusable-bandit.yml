@@ -91,6 +91,7 @@ jobs:
       contents: read
 
     env:
+      DIST_AI_REF: ${{ github.repository == 'org-ai-assisted/dist-ai' && github.sha || 'master' }}
       ## Dogfood ref: caller's commit when developer-meta-files is its
       ## own caller (so a PR that modifies the script under test gets
       ## exercised); 'master' for every other caller. Routed through
@@ -103,6 +104,14 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
+          persist-credentials: false
+
+      - name: Checkout dist-ai (shared CI helper binaries)
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          repository: org-ai-assisted/dist-ai
+          ref: ${{ env.DIST_AI_REF }}
+          path: .github/dist-ai
           persist-credentials: false
 
       - name: Install bandit
@@ -147,7 +156,7 @@ jobs:
         env:
           JOB_STATUS: ${{ job.status }}
         run: |
-          .github/dmf/ci/step-summary-emit.sh \
+          ./.github/dist-ai/usr/bin/step-summary-emit \
             --tool 'bandit' \
             --column-header field \
             --row "outcome=${JOB_STATUS}" \

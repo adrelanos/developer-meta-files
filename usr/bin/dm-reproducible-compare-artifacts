@@ -14,7 +14,7 @@
 ##       --dir-a DIR --dir-b DIR --output REPORT
 ##
 ## --target  which image type to locate in each directory:
-##             iso        -> *.iso   virtualbox -> *.ova   qcow2 -> *.qcow2
+##             iso -> *.iso   virtualbox -> *.ova   qcow2 -> *.qcow2.libvirt.xz
 ## --dir-a   directory holding the first build's artifact (searched recursively).
 ## --dir-b   directory holding the second build's artifact.
 ## --output  report file written with the sha256 of each artifact and, when they
@@ -76,11 +76,11 @@ while [ "$#" -gt 0 ]; do
    esac
 done
 
-if [ -z "$target" ] || [ -z "$dir_a" ] || [ -z "$dir_b" ] || [ -z "$report" ]; then
+if [ -z "${target}" ] || [ -z "${dir_a}" ] || [ -z "${dir_b}" ] || [ -z "${report}" ]; then
    usage
 fi
 
-case "$target" in
+case "${target}" in
    iso)
       artifact_glob="*.iso"
       ;;
@@ -88,10 +88,20 @@ case "$target" in
       artifact_glob="*.ova"
       ;;
    qcow2)
-      artifact_glob="*.qcow2"
+      ## The qcow2 target ships the image COMPRESSED: dm-prepare-release packs the
+      ## '.qcow2' into '<image>.qcow2.libvirt.xz' -- a 'tar --xz' archive holding the
+      ## image alongside the libvirt xml and licence files, NOT a bare xz stream
+      ## (verified by extracting a real artifact; the filesystem route below depends
+      ## on it being a tar) -- and removes the bare
+      ## file, so only the '.xz' is present in the release artifact (unlike iso's
+      ## bare '.iso' and virtualbox's bare '.ova'). Compare that shipped artifact;
+      ## diffoscope descends into the xz to localize any inner qcow2/filesystem
+      ## difference. The '.qcow2.libvirt.xz.{asc,sig,sha512sums,torrent,dm-buildinfo}'
+      ## siblings do not end in '.xz', so this glob still matches exactly one file.
+      artifact_glob="*.qcow2.libvirt.xz"
       ;;
    *)
-      printf '%s\n' "${0##*/}: unknown target: $target (want iso|virtualbox|qcow2)" >&2
+      printf '%s\n' "${0##*/}: unknown target: ${target} (want iso|virtualbox|qcow2)" >&2
       usage
       ;;
 esac
@@ -108,12 +118,40 @@ find_artifact() {
    local -a matches=()
    ## A directory whose name starts with '-' would be read by find(1) as an option
    ## or expression; prefix './' so it is unambiguously a path operand.
-   [ "${dir#-}" = "$dir" ] || dir="./$dir"
-   if [ ! -d "$dir" ]; then
-      printf '%s\n' "${0##*/}: no such directory: $dir" >&2
+   [ "${dir#-}" = "${dir}" ] || dir="./${dir}"
+   if [ ! -d "${dir}" ]; then
+      printf '%s\n' "${0##*/}: no such directory: ${dir}" >&2
       exit 2
    fi
-   mapfile -t matches < <(find "$dir" -type f -name "$artifact_glob" | LC_ALL=C sort)
+   ## Capture find's exit status. Inside a process substitution neither errexit nor pipefail
+   ## sees it, so an unreadable subdirectory holding the REAL artifact would leave a stale
+   ## sibling as the only match and the script would silently hash the wrong image.
+   local find_status_file find_status
+   find_status_file="$(mktemp)"
+   ## '-H' dereferences the START POINT only. With find's default '-P' a symlinked --dir-a
+   ## is itself of type 'l', find does not descend it, and the run dies with "found 0" on a
+   ## directory that plainly holds the artifact. '-H' does NOT follow symlinks encountered
+   ## inside the tree, so it cannot wander out of the build directory.
+   mapfile -t matches < <(
+      find -H "${dir}" -type f -name "${artifact_glob}"
+      printf '%s\n' "$?" > "${find_status_file}"
+   )
+   find_status="$(cat -- "${find_status_file}")"
+   safe-rm --force -- "${find_status_file}"
+   if [ "${find_status}" != "0" ]; then
+      printf '%s\n' "${0##*/}: find failed (exit ${find_status}) under ${dir}; refusing to compare a possibly incomplete match set" >&2
+      exit 2
+   fi
+   ## Sort ONLY a non-empty set. 'printf "%s\n"' with no arguments still runs the format
+   ## once and emits a single newline, so piping an EMPTY match set through it produced an
+   ## array holding one EMPTY STRING. That reads as "exactly one match" to the guard below,
+   ## which then let a missing artifact through: found_artifact was "", sha256sum failed on
+   ## it, and errexit exited 1 -- the code the caller and the CI workflow read as "artifacts
+   ## DIFFER". A missing or unmatched artifact is a setup error (2), never a reproducibility
+   ## failure.
+   if [ "${#matches[@]}" -gt 0 ]; then
+      mapfile -t matches < <(printf '%s\n' "${matches[@]}" | LC_ALL=C sort)
+   fi
    if [ "${#matches[@]}" -ne 1 ]; then
       printf '%s\n' "${0##*/}: expected exactly one ${artifact_glob} under ${dir}, found ${#matches[@]}" >&2
       exit 2
@@ -121,18 +159,18 @@ find_artifact() {
    found_artifact="${matches[0]}"
 }
 
-find_artifact "$dir_a"
-artifact_a="$found_artifact"
-find_artifact "$dir_b"
-artifact_b="$found_artifact"
+find_artifact "${dir_a}"
+artifact_a="${found_artifact}"
+find_artifact "${dir_b}"
+artifact_b="${found_artifact}"
 
 ## Reject a setup where both sides are the SAME file: hashing one image twice is
 ## trivially "identical" and would mask a misconfigured comparison (e.g. --dir-a
 ## and --dir-b naming the same directory) as a genuine reproducibility pass. Use
 ## '-ef' (same device + inode), which also catches hard links and bind mounts that
 ## a canonical-path string compare would miss. Setup error, not a diff result.
-if [ "$artifact_a" -ef "$artifact_b" ]; then
-   printf '%s\n' "${0##*/}: A and B are the same file ($artifact_a); need two independent builds" >&2
+if [ "${artifact_a}" -ef "${artifact_b}" ]; then
+   printf '%s\n' "${0##*/}: A and B are the same file (${artifact_a}); need two independent builds" >&2
    exit 2
 fi
 
@@ -141,44 +179,464 @@ fi
 ## make the two sides falsely compare equal. '-ef' is false when $report does not
 ## exist yet (nothing to clobber) and catches a hard-linked alias that a pathname
 ## compare would miss.
-if [ "$report" -ef "$artifact_a" ] || [ "$report" -ef "$artifact_b" ]; then
-   printf '%s\n' "${0##*/}: --output would overwrite an input artifact ($report)" >&2
+if [ "${report}" -ef "${artifact_a}" ] || [ "${report}" -ef "${artifact_b}" ]; then
+   printf '%s\n' "${0##*/}: --output would overwrite an input artifact (${report})" >&2
    exit 2
 fi
 
-sha_a="$(sha256sum -- "$artifact_a")"
+## Prove the report is writable BEFORE hashing. Otherwise the redirection below fails under
+## errexit and the script exits 1 -- which the caller and the CI workflow read as "artifacts
+## differ", turning an unwritable --output path into a false reproducibility failure. Setup
+## errors are 2.
+if ! : > "${report}" 2>/dev/null; then
+   printf '%s\n' "${0##*/}: --output is not writable: ${report}" >&2
+   exit 2
+fi
+
+## sha256sum ESCAPES its output line when the path holds a backslash or a newline: it
+## prefixes the whole line with '\' and doubles the backslashes in the name. '${sha%% *}'
+## keeps that prefix, so the hash reads '\<hex>', the two sides can never compare equal, and
+## a bit-identical pair is reported as DIFFERING. Strip the marker; '#\\' removes at most one
+## leading backslash and is a no-op for every ordinary path.
+sha_a="$(sha256sum -- "${artifact_a}")"
 sha_a="${sha_a%% *}"
-sha_b="$(sha256sum -- "$artifact_b")"
+sha_a="${sha_a#\\}"
+sha_b="$(sha256sum -- "${artifact_b}")"
 sha_b="${sha_b%% *}"
+sha_b="${sha_b#\\}"
 
 {
    printf '%s\n' "reproducibility artifact comparison"
-   printf '  target: %s\n' "$target"
-   printf '  A: %s\n' "$artifact_a"
-   printf '     sha256 %s\n' "$sha_a"
-   printf '  B: %s\n' "$artifact_b"
-   printf '     sha256 %s\n' "$sha_b"
-} > "$report"
+   printf '  target: %s\n' "${target}"
+   printf '  A: %s\n' "${artifact_a}"
+   printf '     sha256 %s\n' "${sha_a}"
+   printf '  B: %s\n' "${artifact_b}"
+   printf '     sha256 %s\n' "${sha_b}"
+} > "${report}"
 
-if [ "$sha_a" = "$sha_b" ]; then
-   printf '%s\n' "RESULT: identical (reproducible)" | tee --append -- "$report"
+if [ "${sha_a}" = "${sha_b}" ]; then
+   ## Not 'printf | tee': under errexit+pipefail a failed tee (full filesystem, closed
+   ## stdout) exits non-zero BEFORE the 'exit 0' below, and the caller reads that as
+   ## "artifacts differ" for a bit-identical pair. Append and echo separately, and let
+   ## neither failure change the verdict -- the hashes already decided it.
+   printf '%s\n' "RESULT: identical (reproducible)" >> "${report}" || true
+   printf '%s\n' "RESULT: identical (reproducible)" || true
    exit 0
 fi
 
 {
    printf '%s\n' "RESULT: artifacts DIFFER (not bit-reproducible)"
    printf '%s\n' "diffoscope explanation follows (best-effort; may be truncated or skipped):"
-} | tee --append -- "$report"
+} | tee --append -- "${report}"
 
-## Explain the mismatch. diffoscope is heavy on large images, so bound its output
-## and never let its result change the (sha-based) verdict above. diffoscope exits
-## 1 when it FINDS differences -- expected here, not a failure -- so only exit >= 2
-## (a real crash / OOM kill) warrants the "could not explain" note.
+## Explain the mismatch. diffoscope is heavy: decompressing two multi-GB images
+## can exhaust the runner's RAM and get the whole job OOM/SIGTERM-killed (observed
+## exit 143) BEFORE this script can report the sha-based verdict. Bound it hard so
+## a failed explanation never masks the verdict:
+## - an address-space cap ('ulimit -v') makes diffoscope's own allocation fail
+##   gracefully instead of triggering a host OOM kill (subshell so it does not
+##   leak to this shell), and
+## - a wall-clock 'timeout' caps runtime.
+## diffoscope exits 1 when it FINDS differences (expected here); only a higher
+## exit (crash / resource kill / timeout) warrants the "could not explain" note.
+## The bounds above were not enough on a 1 GB '.qcow2.libvirt.xz' expanding to a 100 GB
+## sparse image: diffoscope still died with "Out of memory. Diffoscope exiting." (exit 2),
+## explaining nothing. Add the mitigations docs/reproducible-verification.md already
+## prescribes for exactly this case:
+## - bound the per-file diff INPUT and what is retained, not just the report size, so one
+##   large differing member cannot pull the whole diff into memory;
+## - skip the kernel and initrd, which are large, always differ when anything below them
+##   differs, and say nothing useful about the cause; and
+## - keep the temp dir on real disk. A tmpfs $TMPDIR charges diffoscope's spill files to
+##   RAM, which is the failure this is trying to avoid.
+## Bounding diffoscope was still not enough, and raising the bound does not help either:
+## measured on this exact pair of images, 'ulimit -v 8000000' yields MemoryError (exit 2)
+## in 53s, and REMOVING the ulimit yields SIGKILL from the kernel OOM killer (exit 137) in
+## 152s. Feeding it two 100 GB sparse disk images is simply beyond the memory available,
+## and diffoscope 306 from trixie-backports (already what the lane installs) behaves the
+## same -- the streaming fix does not cover container descent.
+##
+## What does work, same binary and same ulimit: attach each image read-only and hand
+## diffoscope the two MOUNT POINTS. Its working set then stays at one file pair at a time
+## instead of the whole container. Measured on the same images: exit 1 (differs) in 181s
+## with a report naming the exact differing file.
+##
+## Falls back to comparing the artifacts directly when the filesystem route is unavailable
+## (no nbd, no root, a target that is not a disk image), so a restricted environment still
+## gets the previous best-effort behaviour rather than no explanation at all.
+## TRUST MODEL -- read before changing the mounted route.
+##
+## This route hands the artifact to root-privileged parsers: qemu-nbd parses the qcow2
+## header as root, mount hands the filesystem superblock to the HOST KERNEL driver as root,
+## and diffoscope then fans out to dozens of format parsers as root. 'nodev,nosuid,noexec'
+## bound what the MOUNTED TREE can do; they do nothing about bugs in the parsers themselves,
+## and '--format=qcow2' does not stop a qcow2 backing_file reaching an arbitrary host path.
+##
+## That is acceptable ONLY while both artifacts are locally built and therefore trusted,
+## which is the case for the local-build CI lane and ci/reproducible-build-twice. It is NOT
+## acceptable for a THIRD-PARTY artifact -- the dm-reproducible-verify flow downloads one
+## side. Do not extend this route to a downloaded image without moving the parsing off the
+## host: libguestfs/guestfish runs the same inspection inside a disposable VM with no host
+## root, which also removes the sudo below and the unkillable-privileged-child problem.
+##
+## $3 (optional) prefixes the diffoscope invocation. The MOUNTED route needs 'sudo': the
+## kernel enforces the image's own ownership on a real mount, so an unprivileged diffoscope
+## cannot read root-owned mode-0600 files -- /etc/shadow, /etc/gshadow, the ssh host keys --
+## which are exactly the files whose divergence matters most. The artifact route needs no
+## privilege: those files are owned by the invoking user.
+diffoscope_bounded() {
+   local privilege_prefix="${3:-}"
+   ## Shared bounds for both routes. Subshell so 'ulimit' does not leak to this shell.
+   ## rlimits survive the exec into sudo, so the cap still applies to diffoscope itself
+   ## (verified: 'ulimit -v 8000000' then 'sudo bash -c "ulimit -v"' reports 8000000).
+   ##
+   ## ORDER IS LOAD-BEARING -- 'timeout' must run INSIDE the privilege prefix, and the
+   ## environment must be set with 'env' INSIDE it too. Both were wrong the other way round:
+   ##
+   ## - 'timeout ... sudo ... diffoscope' makes an UNPRIVILEGED timeout the parent of a ROOT
+   ##   child. sudo forwards SIGTERM, so the 900s bound appeared to work, but the
+   ##   '--kill-after' SIGKILL lands on SUDO, and this shell may not signal the root-owned
+   ##   diffoscope. A diffoscope that does not die on SIGTERM is therefore orphaned to PID 1
+   ##   still holding the mounts open, so the umount below fails with EBUSY, the nbd
+   ##   disconnect then pulls the device out from under a live mount, and the run exits
+   ##   leaking both. Later runs find no free device and silently degrade to the direct
+   ##   route -- the OOM path the mounted route exists to avoid. Verified: with the child
+   ##   ignoring SIGTERM, this shape leaves it alive and reparented to PID 1; the shape below
+   ##   reaps it.
+   ## - 'TMPDIR=/var/tmp sudo ... diffoscope' does not reach diffoscope at all: sudo's
+   ##   'env_reset' drops it (measured: the root child saw '/tmp/user/0', a tmpfs). That
+   ##   silently defeated the spill-to-real-disk mitigation on exactly the route that needs
+   ##   it. 'sudo TMPDIR=... cmd' without 'env' does not fix it either -- sudo drops the
+   ##   assignment SILENTLY rather than refusing, so it looks correct and is not.
+   ##
+   ## Unprefixed (direct route) this is plain 'env TMPDIR=... timeout ... diffoscope', which
+   ## is what the direct route already had.
+   (
+      ulimit -v 8000000 || true
+      ${privilege_prefix} \
+      env TMPDIR=/var/tmp \
+      timeout --kill-after=30 900 \
+         diffoscope --text - --max-report-size 4194304 --max-diff-block-lines 512 \
+         --max-diff-input-lines 100000 --max-diff-block-lines-saved 10000 \
+         --exclude 'boot/initrd*' --exclude 'boot/vmlinuz*' \
+         --exclude 'initrd*' --exclude 'vmlinuz*' \
+         -- "${1}" "${2}"
+   )
+}
+
+## Devices this run claimed. Only these are ever disconnected: this tool also runs on a
+## developer machine (ci/reproducible-build-twice calls it), where /dev/nbd0 may already
+## hold an unrelated image -- disconnecting that would rip it out from under a live mount.
+nbd_a=""
+nbd_b=""
+
+## Claim a free nbd device. '/sys/block/<dev>/pid' exists only while a qemu-nbd is attached
+## to it, so its absence is the free test. A racing claimer just makes the connect below
+## fail, which falls back rather than stealing the device.
+nbd_device_claim() {
+   local candidate candidate_name
+   for candidate in /dev/nbd* ; do
+      [ -b "${candidate}" ] || continue
+      candidate_name="${candidate##*/}"
+      ## Whole-disk devices only. '/dev/nbd*' also matches PARTITION nodes ('/dev/nbd0p1'),
+      ## which are block devices and whose '/sys/block/nbd0p1/pid' never exists (a partition
+      ## lives at '/sys/block/nbd0/nbd0p1'), so a partition of a BUSY device reads as free.
+      ## Verified: with nbd0 attached, the glob yields nbd0, nbd0p1, nbd1 ... and nbd0p1 was
+      ## reported free -- the connect then fails and the whole route is abandoned to the
+      ## fallback, which is the OOM path this route exists to avoid.
+      case "${candidate_name}" in
+         nbd[0-9]*p[0-9]*)
+            continue
+            ;;
+      esac
+      ## A device with no sysfs node cannot be probed for busy-ness; skip rather than guess.
+      [ -d "/sys/block/${candidate_name}" ] || continue
+      if [ -e "/sys/block/${candidate_name}/pid" ]; then
+         continue
+      fi
+      printf '%s\n' "${candidate}"
+      return 0
+   done
+   return 1
+}
+
+## Wait for a just-attached device to publish its sysfs state and partitions. A fixed sleep
+## either wastes time or, on a loaded host, returns before the partition nodes exist -- which
+## silently loses the route.
+nbd_device_settle() {
+   local device="$1" name attempt partition
+   name="${device##*/}"
+   ## Two separate waits, because they complete at different times. '/sys/block/<dev>/pid'
+   ## appears almost immediately once qemu-nbd attaches; the PARTITION nodes are published
+   ## later, by the kernel's partition scan. Waiting only for 'pid' returns before
+   ## '<device>p*' exists, the caller's partition loop then matches nothing, and the route is
+   ## silently abandoned -- which is exactly what a fixed 'sleep 2' had been hiding.
+   for attempt in $(seq 1 50); do
+      if [ -e "/sys/block/${name}/pid" ]; then
+         break
+      fi
+      sleep 0.2
+   done
+   [ -e "/sys/block/${name}/pid" ] || return 1
+   ## Then wait for at least one partition node. Not fatal if none ever appear: an image
+   ## whose filesystem sits on the whole device has none, and the caller fails cleanly.
+   for attempt in $(seq 1 50); do
+      for partition in "${device}"p* ; do
+         if [ -b "${partition}" ]; then
+            return 0
+         fi
+      done
+      sleep 0.2
+   done
+   return 0
+}
+
+## Mount both images read-only so the filesystems can be diffed. Non-zero means the caller
+## should fall back to comparing the artifacts directly.
+filesystem_mounts_setup() {
+   local image_a="$1" image_b="$2" partition partition_b
+   sudo --non-interactive modprobe nbd max_part=16 || return 1
+   sudo --non-interactive mkdir --parents -- "${mount_a}" "${mount_b}" || return 1
+   ## '--format' is pinned rather than probed, which removes raw/qcow2 format CONFUSION on a
+   ## crafted artifact. It does NOT make this route safe against a hostile image, and an
+   ## earlier version of this comment wrongly claimed it did: '--format' pins only the
+   ## TOP-LEVEL driver, while the qcow2 driver still honours the 'backing_file' header and
+   ## its format extension, and backing names go through bdrv_open -- so 'json:{...}' and
+   ## protocol URLs are still accepted. A crafted qcow2 with an unallocated cluster layout
+   ## and 'backing_file=/etc/shadow' would surface host bytes through the mount and into the
+   ## report. See the trust-model note at the top of this route.
+   nbd_a="$(nbd_device_claim)" || return 1
+   sudo --non-interactive qemu-nbd --read-only --format=qcow2 --connect="${nbd_a}" -- "${image_a}" || return 1
+   ## Claim B only AFTER A is attached AND its sysfs 'pid' is visible, otherwise the claim
+   ## can hand back the device A just took (publication is asynchronous).
+   nbd_device_settle "${nbd_a}" || return 1
+   nbd_b="$(nbd_device_claim)" || return 1
+   sudo --non-interactive qemu-nbd --read-only --format=qcow2 --connect="${nbd_b}" -- "${image_b}" || return 1
+   nbd_device_settle "${nbd_b}" || return 1
+   ## The rootfs partition is not at a fixed index across targets; take the first that
+   ## mounts and carries a root filesystem. Both images are the same target built twice, so
+   ## B's rootfs is at the same index as A's.
+   for partition in "${nbd_a}"p* ; do
+      [ -b "${partition}" ] || continue
+      sudo --non-interactive mount --read-only --options nodev,nosuid,noexec -- "${partition}" "${mount_a}" 2>/dev/null || continue
+      if [ -d "${mount_a}/etc" ]; then
+         partition_b="${nbd_b}p${partition##*p}"
+         if sudo --non-interactive mount --read-only --options nodev,nosuid,noexec -- "${partition_b}" "${mount_b}" 2>/dev/null; then
+            return 0
+         fi
+      fi
+      sudo --non-interactive umount -- "${mount_a}" 2>/dev/null || true
+   done
+   return 1
+}
+
+## Unmount, retrying briefly. Even with 'timeout' now on the privileged side, the SIGKILL
+## that frees the mount goes to diffoscope's process GROUP while 'timeout' waits only for its
+## direct child, so a helper diffoscope shelled out to can still hold the mount for a moment
+## after timeout returns. Non-zero means the mount is STILL held.
+mount_point_release() {
+   local mount_point="$1" attempt status=0
+   ## The EXIT trap runs this again AFTER the rmdir below, so a mount point that no longer
+   ## exists is normal and is already released -- not something to probe or warn about.
+   [ -d "${mount_point}" ] || return 0
+   mountpoint --quiet -- "${mount_point}" || status="$?"
+   ## 32 is mountpoint's "not a mountpoint": already released, which is the normal case when
+   ## setup failed between the two mounts. 0 means it IS mounted. Any other status means the
+   ## probe itself failed, and an unprovable mount must count as STILL HELD so the caller
+   ## leaves the device attached rather than disconnecting one it cannot show is idle.
+   if [ "${status}" = "32" ]; then
+      return 0
+   fi
+   if [ "${status}" != "0" ]; then
+      printf '%s\n' "${0##*/}: cannot determine whether ${mount_point} is mounted (mountpoint exit ${status})" >&2
+      return 1
+   fi
+   for attempt in $(seq 1 25); do
+      if sudo --non-interactive umount -- "${mount_point}" 2>/dev/null; then
+         return 0
+      fi
+      sleep 0.2
+   done
+   return 1
+}
+
+filesystem_mounts_teardown() {
+   local released_a="yes" released_b="yes"
+   mount_point_release "${mount_a}" || released_a="no"
+   mount_point_release "${mount_b}" || released_b="no"
+   ## Disconnect ONLY a device whose mount actually went away. 'qemu-nbd --disconnect' on a
+   ## still-mounted device rips the backing store out from under a live filesystem; leaving
+   ## the device attached is the lesser harm, and saying so is what lets the leak be found
+   ## instead of surfacing later as an unexplained "no free nbd device".
+   if [ -n "${nbd_a}" ]; then
+      if [ "${released_a}" = "yes" ]; then
+         sudo --non-interactive qemu-nbd --disconnect "${nbd_a}" >/dev/null 2>&1 || true
+         nbd_a=""
+      else
+         printf '%s\n' "${0##*/}: ${mount_a} is still mounted; leaving ${nbd_a} attached rather than disconnecting a live mount" >&2
+      fi
+   fi
+   if [ -n "${nbd_b}" ]; then
+      if [ "${released_b}" = "yes" ]; then
+         sudo --non-interactive qemu-nbd --disconnect "${nbd_b}" >/dev/null 2>&1 || true
+         nbd_b=""
+      else
+         printf '%s\n' "${0##*/}: ${mount_b} is still mounted; leaving ${nbd_b} attached rather than disconnecting a live mount" >&2
+      fi
+   fi
+}
+
+mount_a="$(mktemp --directory)"
+mount_b="$(mktemp --directory)"
+inner_a=""
+inner_b=""
 diffoscope_rc=0
-diffoscope --text - --max-report-size 4194304 --max-diff-block-lines 512 \
-   -- "$artifact_a" "$artifact_b" >> "$report" 2>&1 || diffoscope_rc="$?"
-if [ "$diffoscope_rc" -gt 1 ]; then
-   printf '%s\n' "(diffoscope could not explain the diff (exit ${diffoscope_rc}); the sha256 mismatch above is the verdict)" >> "$report"
+explained="no"
+
+## The released qcow2 artifact is a 'tar --xz' holding the image; unpack both so the disk
+## images themselves can be attached.
+unpack_cleanup() {
+   safe-rm --recursive --force -- "${unpack_a:-}" "${unpack_b:-}" 2>/dev/null || true
+   unpack_a=""
+   unpack_b=""
+}
+
+## 'rmdir', never a recursive delete -- see the note at the final rmdir below. Registered as
+## an EXIT trap the moment the directories exist, because they are created for EVERY target
+## while the traps below are installed only on the qcow2 path: an iso or virtualbox run that
+## is killed (the documented OOM case) otherwise leaks two mktemp directories every time.
+# shellcheck disable=SC2317  # invoked only via trap, which shellcheck does not trace
+mount_points_cleanup() {
+   rmdir -- "${mount_a}" "${mount_b}" 2>/dev/null || true
+}
+trap mount_points_cleanup EXIT
+
+## Chains the cleanups under one name. R-051 wants a trap body that is a function, not an
+## inline 'a; b'. Each of these REPLACES the trap above, so every one of them must also drop
+## the mount points, and must do so LAST -- rmdir cannot remove a still-mounted directory.
+# shellcheck disable=SC2317  # invoked only via trap, which shellcheck does not trace
+unpack_and_mount_points_cleanup() {
+   unpack_cleanup
+   mount_points_cleanup
+}
+
+# shellcheck disable=SC2317  # invoked only via trap, which shellcheck does not trace
+filesystem_and_unpack_cleanup() {
+   filesystem_mounts_teardown
+   unpack_cleanup
+   mount_points_cleanup
+}
+
+if [ "${target}" = "qcow2" ]; then
+   unpack_a="$(mktemp --directory --tmpdir=/var/tmp)"
+   unpack_b="$(mktemp --directory --tmpdir=/var/tmp)"
+   ## Register the cleanup the moment the directories exist. Extraction can fail, or succeed
+   ## and yield no qcow2, and either way these hold a partially expanded multi-gigabyte disk
+   ## image; cleaning up only on the success path leaves that behind for the rest of the run
+   ## and after it exits.
+   trap unpack_and_mount_points_cleanup EXIT
+   ## tar's stderr goes to the REPORT, not to /dev/null. A truncated or corrupt archive is
+   ## the difference between "the filesystem route was unavailable" and "the artifact is
+   ## damaged", and discarding the message leaves the reader unable to tell which happened.
+   ## tar is silent on a clean extraction, so this adds nothing to the normal report.
+   if tar --extract --xz --file "${artifact_a}" --directory "${unpack_a}" 2>> "${report}" \
+      && tar --extract --xz --file "${artifact_b}" --directory "${unpack_b}" 2>> "${report}"; then
+      ## Capture find's exit status, the same guard find_artifact already carries: inside a
+      ## process substitution neither errexit nor pipefail sees it, so an unreadable
+      ## subdirectory would yield a PARTIAL member list -- and a partial list that happens to
+      ## hold exactly one qcow2 reads as success and mounts the WRONG pair. Sorting inside
+      ## the substitution keeps an empty result an empty array.
+      qcow2_status_file="$(mktemp)"
+      mapfile -t qcow2_members_a < <(
+         find "${unpack_a}" -type f -name '*.qcow2' | LC_ALL=C sort
+         printf '%s\n' "${PIPESTATUS[0]}" > "${qcow2_status_file}"
+      )
+      qcow2_status_a="$(cat -- "${qcow2_status_file}")"
+      mapfile -t qcow2_members_b < <(
+         find "${unpack_b}" -type f -name '*.qcow2' | LC_ALL=C sort
+         printf '%s\n' "${PIPESTATUS[0]}" > "${qcow2_status_file}"
+      )
+      qcow2_status_b="$(cat -- "${qcow2_status_file}")"
+      safe-rm --force -- "${qcow2_status_file}"
+      ## Exactly one image per side, or fall back. A unified build ships SEVERAL qcow2
+      ## members (dm-prepare-release adds both Gateway and Workstation when vm_multiple is
+      ## true); taking the lexicographically first would compare one pair and silently
+      ## ignore a mismatch confined to another, while still claiming the diff was explained.
+      if [ "${qcow2_status_a}" != "0" ] || [ "${qcow2_status_b}" != "0" ]; then
+         printf '%s\n' "(could not reliably enumerate the archive's qcow2 members (find exited ${qcow2_status_a}/${qcow2_status_b}); comparing the artifacts directly instead)" >> "${report}"
+      elif [ "${#qcow2_members_a[@]}" -eq 1 ] && [ "${#qcow2_members_b[@]}" -eq 1 ]; then
+         inner_a="${qcow2_members_a[0]}"
+         inner_b="${qcow2_members_b[0]}"
+      else
+         printf '%s\n' "(archive holds ${#qcow2_members_a[@]} qcow2 member(s); the filesystem route handles exactly one, comparing the artifacts directly instead)" >> "${report}"
+      fi
+   fi
+fi
+
+if [ -n "${inner_a}" ] && [ -n "${inner_b}" ]; then
+   ## Release the devices and mounts even if something below dies unexpectedly; without
+   ## this an aborted run leaves an attached nbd device and a mounted image behind. Chained
+   ## with the unpack cleanup so registering this does not discard that one.
+   trap filesystem_and_unpack_cleanup EXIT
+   if filesystem_mounts_setup "${inner_a}" "${inner_b}"; then
+      {
+         printf '%s\n' "(comparing the mounted filesystems; the disk images themselves exceed diffoscope's memory)"
+         ## The two trees are mounted from two different nbd devices, so every path diffoscope
+         ## reports also shows a 'Device:' stat difference. That is an artifact of HOW the
+         ## comparison is done, not a difference between the builds -- say so, rather than
+         ## letting a reader conclude the device number is the finding.
+         printf '%s\n' "(ignore 'Device:' lines below: the two trees are on different nbd devices, so that field always differs)"
+      } >> "${report}"
+      diffoscope_bounded "${mount_a}" "${mount_b}" "sudo --non-interactive" >> "${report}" 2>&1 \
+         || diffoscope_rc="$?"
+      ## diffoscope exits 0 when it finds NOTHING. The artifacts demonstrably differ, so an
+      ## identical pair of root filesystems means the difference lives OUTSIDE them -- tar
+      ## metadata, the qcow2 header, the partition table, the bootloader sectors, the ESP.
+      ## That is not an explanation; fall through to the direct comparison instead of
+      ## announcing one and printing nothing.
+      ## Only rc 1 -- diffoscope FOUND differences -- is an explanation. rc 0 means the root
+      ## filesystems are identical, so the difference lives outside them. Anything higher is a
+      ## crash, an OOM or a timeout. In both non-1 cases the direct comparison must still run:
+      ## treating a crash as "explained" would suppress the documented fallback and leave the
+      ## report saying only that it could not explain.
+      if [ "${diffoscope_rc}" = "1" ]; then
+         explained="yes"
+      elif [ "${diffoscope_rc}" = "0" ]; then
+         ## Do NOT claim the difference is outside the root filesystems: this route EXCLUDES
+         ## boot/vmlinuz* and boot/initrd*, and a regenerated initrd is the single most common
+         ## non-reproducible artifact there is. rc 0 cannot tell "identical" from "every
+         ## difference was excluded", so name both possibilities instead of misdirecting the
+         ## reader away from the likeliest cause.
+         printf '%s\n' "(the mounted root filesystems showed no difference outside the excluded kernel and initrd paths, so the difference is either IN those excluded files (boot/vmlinuz*, boot/initrd*) or outside the filesystems entirely -- container metadata, qcow2 header, partition table or bootloader; comparing the artifacts directly)" >> "${report}"
+      else
+         printf '%s\n' "(the mounted comparison failed with exit ${diffoscope_rc}; comparing the artifacts directly instead)" >> "${report}"
+      fi
+   fi
+   filesystem_mounts_teardown
+   unpack_cleanup
+fi
+
+if [ "${explained}" = "no" ]; then
+   ## Reset first. 'diffoscope_rc' is only ASSIGNED on failure, so a value left over from a
+   ## failed mounted route would survive a SUCCESSFUL direct comparison and make the verdict
+   ## below claim the diff could not be explained when it just was.
+   diffoscope_rc=0
+   diffoscope_bounded "${artifact_a}" "${artifact_b}" >> "${report}" 2>&1 || diffoscope_rc="$?"
+   ## diffoscope exits 0 when it finds nothing. Reaching here means the artifacts differ, so
+   ## say why that is not a contradiction rather than leaving a diff-less report unexplained.
+   if [ "${diffoscope_rc}" = "0" ]; then
+      printf '%s\n' "(diffoscope reported no differences; the mismatch is in bytes it does not descend into, or in a path excluded above)" >> "${report}"
+   fi
+fi
+
+## 'rmdir', not a recursive delete: after teardown these must be EMPTY mount points, and
+## rmdir refuses a non-empty directory. A recursive delete here would descend INTO a still
+## mounted image if an unmount had failed -- survivable only because the mounts are
+## read-only, which is not a property to depend on.
+rmdir -- "${mount_a}" "${mount_b}" 2>/dev/null || true
+
+if [ "${diffoscope_rc}" -gt 1 ]; then
+   printf '%s\n' "(diffoscope could not explain the diff (exit ${diffoscope_rc}); the sha256 mismatch above is the verdict)" >> "${report}"
 fi
 
 exit 1
