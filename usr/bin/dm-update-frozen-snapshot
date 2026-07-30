@@ -517,7 +517,11 @@ update_frozen_snapshot() {
    for pin_file in "${PIN_FILES[@]:1}"; do
       pin_file_path="${source_root}/${pin_file}"
       [ -e "${pin_file_path}" ] || continue
-      stray_ts="$(grep -oE '[0-9]{8}T[0-9]{6}Z' -- "${pin_file_path}" | sort --unique || true)"
+      ## 'URIs:' lines only. These files carry example snapshot URLs in their
+      ## header prose, and a bare grep over the whole file reports those example
+      ## dates as extra pins -- which reads exactly like drift.
+      stray_ts="$(grep -E '^[[:space:]]*URIs:' -- "${pin_file_path}" \
+         | grep -oE '[0-9]{8}T[0-9]{6}Z' | sort --unique || true)"
       if [ -z "${stray_ts}" ]; then
          printf 'dm-update-frozen-snapshot: no pinned timestamp found in %s\n' "${pin_file_path}" >&2
          return 1
