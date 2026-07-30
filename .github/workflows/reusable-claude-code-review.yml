@@ -217,7 +217,7 @@ on:
       ## redeclaring the list per repo. Every entry must hold write on
       ## every consuming repo, or the OIDC token exchange 401s and the
       ## job fails RED after this gate has already passed it through.
-      ## `claude-roster-verify` (dist-ai-config) checks this list
+      ## `claude-roster-verify` (private-ai-config) checks this list
       ## against live permissions; run it after editing the list, and
       ## grant write before adding a name rather than after.
       allowed-users:

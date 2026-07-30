@@ -116,7 +116,7 @@ jobs:
       ## never been created (this workflow has 0 runs, ever). A check
       ## wired to a job that cannot start verifies nothing. It runs
       ## operator-side instead, as `claude-roster-verify` in
-      ## dist-ai-config, where the bot token already has org access.
+      ## private-ai-config, where the bot token already has org access.
 
       - name: Emit step summary
         if: always()
