@@ -131,6 +131,21 @@ jobs:
         ## dist-ai/ci script, not inline (no embedded shell in CI files).
         run: dist-ai/ci/dist-ai-tests-ci-hs-runtime.sh "${GITHUB_WORKSPACE}/helper-scripts"
 
+      - name: Checkout terminal-poc-corpus (for suites that drive the PoC corpus)
+        if: steps.cfg.outputs.terminal_poc_corpus == 'true'
+        ## The adversarial PoC corpus lives in its own repo, so a suite that drives
+        ## it (terminal-poc-corpus-tests) cannot resolve one here otherwise: it
+        ## exits 77, which is reported SKIP and counted green -- the gate then looks
+        ## wired when it never ran. Opt-in per repo via .github/dm-consumer.yml
+        ## (dist-ai-tests.terminal-poc-corpus: true) so the clone is not imposed on
+        ## every consumer. Sibling dir, matching component/ and dist-ai/ above.
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          repository: secure-terminal/terminal-poc-corpus
+          ref: master
+          path: terminal-poc-corpus
+          persist-credentials: false
+
       - name: Install test dependencies (apt only)
         env:
           APT_PACKAGES: ${{ steps.cfg.outputs.apt_packages }}
@@ -142,6 +157,9 @@ jobs:
         env:
           HS_ARG: ${{ steps.cfg.outputs.hs_arg }}
           SKIP_ARGS: ${{ steps.cfg.outputs.skip_args }}
+          ## dist-ai-tests-all's wire() resolves the corpus from this; harmless when
+          ## the checkout was not requested (the suite then SKIPs as before).
+          TERMINAL_POC_CORPUS_REPO: ${{ steps.cfg.outputs.terminal_poc_corpus == 'true' && format('{0}/terminal-poc-corpus', github.workspace) || '' }}
         ## shellcheck disable=SC2086  # CATEGORIES / HS_ARG / SKIP_ARGS are intentional flag lists
         run: |
           dist-ai/usr/bin/dist-ai-tests-all ${CATEGORIES} \
