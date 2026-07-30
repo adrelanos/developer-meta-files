@@ -157,17 +157,22 @@ jobs:
         env:
           HS_ARG: ${{ steps.cfg.outputs.hs_arg }}
           SKIP_ARGS: ${{ steps.cfg.outputs.skip_args }}
+          ## Suites this repo has authorized to exit 77 without failing the run.
+          ## An unauthorized skip is a FAILURE: a suite that could not resolve its
+          ## target must not report the same green exit 0 as one that ran.
+          ALLOW_SKIP_ARGS: ${{ steps.cfg.outputs.allow_skip_args }}
           ## dist-ai-tests-all's wire() resolves the corpus from this; harmless when
           ## the checkout was not requested (the suite then SKIPs as before).
           TERMINAL_POC_CORPUS_REPO: ${{ steps.cfg.outputs.terminal_poc_corpus == 'true' && format('{0}/terminal-poc-corpus', github.workspace) || '' }}
-        ## shellcheck disable=SC2086  # CATEGORIES / HS_ARG / SKIP_ARGS are intentional flag lists
+        ## shellcheck disable=SC2086  # CATEGORIES / HS_ARG / SKIP_ARGS / ALLOW_SKIP_ARGS are intentional flag lists
         run: |
           dist-ai/usr/bin/dist-ai-tests-all ${CATEGORIES} \
             --component "${COMPONENT}" \
             --component-root "${GITHUB_WORKSPACE}/component" \
             --timeout-core 600 \
             ${HS_ARG} \
-            ${SKIP_ARGS}
+            ${SKIP_ARGS} \
+            ${ALLOW_SKIP_ARGS}
 
       - name: Emit step summary
         if: always()
