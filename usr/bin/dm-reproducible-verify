@@ -17,12 +17,12 @@
 ## '.dm-buildinfo', so no build flags are required. This:
 ##   1. verifies the '.dm-buildinfo' + '.sha512sums' signatures (sq + signify),
 ##   2. checks the image against the signed sha512sum,
-##   3. rebuilds the recorded target locally and diffoscope-compares.
+##   3. rebuilds the recorded target locally and compares the two with
+##      'dm-reproducible-compare-artifacts'.
 ##
-## The image is only ever read by diffoscope -- never executed, booted, or
-## rw-mounted. SOURCE_DATE_EPOCH derives from debian/changelog, so a rebuild from
-## the recorded Source-Commit reproduces the image; run inside the standard build
-## container so the build path is canonical (see the reproducibility docs).
+## The image is only ever READ here -- never executed, booted, or rw-mounted.
+## How the comparison itself is performed is that tool's concern, not this
+## one's.
 ##
 ## Usage:
 ##   dm-reproducible-verify IMAGE_FILE [--signify-pubkey KEY] [--output REPORT] \
@@ -196,8 +196,8 @@ else
    "${build_cmd[@]}" || error "local rebuild failed."
 fi
 
-## Compare the local image against the rebuild (diffoscope). dir-a is the image's
-## own directory; the comparator finds the image by target extension.
+## Compare the local image against the rebuild. dir-a is the image's own
+## directory; the comparator finds the image by target extension.
 compare_args=( --target "${bi_target}" --dir-a "${image_dir}" --dir-b "${build_out}" )
 [ -z "${output_file}" ] || compare_args+=( --output "${output_file}" )
 
