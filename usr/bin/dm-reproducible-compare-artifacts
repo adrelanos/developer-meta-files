@@ -188,11 +188,6 @@ fi
 ## errexit and the script exits 1 -- which the caller and the CI workflow read as "artifacts
 ## differ", turning an unwritable --output path into a false reproducibility failure. Setup
 ## errors are 2.
-## 'printf | tee' rather than a ':' or bare redirection: ':' is a no-op
-## placeholder (R-130 wants 'true' with a message) and neither form says what
-## it is doing under xtrace. 'printf %s ""' writes NOTHING, so the report is
-## truncated to empty exactly as before, and tee's own exit status reports the
-## unwritable path.
 if ! printf '%s' "" | tee -- "${report}" >/dev/null 2>&1; then
    printf '%s\n' "${0##*/}: --output is not writable: ${report}" >&2
    exit 2
