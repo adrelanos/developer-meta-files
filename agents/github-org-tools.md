@@ -165,7 +165,9 @@ when an endpoint has a documented non-2xx steady-state response
 that should not raise a warn - e.g. `DELETE
 /repos/{}/{}/automated-security-fixes` returns 422 ("alerts are
 off") once Dependabot alerts have been disabled, which is the
-idempotent steady state on a mirror. The dispatcher path keeps
+idempotent steady state on a mirror. The SOURCE variant of the
+same DELETE (`POLICY_REPO_DEPENDABOT_FIXES_SOURCE_OFF`) carries
+the same knob. The dispatcher path keeps
 the data file declarative; G-034's Pages example is the older
 direct-call shape and stays valid for cases that need the 5th
 arg without the dispatcher.

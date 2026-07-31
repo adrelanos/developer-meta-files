@@ -297,8 +297,10 @@ readonly POLICY_REPO_PROJECT_ENDPOINT='/repos/__OWNER__/__REPO__'
 readonly POLICY_REPO_PROJECT_METHOD='PATCH'
 readonly POLICY_REPO_PROJECT_LABEL='PROJECT: wiki/discussions off, issues on, secret-scan on'
 
-## SOURCE-only. MIRROR running these would duplicate every alert the
-## canonical SOURCE repo already raises.
+## SOURCE + PROJECT. MIRROR running these would duplicate every alert the
+## canonical SOURCE repo already raises. An alert is a notification, not a
+## pull request, so it stays on wherever the code is maintained - including
+## SOURCE, whose security-update PRs are switched off below.
 ##
 ## Endpoint takes a body but accepts an empty object; we pass '{}' so
 ## the policy_apply_repo dispatcher (which always sends body via
@@ -308,7 +310,9 @@ readonly POLICY_REPO_DEPENDABOT_ALERTS_ENDPOINT='/repos/__OWNER__/__REPO__/vulne
 readonly POLICY_REPO_DEPENDABOT_ALERTS_METHOD='PUT'
 readonly POLICY_REPO_DEPENDABOT_ALERTS_LABEL='enable Dependabot alerts'
 
-## SOURCE-only. Requires Dependabot alerts already enabled.
+## PROJECT-only. Requires Dependabot alerts already enabled. PROJECT orgs
+## run GitHub Actions, so the pull request this opens can carry a CI
+## verdict; SOURCE cannot (see POLICY_REPO_DEPENDABOT_FIXES_SOURCE_OFF).
 readonly POLICY_REPO_DEPENDABOT_FIXES='{}'
 readonly POLICY_REPO_DEPENDABOT_FIXES_ENDPOINT='/repos/__OWNER__/__REPO__/automated-security-fixes'
 readonly POLICY_REPO_DEPENDABOT_FIXES_METHOD='PUT'
@@ -352,6 +356,58 @@ readonly POLICY_REPO_DEPENDABOT_FIXES_OFF_ENDPOINT='/repos/__OWNER__/__REPO__/au
 readonly POLICY_REPO_DEPENDABOT_FIXES_OFF_METHOD='DELETE'
 readonly POLICY_REPO_DEPENDABOT_FIXES_OFF_LABEL='disable Dependabot security updates (mirror)'
 readonly POLICY_REPO_DEPENDABOT_FIXES_OFF_EXTRA_OK_STATUS='422'
+
+## ============================================================================
+## SOURCE: Dependabot opens no pull requests
+## ============================================================================
+##
+## Actions is disabled org-wide on SOURCE (POLICY_ACTIONS_DISABLED_ORG,
+## deliberate: the canonical repos run their own CI). Dependabot does not
+## need repo Actions to open a pull request, so on SOURCE it produces
+## bump PRs that can NEVER carry a CI verdict - an unverifiable PR stream.
+## Both PR-producing switches are therefore off on SOURCE, while alerts
+## (POLICY_REPO_DEPENDABOT_ALERTS, a notification with no PR) stay on so a
+## CVE is still visible on the canonical repo.
+##
+## DECLARATIVE, NOT ENFORCED: the token is role=member on Kicksecure and
+## Whonix, SOURCE_ORGS is commented out of the ORGS array in
+## dm-github-org-policy, and neither switch below can be applied until an
+## org owner acts. Recorded here so --audit can measure the gap and an
+## owner has one place to read the desired state from.
+##
+## See agents/github-policy-org-kinds.md.
+
+## Switch 1 of 2: SECURITY updates, a real REST endpoint.
+## DELETE on a repo whose alerts are already off answers 422; that is the
+## idempotent steady state, captured the same way as the MIRROR variant.
+readonly POLICY_REPO_DEPENDABOT_FIXES_SOURCE_OFF='{}'
+readonly POLICY_REPO_DEPENDABOT_FIXES_SOURCE_OFF_ENDPOINT='/repos/__OWNER__/__REPO__/automated-security-fixes'
+readonly POLICY_REPO_DEPENDABOT_FIXES_SOURCE_OFF_METHOD='DELETE'
+readonly POLICY_REPO_DEPENDABOT_FIXES_SOURCE_OFF_LABEL='stop Dependabot security-update PRs (source: Actions off org-wide, nothing can verify them)'
+readonly POLICY_REPO_DEPENDABOT_FIXES_SOURCE_OFF_EXTRA_OK_STATUS='422'
+
+## Switch 2 of 2: VERSION updates, which have no REST setter at all - not
+## per repo and not org-wide. They run when '.github/dependabot.yml' exists
+## and stop when it does not, so the file IS the switch and the only way to
+## flip it is a commit that deletes it. Hence a skip line (emitted per
+## SOURCE repo by policy_skip_ui_repo) rather than an API constant.
+readonly POLICY_DEPENDABOT_VERSION_UPDATES_OFF_PATH='.github/dependabot.yml'
+readonly POLICY_DEPENDABOT_VERSION_UPDATES_OFF_LABEL='Dependabot version updates: delete .github/dependabot.yml (file presence IS the switch; no REST setter exists)'
+readonly POLICY_DEPENDABOT_VERSION_UPDATES_OFF_UI_URL_REPO='https://github.com/__OWNER__/__REPO__/blob/HEAD/.github/dependabot.yml'
+
+## Desired LIVE state for --audit, the read-side counterpart of the two
+## apply-side constants above. GET
+## /repos/{owner}/{repo}/automated-security-fixes answers 200
+## {"enabled":bool,"paused":bool} to a token with admin on the repo and 404
+## to one without (measured 2026-07-31 across all 124 SOURCE repos with the
+## member token: 404 everywhere). audit_expect counts any non-200 as a
+## finding, so an unreadable answer is never recorded as "off".
+readonly POLICY_REPO_DEPENDABOT_FIXES_EXPECT_OFF='{
+   enabled: false
+}'
+readonly POLICY_REPO_DEPENDABOT_FIXES_EXPECT_ON='{
+   enabled: true
+}'
 
 ## Applied on BOTH SOURCE and MIRROR. See the PVR rationale block above.
 readonly POLICY_REPO_PVR_OFF='{}'
