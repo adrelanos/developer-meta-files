@@ -55,6 +55,18 @@ me="${0##*/}"
 [ -v BRANCH_NAME ] || BRANCH_NAME=''
 [ -v DIST_AI_REPO ] || DIST_AI_REPO='org-ai-assisted/dist-ai'
 
+## Remote to probe. Defaults to the public GitHub URL for DIST_AI_REPO;
+## override to point at a mirror, or at a local repository so a test can
+## assert the companion-branch path without depending on which branches
+## happen to exist on github.com right now.
+##
+## That dependency is not hypothetical: the first version of the test
+## probed a real repo for a real branch, and merging the PR that carried
+## that branch auto-deleted it, so the test began reporting the fallback
+## and failed. An assertion whose subject can be deleted by unrelated
+## work is not an assertion.
+[ -v DIST_AI_REMOTE_URL ] || DIST_AI_REMOTE_URL="https://github.com/${DIST_AI_REPO}.git"
+
 emit() {
    printf '%s: dist-ai ref -> %s (%s)\n' "${me}" "$1" "$2" >&2
    printf 'ref=%s\n' "$1" >> "${GITHUB_OUTPUT}"
@@ -79,7 +91,7 @@ esac
 ## ls-remote rather than the REST API: no token, no rate limit, and it
 ## answers the exact question (does this ref exist) without a checkout.
 if git ls-remote --exit-code --heads -- \
-      "https://github.com/${DIST_AI_REPO}.git" "refs/heads/${BRANCH_NAME}" \
+      "${DIST_AI_REMOTE_URL}" "refs/heads/${BRANCH_NAME}" \
       > /dev/null 2>&1
 then
    emit "${BRANCH_NAME}" "companion branch exists in ${DIST_AI_REPO}"
