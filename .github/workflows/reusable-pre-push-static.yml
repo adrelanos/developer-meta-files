@@ -69,7 +69,17 @@ jobs:
     ## by the threat model in agents/security.md. Matches the guard
     ## on reusable-bandit/codeql/scorecard/cppcheck. Closes CodeQL
     ## actions/untrusted-checkout/medium alert #15.
-    if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request'
+    ## CI runs only where we enabled it. In a CALLED reusable the vars
+    ## context resolves against the CALLER's repository and org, so this
+    ## one condition gates every consumer -- upstream and forks skip with
+    ## no runner allocated and the run stays green, rather than taking a
+    ## red X for a lane they never opted into. A fork that WANTS the lane
+    ## sets the same variable in its own repo; no patch to our files.
+    ##
+    ## ANDed with the fork-PR guard, which stays.
+    if: >-
+      vars.CI_ENABLED_ORG_AI_ASSISTED == 'true'
+      && (github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request')
 
     timeout-minutes: 5
     permissions:

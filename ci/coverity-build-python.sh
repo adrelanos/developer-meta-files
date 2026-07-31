@@ -43,13 +43,19 @@ fi
 ## --language flags here if a Python repo also has JS / TS / etc.
 ## sources worth scanning.
 ## --file-exclude-regex: skip cov-analysis (the downloaded tool
-## itself), cov-int (this run's intermediate dir), and .git
-## metadata. Regex is applied to repo-relative paths.
+## itself), cov-int (this run's intermediate dir), .git metadata,
+## and the .github/dmf + .github/dist-ai CI-runtime helper
+## checkouts. The helper checkouts are other repos' trees staged
+## under the consumer's workspace; capturing them files their
+## defects against the CONSUMER's Coverity project, where the code
+## does not exist and the finding cannot be fixed. Note '\.git/.*'
+## does not cover them - it requires a '/' right after '.git'.
+## Regex is applied to repo-relative paths.
 ./cov-analysis/bin/coverity capture \
   --project-dir "${PWD}" \
   --dir cov-int \
   --language python \
-  --file-exclude-regex 'cov-analysis/.*|cov-int/.*|\.git/.*'
+  --file-exclude-regex 'cov-analysis/.*|cov-int/.*|\.git/.*|\.github/dmf/.*|\.github/dist-ai/.*'
 
 printf '%s\n' "::group::cov-int build summary"
 tail -n 100 -- cov-int/build-log.txt 2>/dev/null || true

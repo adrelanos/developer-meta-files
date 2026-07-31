@@ -95,7 +95,17 @@ jobs:
     timeout-minutes: 20
     ## Fork-PR guard: forked PRs need maintainer review before consuming
     ## CI time. Same guard as the other reusables (agents/security.md).
-    if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request'
+    ## CI runs only where we enabled it. In a CALLED reusable the vars
+    ## context resolves against the CALLER's repository and org, so this
+    ## one condition gates every consumer -- upstream and forks skip with
+    ## no runner allocated and the run stays green, rather than taking a
+    ## red X for a lane they never opted into. A fork that WANTS the lane
+    ## sets the same variable in its own repo; no patch to our files.
+    ##
+    ## ANDed with the fork-PR guard, which stays.
+    if: >-
+      vars.CI_ENABLED_ORG_AI_ASSISTED == 'true'
+      && (github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request')
     permissions:
       contents: read
     env:
@@ -166,7 +176,10 @@ jobs:
         env:
           APT_PACKAGES: ${{ steps.cfg.outputs.apt_packages }}
         run: |
-          ## shellcheck disable=SC2086  # APT_PACKAGES is an intentional word list
+          # shellcheck disable=SC2086  # APT_PACKAGES is an intentional word list
+          # (single '#', not the house '##': shellcheck only recognizes a
+          # directive written with one hash, so a '##' form is silently inert
+          # and actionlint's shellcheck pass reports SC2086 anyway.)
           apt-get install --yes --no-install-recommends ${APT_PACKAGES}
 
       - name: Run dist-ai suites for this component
@@ -180,8 +193,11 @@ jobs:
           ## dist-ai-tests-all's wire() resolves the corpus from this; harmless when
           ## the checkout was not requested (the suite then SKIPs as before).
           TERMINAL_POC_CORPUS_REPO: ${{ steps.cfg.outputs.terminal_poc_corpus == 'true' && format('{0}/terminal-poc-corpus', github.workspace) || '' }}
-        ## shellcheck disable=SC2086  # CATEGORIES / HS_ARG / SKIP_ARGS / ALLOW_SKIP_ARGS are intentional flag lists
         run: |
+          # shellcheck disable=SC2086  # CATEGORIES / HS_ARG / SKIP_ARGS / ALLOW_SKIP_ARGS are intentional flag lists
+          # Must live INSIDE the run: script, with a single '#'. As a YAML
+          # comment above 'run:' it never reached shellcheck at all, so the
+          # suppression looked deliberate while doing nothing.
           dist-ai/usr/bin/dist-ai-tests-all ${CATEGORIES} \
             --component "${COMPONENT}" \
             --component-root "${GITHUB_WORKSPACE}/component" \

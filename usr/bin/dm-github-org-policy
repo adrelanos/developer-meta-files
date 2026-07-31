@@ -6,7 +6,8 @@
 ## AI-Assisted
 
 ## Apply project-wide GitHub security/policy settings to the source
-## organizations (Kicksecure, Whonix). Idempotent and apply-only.
+## organizations (Kicksecure, Whonix). Idempotent and reconciling: a
+## setting the policy wants OFF is actively turned off, not left as found.
 ## Run `dm-github-org-policy --help` for the full settings list.
 
 set -o errexit
@@ -48,16 +49,17 @@ die_if_not_has github-org-fork
 ##          has_projects=false, has_discussions=false.
 ## PROJECT = org holding one self-contained first-party project
 ##          (secure-terminal, output-lies). Not a copy of anything,
-##          so issues, Dependabot alerts and private vulnerability
-##          reporting live here. Defaults: has_issues=true,
-##          has_wiki=false, has_discussions=false.
+##          so issues and private vulnerability reporting live here.
+##          Dependabot does not: it follows the CI, which runs on the
+##          MIRROR. Defaults: has_issues=true, has_wiki=false,
+##          has_discussions=false.
 ##
 ## Vocabulary aligns with dm-github-fork-sync.
 readonly SOURCE_ORGS=( 'Kicksecure' 'Whonix' )
 readonly MIRROR_ORGS=( 'org-ai-assisted' )
 ## PROJECT = an org holding one self-contained first-party project, not a copy of anything
-## upstream. Issues / alerts / private vulnerability reporting belong HERE, because there is
-## no canonical repo elsewhere to carry them.
+## upstream. Issues and private vulnerability reporting belong HERE, because there is no
+## canonical repo elsewhere to carry them.
 readonly PROJECT_ORGS=( 'secure-terminal' 'output-lies' )
 
 ## SOURCE_ORGS currently commented out pending an admin token scoped
@@ -119,8 +121,18 @@ show_help() {
    cat <<'EOF'
 Apply project-wide GitHub security/policy settings to the source
 organizations (Kicksecure, Whonix) and the mirror org
-(org-ai-assisted). Idempotent and apply-only - never disables a
-setting that was already on.
+(org-ai-assisted). Idempotent and reconciling: every run also turns
+OFF the settings the policy wants off (Dependabot everywhere except
+the mirror org, private vulnerability reporting everywhere except the
+project orgs).
+
+Dependabot runs on the mirror org only - that is where GitHub Actions
+runs, so it is the only place a bump pull request can carry a CI
+verdict.
+
+The source orgs are commented out of the ORGS array pending an admin
+token, so their policy is DECLARATIVE: --audit measures it under
+ORGS_OVERRIDE, --apply cannot reach it.
 
 Usage (one mode flag is required - no implicit default):
   dm-github-org-policy --apply         apply policy
@@ -232,7 +244,7 @@ apply_org_policy() {
    local org kind
 
    org="$1"
-   ## kind is also consumed by the SOURCE-only UI-flip skip lines at
+   ## kind is also consumed by the UI-flip skip lines at
    ## the end of this function; the commented-out PAID-plan ruleset
    ## bypass-actor pivot below would also use it.
    kind="$(org_kind "${org}")" || return 1
@@ -288,17 +300,133 @@ apply_org_policy() {
 
    log notice "skip: ${org}: ${POLICY_APPS_LABEL} - see ${POLICY_APPS_UI_URL_INSTALLATIONS//__ORG__/${org}} and ${POLICY_APPS_UI_URL_OAUTH//__ORG__/${org}}"
 
-   ## SOURCE-only UI-flip notices for Dependabot + Code-scanning
-   ## settings with no documented REST setter as of 2026-05; see
-   ## agents/github-policy-org-kinds.md "SOURCE-side
-   ## UI-only operator flips". MIRROR has Dependabot off entirely
-   ## (so grouping is moot) and runs CodeQL via the reusable
-   ## codeql.yml workflow (advanced setup, ignores the default-setup
-   ## query-suite recommendation).
-   if [ "${kind}" = 'source' ]; then
+   ## UI-flip notices for org-level Dependabot + Code-scanning settings
+   ## with no documented REST setter as of 2026-05; see
+   ## agents/github-policy-org-kinds.md "UI-only operator flips".
+   ##
+   ## Grouped security updates bundle SECURITY-UPDATE PULL REQUESTS, so
+   ## the flip is only meaningful where those exist: MIRROR, the only kind
+   ## that runs Dependabot at all.
+   if [ "${kind}" = 'mirror' ]; then
       policy_skip_ui "${org}" GROUPED_SECURITY_UPDATES
+   fi
+   ## MIRROR runs CodeQL via the reusable codeql.yml workflow (advanced
+   ## setup), which carries its own queries: value and ignores the
+   ## default-setup recommendation.
+   if [ "${kind}" = 'source' ]; then
       policy_skip_ui "${org}" CODE_SCANNING_QUERY_SUITE
    fi
+}
+
+## Count of audit findings: policy drift, plus any endpoint we could
+## not read. An audit that cannot fail is a printer, not a check --
+## and a run that could not reach the API must never read as clean.
+## main() turns a non-zero count into a non-zero exit.
+audit_findings=0
+
+## Compare a live endpoint against the desired policy object and record
+## drift. The desired value is the SAME POLICY_* literal that --apply
+## PUTs, so the audit can never drift from what apply enforces.
+##
+## Only the keys the policy sets are compared: the API returns extra
+## fields (urls, counts) that are not ours to own.
+## Args: $1 = label, $2 = API path, $3 = desired JSON (jq object literal).
+audit_expect() {
+   local label path desired result status body drift line want_json drift_rc
+
+   label="$1"
+   path="$2"
+   desired="$3"
+
+   result="$(ghorg_api GET "${path}")" || {
+      log warn "  ${label}: <api error> -- NOT VERIFIED"
+      audit_findings=$(( audit_findings + 1 ))
+      return 0
+   }
+   status="$(ghorg_status_of "${result}")"
+   if [ "${status}" != '200' ]; then
+      log warn "  ${label}: HTTP ${status} -- NOT VERIFIED"
+      audit_findings=$(( audit_findings + 1 ))
+      return 0
+   fi
+   body="$(ghorg_body_of "${result}")"
+   ## Render the desired object FIRST and on its own. Inline as a
+   ## command argument, a failure here (a malformed POLICY_* literal)
+   ## would expand to empty, jq would reject '--argjson want ""', and an
+   ## empty ${drift} would be reported as "matches policy" -- a silent
+   ## pass over an unverified org, the exact failure mode this whole
+   ## change exists to remove.
+   want_json="$(ghorg_jq -n -- "${desired}")" || want_json=''
+   if [ -z "${want_json}" ]; then
+      log warn "  ${label}: policy literal is not valid JSON -- NOT VERIFIED"
+      audit_findings=$(( audit_findings + 1 ))
+      return 0
+   fi
+
+   ## has()/getpath rather than '$live[.key] // null': jq's '//' yields
+   ## its right-hand side when the left is null OR FALSE, so every policy
+   ## value of `false` (can_approve_pull_request_reviews, for one) would
+   ## read as absent and be reported as permanent drift.
+   drift_rc=0
+   drift="$(printf '%s' "${body}" \
+      | ghorg_jq_capped --raw-output --argjson want "${want_json}" -- '
+         . as $live
+         | $want
+         | to_entries[]
+         | . as $e
+         | select(($live | has($e.key) | not) or ($live[$e.key] != $e.value))
+         | "\($e.key): live=\(if ($live | has($e.key)) then ($live[$e.key] | tojson) else "<absent>" end) want=\($e.value | tojson)"' \
+      )" || drift_rc="$?"
+   ## A comparison that could not RUN is not a comparison that passed.
+   if [ "${drift_rc}" -ne 0 ]; then
+      log warn "  ${label}: comparison failed (jq rc=${drift_rc}) -- NOT VERIFIED"
+      audit_findings=$(( audit_findings + 1 ))
+      return 0
+   fi
+   if [ -n "${drift}" ]; then
+      log warn "  ${label}: DRIFT from policy"
+      while IFS= read -r line; do
+         [ -z "${line}" ] && continue
+         log warn "    ${line}"
+      done <<< "${drift}"
+      audit_findings=$(( audit_findings + 1 ))
+      return 0
+   fi
+   log notice "  ${label}: matches policy"
+}
+
+## Assert that a body-less on/off endpoint reads as ENABLED.
+##
+## GitHub answers "is this on?" for /vulnerability-alerts with HTTP 204
+## (on) or 404 (off) and no body at all, so audit_expect's JSON key
+## comparison does not apply. Only the must-be-ON direction is checkable
+## here: a 404 is returned both when the feature is off and when the
+## token cannot see it, so a must-be-OFF claim would be indistinguishable
+## from a permissions wall and is deliberately not asserted through this
+## endpoint.
+## Args: $1 = label, $2 = API path.
+audit_expect_enabled() {
+   local label path result status
+
+   label="$1"
+   path="$2"
+
+   result="$(ghorg_api GET "${path}")" || {
+      log warn "  ${label}: <api error> -- NOT VERIFIED"
+      audit_findings=$(( audit_findings + 1 ))
+      return 0
+   }
+   status="$(ghorg_status_of "${result}")"
+   if [ "${status}" = '204' ]; then
+      log notice "  ${label}: matches policy (enabled)"
+      return 0
+   fi
+   if [ "${status}" = '404' ]; then
+      log warn "  ${label}: HTTP 404 -- disabled, or invisible to this token -- NOT VERIFIED"
+   else
+      log warn "  ${label}: HTTP ${status} -- NOT VERIFIED"
+   fi
+   audit_findings=$(( audit_findings + 1 ))
 }
 
 ## GET-and-print helper for audit_org_state.
@@ -311,12 +439,14 @@ audit_get() {
    jq_filter="${3:-.}"
 
    result="$(ghorg_api GET "${path}")" || {
-      log notice "  ${label}: <api error>"
+      log warn "  ${label}: <api error> -- NOT VERIFIED"
+      audit_findings=$(( audit_findings + 1 ))
       return 0
    }
    status="$(ghorg_status_of "${result}")"
    if [ "${status}" != '200' ]; then
-      log notice "  ${label}: HTTP ${status}"
+      log warn "  ${label}: HTTP ${status} -- NOT VERIFIED"
+      audit_findings=$(( audit_findings + 1 ))
       return 0
    fi
    body="$(ghorg_body_of "${result}")"
@@ -332,23 +462,27 @@ audit_get() {
 audit_org_state() {
    local org result status body count names
    local actions_result actions_status actions_body
-   local allowed_actions enabled_repos
+   local allowed_actions enabled_repos audit_kind
    local member
    local installs install_line total no_secret
-   local repos repo missing_count have_count
+   local repos repo missing_count have_count unreadable_count
    local private_names private_count
 
    org="$1"
 
    log notice "=== audit: ${org} ==="
 
-   audit_get 'fork-PR approval policy' \
+   ## Every setting that has a POLICY_* literal is COMPARED, not merely
+   ## printed. Printing was how an empty patterns_allowed sailed through:
+   ## a human-readable summary line looks the same whether the value is
+   ## right or wrong.
+   audit_expect 'fork-PR approval policy' \
       "/orgs/${org}/actions/permissions/fork-pr-contributor-approval" \
-      '.approval_policy // "(unset)"'
+      "${POLICY_FORK_PR_APPROVAL}"
 
-   audit_get 'workflow GITHUB_TOKEN permissions' \
+   audit_expect 'workflow GITHUB_TOKEN permissions' \
       "/orgs/${org}/actions/permissions/workflow" \
-      '"default=" + (.default_workflow_permissions // "?") + ", can_approve_PRs=" + ((.can_approve_pull_request_reviews // false) | tostring)'
+      "${POLICY_WORKFLOW_PERMS}"
 
    ## /actions/permissions/selected-actions returns 409 when
    ## allowed_actions != "selected"; suppress the call in that case.
@@ -363,13 +497,40 @@ audit_org_state() {
       enabled_repos="$(printf '%s' "${actions_body}" | ghorg_jq_capped --raw-output -- '.enabled_repositories // "?"')"
       log notice "  actions allowed_actions: enabled_repos=${enabled_repos}, allowed_actions=${allowed_actions}"
    else
-      log notice "  actions allowed_actions: HTTP ${actions_status}"
+      log warn "  actions allowed_actions: HTTP ${actions_status} -- NOT VERIFIED"
+      audit_findings=$(( audit_findings + 1 ))
    fi
 
+   ## Expected scope depends on the org KIND, exactly as apply_org_policy
+   ## chooses it: SOURCE orgs (Kicksecure / Whonix) have Actions disabled
+   ## org-wide, everything else runs 'selected'. Comparing every org
+   ## against POLICY_ACTIONS_SCOPE would report a correctly configured
+   ## SOURCE org as drift and fail the audit on it.
+   audit_kind="$(org_kind "${org}")" || audit_kind=''
+   if [ "${audit_kind}" = 'source' ]; then
+      audit_expect 'actions scope' \
+         "/orgs/${org}/actions/permissions" \
+         "${POLICY_ACTIONS_DISABLED_ORG}"
+   elif [ -n "${audit_kind}" ]; then
+      audit_expect 'actions scope' \
+         "/orgs/${org}/actions/permissions" \
+         "${POLICY_ACTIONS_SCOPE}"
+   else
+      log warn '  actions scope: org kind unknown -- NOT VERIFIED'
+      audit_findings=$(( audit_findings + 1 ))
+   fi
+
+   ## /actions/permissions/selected-actions returns 409 when
+   ## allowed_actions != "selected"; the scope check above already
+   ## reported that as drift, so do not double-count it here.
    if [ "${allowed_actions}" = 'selected' ]; then
-      audit_get 'selected-actions allow-list' \
+      ## Compared field-by-field against the policy, NOT summarised to a
+      ## count: an empty patterns_allowed reads as "patterns=0" in a
+      ## summary and looks like ordinary output, which is exactly how a
+      ## policy that broke every cross-org reusable call passed audit.
+      audit_expect 'selected-actions allow-list' \
          "/orgs/${org}/actions/permissions/selected-actions" \
-         '"github_owned=" + ((.github_owned_allowed // false) | tostring) + ", verified=" + ((.verified_allowed // false) | tostring) + ", patterns=" + ((.patterns_allowed // []) | length | tostring)'
+         "${POLICY_ACTIONS_ALLOWLIST}"
    else
       log notice "  selected-actions allow-list: (N/A while allowed_actions=${allowed_actions:-?})"
    fi
@@ -400,7 +561,11 @@ audit_org_state() {
          done <<< "${names}"
       fi
    else
-      log notice "    HTTP ${status} (need admin:org / Members read scope)"
+      ## An endpoint we could not read is a finding: the audit's
+      ## contract is that anything unverified fails, not that it is
+      ## quietly assumed fine.
+      log warn "    HTTP ${status} (need admin:org / Members read scope) -- NOT VERIFIED"
+      audit_findings=$(( audit_findings + 1 ))
    fi
 
    ## PAID PLAN ONLY. Org-level rulesets list (GET /orgs/{org}/rulesets)
@@ -492,7 +657,8 @@ audit_org_state() {
          done <<< "${installs}"
       fi
    else
-      log notice "    HTTP ${status}"
+      log warn "    HTTP ${status} -- NOT VERIFIED"
+      audit_findings=$(( audit_findings + 1 ))
    fi
 
    ## Org webhooks: any without a configured `secret` are a Critical
@@ -515,7 +681,8 @@ audit_org_state() {
          log notice "    total=${total}, lacking secret=${no_secret}"
       fi
    else
-      log notice "    HTTP ${status} (token may lack admin:org_hook scope)"
+      log warn "    HTTP ${status} (token may lack admin:org_hook scope) -- NOT VERIFIED"
+      audit_findings=$(( audit_findings + 1 ))
    fi
 
    ## Private (non-archived) repos. None should exist in the active
@@ -541,13 +708,23 @@ audit_org_state() {
          done <<< "${private_names}"
       fi
    else
-      log notice "    HTTP ${status} (token may lack repo scope to enumerate private repos)"
+      log warn "    HTTP ${status} (token may lack repo scope to enumerate private repos) -- NOT VERIFIED"
+      audit_findings=$(( audit_findings + 1 ))
    fi
 
    ## OSSF Scorecard "Dependency-Update-Tool" looks for
    ## .github/dependabot.yml file presence specifically, so even with
    ## org-level Dependabot alerts enabled, repos missing the file
    ## still fail Scorecard.
+   ##
+   ## Off the mirror the same probe is a POLICY CHECK, not an inventory
+   ## line: the file IS the version-update switch and only MIRROR may
+   ## carry one, because only MIRROR runs the CI that verifies the bump
+   ## PRs it opens. On MIRROR the file is opt-in per repo (see
+   ## dm-packaging-helper-script), so either answer is in policy there.
+   ## Archived repos are outside this enumeration; Dependabot does not
+   ## run on them, so a leftover config there is inert until the repo is
+   ## un-archived.
    log notice '  dependabot.yml presence (Scorecard "Dependency-Update-Tool"):'
    repos="$(ghorg_list_repos "${org}" 'false' 'false' 'true' | sort --unique)"
    if [ -z "${repos}" ]; then
@@ -559,19 +736,66 @@ audit_org_state() {
       ## visible alongside the ones that genuinely need it.
       missing_count=0
       have_count=0
+      unreadable_count=0
       while IFS= read -r repo; do
          [ -z "${repo}" ] && continue
-         result="$(ghorg_api GET "/repos/${org}/${repo}/contents/.github/dependabot.yml")" || true
+         result="$(ghorg_api GET "/repos/${org}/${repo}/contents/${POLICY_DEPENDABOT_VERSION_UPDATES_OFF_PATH}")" || true
          status="$(ghorg_status_of "${result}")"
-         if [ "${status}" = '200' ]; then
-            have_count=$(( have_count + 1 ))
-            log notice "    yes: ${org}/${repo}"
-         else
-            missing_count=$(( missing_count + 1 ))
-            log notice "    no:  ${org}/${repo}"
+         case "${status}" in
+            200)
+               have_count=$(( have_count + 1 ))
+               log notice "    yes: ${org}/${repo}"
+               if [ "${audit_kind}" != 'mirror' ]; then
+                  log warn "    ${org}/${repo}: DRIFT from policy: Dependabot version updates are ON (${POLICY_DEPENDABOT_VERSION_UPDATES_OFF_PATH} present); only the mirror org has CI to verify the PRs they open"
+                  audit_findings=$(( audit_findings + 1 ))
+               fi
+               ;;
+            404)
+               missing_count=$(( missing_count + 1 ))
+               log notice "    no:  ${org}/${repo}"
+               ;;
+            *)
+               ## Neither a hit nor a clean 404 is an UNKNOWN, not an
+               ## absence. Counted with the missing ones so the inventory
+               ## summary keeps one meaning, but reported as a finding on
+               ## every kind: printing "no:" for a probe that never
+               ## answered is exactly the false green this audit exists to
+               ## prevent, and it is equally false on the mirror.
+               unreadable_count=$(( unreadable_count + 1 ))
+               missing_count=$(( missing_count + 1 ))
+               log notice "    no:  ${org}/${repo}"
+               log warn "    ${org}/${repo}: HTTP ${status} probing ${POLICY_DEPENDABOT_VERSION_UPDATES_OFF_PATH} -- NOT VERIFIED"
+               audit_findings=$(( audit_findings + 1 ))
+               ;;
+         esac
+
+         ## Second Dependabot switch: SECURITY updates, the one with a
+         ## REST endpoint. Compared against the same literal the apply
+         ## path enforces, per kind: ON on the mirror, OFF everywhere
+         ## else.
+         ##
+         ## Alerts are asserted only in the must-be-ON direction, on
+         ## MIRROR. GET /vulnerability-alerts answers 404 both when
+         ## alerts are off and when the token cannot see the repo, so a
+         ## must-be-OFF claim through it would be indistinguishable from a
+         ## permissions wall -- see agents/github-policy-org-kinds.md,
+         ## "What --audit compares".
+         if [ "${audit_kind}" = 'mirror' ]; then
+            audit_expect "dependabot security updates ${org}/${repo}" \
+               "/repos/${org}/${repo}/automated-security-fixes" \
+               "${POLICY_REPO_DEPENDABOT_FIXES_EXPECT_ON}"
+            audit_expect_enabled "dependabot alerts ${org}/${repo}" \
+               "/repos/${org}/${repo}/vulnerability-alerts"
+         elif [ -n "${audit_kind}" ]; then
+            audit_expect "dependabot security updates ${org}/${repo}" \
+               "/repos/${org}/${repo}/automated-security-fixes" \
+               "${POLICY_REPO_DEPENDABOT_FIXES_EXPECT_OFF}"
          fi
       done <<< "${repos}"
       log notice "    summary: have=${have_count}, missing=${missing_count}"
+      if [ "${unreadable_count}" -gt 0 ]; then
+         log notice "    note: ${unreadable_count} repo(s) answered neither 200 nor 404; counted as missing above"
+      fi
    fi
 }
 
@@ -593,26 +817,31 @@ apply_repo_policy() {
    policy_apply_repo "${owner}" "${repo}" "REPO_${kind^^}" ENDPOINT
 
    # Order: G-035 / see github-policy-org-kinds.md
-   ## Dependabot: MIRROR is the only kind that turns it off, because its alerts would
-   ## duplicate the ones the canonical SOURCE repo already raises. SOURCE and PROJECT both
-   ## hold code somebody has to fix where it lives.
+   ## Dependabot runs on MIRROR and nowhere else. SOURCE has Actions disabled org-wide
+   ## (ACTIONS_DISABLED_ORG above), so a bump PR raised there can never carry a CI
+   ## verdict. PROJECT repos are mirrored into org-ai-assisted, where the AI-assisted
+   ## test + scanner suites run, so running Dependabot on both sides only splits one
+   ## alert inbox and one bump stream in two. Everywhere except MIRROR both switches are
+   ## actively DELETEd every --apply, so a leftover from an older run or a UI flip is
+   ## reconciled away. Order: FIXES before ALERTS on the disable side - the
+   ## security-fixes endpoint answers 422 once alerts are off, the idempotent steady
+   ## state; reversed on the enable side, where the PUT requires alerts first.
+   ## See agents/github-policy-org-kinds.md.
    if [ "${kind}" = 'mirror' ]; then
-      policy_apply_repo "${owner}" "${repo}" REPO_DEPENDABOT_FIXES_OFF  ENDPOINT
-      policy_apply_repo "${owner}" "${repo}" REPO_DEPENDABOT_ALERTS_OFF ENDPOINT
-   else
       policy_apply_repo "${owner}" "${repo}" REPO_DEPENDABOT_ALERTS ENDPOINT
       policy_apply_repo "${owner}" "${repo}" REPO_DEPENDABOT_FIXES  ENDPOINT
+   else
+      policy_apply_repo "${owner}" "${repo}" REPO_DEPENDABOT_FIXES_OFF  ENDPOINT
+      policy_apply_repo "${owner}" "${repo}" REPO_DEPENDABOT_ALERTS_OFF ENDPOINT
    fi
 
-   ## PVR is a narrower question than Dependabot and does NOT follow the same split. SOURCE
-   ## disables it because Kicksecure and Whonix take security reports through their own
-   ## documented channel, not GitHub. Only PROJECT enables it: it has no such channel, so
-   ## GitHub's is the only one a researcher can find.
-   if [ "${kind}" = 'project' ]; then
-      policy_apply_repo "${owner}" "${repo}" REPO_PVR_ON ENDPOINT
-   else
-      policy_apply_repo "${owner}" "${repo}" REPO_PVR_OFF ENDPOINT
-   fi
+   ## PVR is disabled on EVERY kind, PROJECT included. We do not use it:
+   ## security reports come in as OpenPGP-encrypted e-mail, and that is
+   ## the only channel we watch. Leaving GitHub's private-report inbox
+   ## open on any repo would create a second one nobody reads -- worse
+   ## than no channel, because a researcher who finds it reasonably
+   ## assumes it is monitored.
+   policy_apply_repo "${owner}" "${repo}" REPO_PVR_OFF ENDPOINT
 
    bypass_var="POLICY_RULESET_BYPASS_${kind^^}"
    rules_var="POLICY_RULESET_RULES_${kind^^}"
@@ -625,15 +854,21 @@ apply_repo_policy() {
          || true
    fi
 
-   ## SOURCE-only UI-flip notices for per-repo Dependabot settings
-   ## with no documented REST setter as of 2026-05; see
-   ## agents/github-policy-org-kinds.md "SOURCE-side
-   ## UI-only operator flips". MIRROR has Dependabot off entirely,
-   ## so auto-triage rules and delegated-dismissal are moot there.
-   if [ "${kind}" = 'source' ]; then
+   ## UI-flip notices for per-repo Dependabot ALERT settings with no
+   ## documented REST setter as of 2026-05; see
+   ## agents/github-policy-org-kinds.md "UI-only operator flips".
+   ## Emitted where alerts exist to be triaged or dismissed - MIRROR only,
+   ## the one kind that runs Dependabot.
+   if [ "${kind}" = 'mirror' ]; then
       policy_skip_ui_repo "${owner}" "${repo}" AUTO_TRIAGE_DISMISS_DEV
       policy_skip_ui_repo "${owner}" "${repo}" AUTO_TRIAGE_DISMISS_MALWARE
       policy_skip_ui_repo "${owner}" "${repo}" DELEGATED_DISMISSAL
+   else
+      ## Dependabot VERSION updates have no REST setter at any scope: the
+      ## presence of .github/dependabot.yml is the switch, so turning them
+      ## off means a commit that deletes the file. Emitted per repo
+      ## because that is the granularity the fix has.
+      policy_skip_ui_repo "${owner}" "${repo}" DEPENDABOT_VERSION_UPDATES_OFF
    fi
 }
 
@@ -643,6 +878,21 @@ main() {
       for org in "${ORGS[@]}"; do
          audit_org_state "${org}"
       done
+      ## Exit non-zero on drift or on any endpoint that could not be
+      ## read. Without this the audit reported success no matter what it
+      ## found -- including a total API failure -- so a scheduled lane
+      ## would have shown green over a broken org.
+      if [ "${audit_findings}" -gt 0 ]; then
+         log error "audit: ${audit_findings} finding(s) -- live state does not match policy"
+         return 1
+      fi
+      ## Deliberately narrow wording. Every setting backed by a POLICY_*
+      ## literal is compared; the remaining lines (2FA, code-security
+      ## defaults for new repos, member/app/webhook inventories) are
+      ## reported for a human to read and have no desired-state literal
+      ## to compare against. Claiming the whole live policy matches would
+      ## overstate what ran.
+      log notice 'audit: every enforced setting matches policy; no endpoint went unread'
       return 0
    fi
 
