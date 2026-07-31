@@ -315,7 +315,7 @@ audit_findings=0
 ## fields (urls, counts) that are not ours to own.
 ## Args: $1 = label, $2 = API path, $3 = desired JSON (jq object literal).
 audit_expect() {
-   local label path desired result status body drift line
+   local label path desired result status body drift line want_json drift_rc
 
    label="$1"
    path="$2"
@@ -333,15 +333,39 @@ audit_expect() {
       return 0
    fi
    body="$(ghorg_body_of "${result}")"
+   ## Render the desired object FIRST and on its own. Inline as a
+   ## command argument, a failure here (a malformed POLICY_* literal)
+   ## would expand to empty, jq would reject '--argjson want ""', and an
+   ## empty ${drift} would be reported as "matches policy" -- a silent
+   ## pass over an unverified org, the exact failure mode this whole
+   ## change exists to remove.
+   want_json="$(ghorg_jq -n -- "${desired}")" || want_json=''
+   if [ -z "${want_json}" ]; then
+      log warn "  ${label}: policy literal is not valid JSON -- NOT VERIFIED"
+      audit_findings=$(( audit_findings + 1 ))
+      return 0
+   fi
+
+   ## has()/getpath rather than '$live[.key] // null': jq's '//' yields
+   ## its right-hand side when the left is null OR FALSE, so every policy
+   ## value of `false` (can_approve_pull_request_reviews, for one) would
+   ## read as absent and be reported as permanent drift.
+   drift_rc=0
    drift="$(printf '%s' "${body}" \
-      | ghorg_jq_capped --raw-output \
-         --argjson want "$(ghorg_jq -n -- "${desired}")" -- '
+      | ghorg_jq_capped --raw-output --argjson want "${want_json}" -- '
          . as $live
          | $want
          | to_entries[]
-         | select(($live[.key] // null) != .value)
-         | "\(.key): live=\(($live[.key] // null) | tojson) want=\(.value | tojson)"' \
-      2>/dev/null)"
+         | . as $e
+         | select(($live | has($e.key) | not) or ($live[$e.key] != $e.value))
+         | "\($e.key): live=\(if ($live | has($e.key)) then ($live[$e.key] | tojson) else "<absent>" end) want=\($e.value | tojson)"' \
+      )" || drift_rc="$?"
+   ## A comparison that could not RUN is not a comparison that passed.
+   if [ "${drift_rc}" -ne 0 ]; then
+      log warn "  ${label}: comparison failed (jq rc=${drift_rc}) -- NOT VERIFIED"
+      audit_findings=$(( audit_findings + 1 ))
+      return 0
+   fi
    if [ -n "${drift}" ]; then
       log warn "  ${label}: DRIFT from policy"
       while IFS= read -r line; do
@@ -397,13 +421,17 @@ audit_org_state() {
 
    log notice "=== audit: ${org} ==="
 
-   audit_get 'fork-PR approval policy' \
+   ## Every setting that has a POLICY_* literal is COMPARED, not merely
+   ## printed. Printing was how an empty patterns_allowed sailed through:
+   ## a human-readable summary line looks the same whether the value is
+   ## right or wrong.
+   audit_expect 'fork-PR approval policy' \
       "/orgs/${org}/actions/permissions/fork-pr-contributor-approval" \
-      '.approval_policy // "(unset)"'
+      "${POLICY_FORK_PR_APPROVAL}"
 
-   audit_get 'workflow GITHUB_TOKEN permissions' \
+   audit_expect 'workflow GITHUB_TOKEN permissions' \
       "/orgs/${org}/actions/permissions/workflow" \
-      '"default=" + (.default_workflow_permissions // "?") + ", can_approve_PRs=" + ((.can_approve_pull_request_reviews // false) | tostring)'
+      "${POLICY_WORKFLOW_PERMS}"
 
    ## /actions/permissions/selected-actions returns 409 when
    ## allowed_actions != "selected"; suppress the call in that case.
@@ -422,9 +450,24 @@ audit_org_state() {
       audit_findings=$(( audit_findings + 1 ))
    fi
 
-   audit_expect 'actions scope' \
-      "/orgs/${org}/actions/permissions" \
-      "${POLICY_ACTIONS_SCOPE}"
+   ## Expected scope depends on the org KIND, exactly as apply_org_policy
+   ## chooses it: SOURCE orgs (Kicksecure / Whonix) have Actions disabled
+   ## org-wide, everything else runs 'selected'. Comparing every org
+   ## against POLICY_ACTIONS_SCOPE would report a correctly configured
+   ## SOURCE org as drift and fail the audit on it.
+   audit_kind="$(org_kind "${org}")" || audit_kind=''
+   if [ "${audit_kind}" = 'source' ]; then
+      audit_expect 'actions scope' \
+         "/orgs/${org}/actions/permissions" \
+         "${POLICY_ACTIONS_DISABLED_ORG}"
+   elif [ -n "${audit_kind}" ]; then
+      audit_expect 'actions scope' \
+         "/orgs/${org}/actions/permissions" \
+         "${POLICY_ACTIONS_SCOPE}"
+   else
+      log warn '  actions scope: org kind unknown -- NOT VERIFIED'
+      audit_findings=$(( audit_findings + 1 ))
+   fi
 
    ## /actions/permissions/selected-actions returns 409 when
    ## allowed_actions != "selected"; the scope check above already
@@ -467,7 +510,11 @@ audit_org_state() {
          done <<< "${names}"
       fi
    else
-      log notice "    HTTP ${status} (need admin:org / Members read scope)"
+      ## An endpoint we could not read is a finding: the audit's
+      ## contract is that anything unverified fails, not that it is
+      ## quietly assumed fine.
+      log warn "    HTTP ${status} (need admin:org / Members read scope) -- NOT VERIFIED"
+      audit_findings=$(( audit_findings + 1 ))
    fi
 
    ## PAID PLAN ONLY. Org-level rulesets list (GET /orgs/{org}/rulesets)
@@ -559,7 +606,8 @@ audit_org_state() {
          done <<< "${installs}"
       fi
    else
-      log notice "    HTTP ${status}"
+      log warn "    HTTP ${status} -- NOT VERIFIED"
+      audit_findings=$(( audit_findings + 1 ))
    fi
 
    ## Org webhooks: any without a configured `secret` are a Critical
@@ -582,7 +630,8 @@ audit_org_state() {
          log notice "    total=${total}, lacking secret=${no_secret}"
       fi
    else
-      log notice "    HTTP ${status} (token may lack admin:org_hook scope)"
+      log warn "    HTTP ${status} (token may lack admin:org_hook scope) -- NOT VERIFIED"
+      audit_findings=$(( audit_findings + 1 ))
    fi
 
    ## Private (non-archived) repos. None should exist in the active
@@ -608,7 +657,8 @@ audit_org_state() {
          done <<< "${private_names}"
       fi
    else
-      log notice "    HTTP ${status} (token may lack repo scope to enumerate private repos)"
+      log warn "    HTTP ${status} (token may lack repo scope to enumerate private repos) -- NOT VERIFIED"
+      audit_findings=$(( audit_findings + 1 ))
    fi
 
    ## OSSF Scorecard "Dependency-Update-Tool" looks for
@@ -718,7 +768,13 @@ main() {
          log error "audit: ${audit_findings} finding(s) -- live state does not match policy"
          return 1
       fi
-      log notice 'audit: live state matches policy'
+      ## Deliberately narrow wording. Every setting backed by a POLICY_*
+      ## literal is compared; the remaining lines (2FA, code-security
+      ## defaults for new repos, member/app/webhook inventories) are
+      ## reported for a human to read and have no desired-state literal
+      ## to compare against. Claiming the whole live policy matches would
+      ## overstate what ran.
+      log notice 'audit: every enforced setting matches policy; no endpoint went unread'
       return 0
    fi
 
