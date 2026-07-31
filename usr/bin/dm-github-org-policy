@@ -301,6 +301,59 @@ apply_org_policy() {
    fi
 }
 
+## Count of audit findings: policy drift, plus any endpoint we could
+## not read. An audit that cannot fail is a printer, not a check --
+## and a run that could not reach the API must never read as clean.
+## main() turns a non-zero count into a non-zero exit.
+audit_findings=0
+
+## Compare a live endpoint against the desired policy object and record
+## drift. The desired value is the SAME POLICY_* literal that --apply
+## PUTs, so the audit can never drift from what apply enforces.
+##
+## Only the keys the policy sets are compared: the API returns extra
+## fields (urls, counts) that are not ours to own.
+## Args: $1 = label, $2 = API path, $3 = desired JSON (jq object literal).
+audit_expect() {
+   local label path desired result status body drift line
+
+   label="$1"
+   path="$2"
+   desired="$3"
+
+   result="$(ghorg_api GET "${path}")" || {
+      log warn "  ${label}: <api error> -- NOT VERIFIED"
+      audit_findings=$(( audit_findings + 1 ))
+      return 0
+   }
+   status="$(ghorg_status_of "${result}")"
+   if [ "${status}" != '200' ]; then
+      log warn "  ${label}: HTTP ${status} -- NOT VERIFIED"
+      audit_findings=$(( audit_findings + 1 ))
+      return 0
+   fi
+   body="$(ghorg_body_of "${result}")"
+   drift="$(printf '%s' "${body}" \
+      | ghorg_jq_capped --raw-output \
+         --argjson want "$(ghorg_jq -n -- "${desired}")" -- '
+         . as $live
+         | $want
+         | to_entries[]
+         | select(($live[.key] // null) != .value)
+         | "\(.key): live=\(($live[.key] // null) | tojson) want=\(.value | tojson)"' \
+      2>/dev/null)"
+   if [ -n "${drift}" ]; then
+      log warn "  ${label}: DRIFT from policy"
+      while IFS= read -r line; do
+         [ -z "${line}" ] && continue
+         log warn "    ${line}"
+      done <<< "${drift}"
+      audit_findings=$(( audit_findings + 1 ))
+      return 0
+   fi
+   log notice "  ${label}: matches policy"
+}
+
 ## GET-and-print helper for audit_org_state.
 ## Args: $1 = label, $2 = API path, $3 = jq filter (default '.').
 audit_get() {
@@ -311,12 +364,14 @@ audit_get() {
    jq_filter="${3:-.}"
 
    result="$(ghorg_api GET "${path}")" || {
-      log notice "  ${label}: <api error>"
+      log warn "  ${label}: <api error> -- NOT VERIFIED"
+      audit_findings=$(( audit_findings + 1 ))
       return 0
    }
    status="$(ghorg_status_of "${result}")"
    if [ "${status}" != '200' ]; then
-      log notice "  ${label}: HTTP ${status}"
+      log warn "  ${label}: HTTP ${status} -- NOT VERIFIED"
+      audit_findings=$(( audit_findings + 1 ))
       return 0
    fi
    body="$(ghorg_body_of "${result}")"
@@ -363,13 +418,25 @@ audit_org_state() {
       enabled_repos="$(printf '%s' "${actions_body}" | ghorg_jq_capped --raw-output -- '.enabled_repositories // "?"')"
       log notice "  actions allowed_actions: enabled_repos=${enabled_repos}, allowed_actions=${allowed_actions}"
    else
-      log notice "  actions allowed_actions: HTTP ${actions_status}"
+      log warn "  actions allowed_actions: HTTP ${actions_status} -- NOT VERIFIED"
+      audit_findings=$(( audit_findings + 1 ))
    fi
 
+   audit_expect 'actions scope' \
+      "/orgs/${org}/actions/permissions" \
+      "${POLICY_ACTIONS_SCOPE}"
+
+   ## /actions/permissions/selected-actions returns 409 when
+   ## allowed_actions != "selected"; the scope check above already
+   ## reported that as drift, so do not double-count it here.
    if [ "${allowed_actions}" = 'selected' ]; then
-      audit_get 'selected-actions allow-list' \
+      ## Compared field-by-field against the policy, NOT summarised to a
+      ## count: an empty patterns_allowed reads as "patterns=0" in a
+      ## summary and looks like ordinary output, which is exactly how a
+      ## policy that broke every cross-org reusable call passed audit.
+      audit_expect 'selected-actions allow-list' \
          "/orgs/${org}/actions/permissions/selected-actions" \
-         '"github_owned=" + ((.github_owned_allowed // false) | tostring) + ", verified=" + ((.verified_allowed // false) | tostring) + ", patterns=" + ((.patterns_allowed // []) | length | tostring)'
+         "${POLICY_ACTIONS_ALLOWLIST}"
    else
       log notice "  selected-actions allow-list: (N/A while allowed_actions=${allowed_actions:-?})"
    fi
@@ -643,6 +710,15 @@ main() {
       for org in "${ORGS[@]}"; do
          audit_org_state "${org}"
       done
+      ## Exit non-zero on drift or on any endpoint that could not be
+      ## read. Without this the audit reported success no matter what it
+      ## found -- including a total API failure -- so a scheduled lane
+      ## would have shown green over a broken org.
+      if [ "${audit_findings}" -gt 0 ]; then
+         log error "audit: ${audit_findings} finding(s) -- live state does not match policy"
+         return 1
+      fi
+      log notice 'audit: live state matches policy'
       return 0
    fi
 
