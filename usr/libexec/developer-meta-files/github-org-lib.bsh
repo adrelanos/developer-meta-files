@@ -314,9 +314,23 @@ ghorg_mock_dispatch() {
   ## could assert any policy payload -- which is how an empty
   ## patterns_allowed shipped with a green suite. Opt-in: unset
   ## GHORG_MOCK_BODY_DIR leaves the mock byte-for-byte as before.
+  ##
+  ## A FAILED capture must fail the call. Verified before this guard
+  ## existed: with GHORG_MOCK_BODY_DIR pointing at an unwritable path,
+  ## `--apply` printed 28 lines of mkdir/permission errors, captured zero
+  ## bodies, and still exited 0. A capture mechanism whose whole purpose
+  ## is to stop silent-green must not itself fail silently.
   if [ -n "${GHORG_MOCK_BODY_DIR:-}" ] && [ -n "${body}" ]; then
-    mkdir --parents -- "${GHORG_MOCK_BODY_DIR}"
-    printf '%s\n' "${body}" > "${GHORG_MOCK_BODY_DIR}/${key}"
+    if ! mkdir --parents -- "${GHORG_MOCK_BODY_DIR}"; then
+      printf '%s\n' \
+        "ghorg_mock_dispatch: cannot create GHORG_MOCK_BODY_DIR '${GHORG_MOCK_BODY_DIR}'" >&2
+      return 1
+    fi
+    if ! printf '%s\n' "${body}" > "${GHORG_MOCK_BODY_DIR}/${key}"; then
+      printf '%s\n' \
+        "ghorg_mock_dispatch: cannot write request body '${GHORG_MOCK_BODY_DIR}/${key}'" >&2
+      return 1
+    fi
   fi
 
   if [ -f "${fixture}" ] && [ -r "${fixture}" ]; then
@@ -365,8 +379,14 @@ ghorg_api() {
   trap ghorg_api_cleanup RETURN
 
   if [ "${GHORG_MOCK:-false}" = 'true' ]; then
-    ghorg_mock_dispatch "${method}" "${path}" "${body}"
-    return 0
+    ## Preserve the dispatcher's status instead of the old flat
+    ## `return 0`: a request-body capture that could not be written is a
+    ## failed call, and swallowing it here would hand the caller a
+    ## mocked response alongside a capture that never happened.
+    local mock_rc
+    mock_rc=0
+    ghorg_mock_dispatch "${method}" "${path}" "${body}" || mock_rc="$?"
+    return "${mock_rc}"
   fi
 
   is_whole_number "${GHORG_MAX_RETRIES}" || {
