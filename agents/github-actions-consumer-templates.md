@@ -211,7 +211,7 @@ Some templates need per-repo values that genuinely cannot be
 uniform across the org. Coverity's scan.coverity.com
 `project-name` is the canonical example - not derivable from the
 GitHub repo name (see
-[`github-policy-canonical-vs-mirror.md`](github-policy-canonical-vs-mirror.md)
+[`github-policy-org-kinds.md`](github-policy-org-kinds.md)
 for why upstream-org-based derivation was tried and rejected).
 
 Those values live in `.github/dm-consumer.yml` in each consuming
@@ -660,6 +660,6 @@ byte-identical across the template's consumers.
 - [`github-actions.md`](github-actions.md) for cross-repo
   conventions, the G-A-* rule numbering, and the file-prefix
   scheme (G-A-005).
-- [`github-policy-canonical-vs-mirror.md`](github-policy-canonical-vs-mirror.md)
+- [`github-policy-org-kinds.md`](github-policy-org-kinds.md)
   for why Coverity `project-name` cannot be derived from the
   GitHub repo name.

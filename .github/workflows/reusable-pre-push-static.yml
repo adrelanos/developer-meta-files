@@ -83,16 +83,13 @@ jobs:
           inputs.base-ref != '' && inputs.base-ref
           || (github.base_ref != '' && format('origin/{0}', github.base_ref) || 'origin/master')
         }}
-      ## Dogfood ref: caller's commit when developer-meta-files is its
-      ## own caller (so a PR that modifies the script under test gets
-      ## exercised); 'master' for every other caller. Routed through
-      ## env for the org-wide env-routing convention (same shape as
-      ## BASE_REF / JOB_STATUS). The job-level fork-PR guard above is
+      ## Dogfood ref: the caller's commit when dist-ai is its own caller,
+      ## so a PR that modifies pre-push-static or step-summary-emit is
+      ## exercised by this job; 'master' for every other caller, whose
+      ## github.sha names a commit in a different repository. Routed
+      ## through env for the org-wide env-routing convention (same shape
+      ## as BASE_REF / JOB_STATUS). The job-level fork-PR guard above is
       ## the actual mitigation for actions/untrusted-checkout.
-      DMF_REF: ${{ github.repository == 'org-ai-assisted/developer-meta-files' && github.sha || 'master' }}
-      ## Dogfood ref for the gate script, which now lives in dist-ai: the
-      ## caller's commit when dist-ai is its own caller (so a PR that
-      ## modifies pre-push-static gets exercised), 'master' otherwise.
       DIST_AI_REF: ${{ github.repository == 'org-ai-assisted/dist-ai' && github.sha || 'master' }}
     steps:
       - name: Install dependencies (apt only)
@@ -111,15 +108,6 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Checkout developer-meta-files (ci/step-summary-emit.sh)
-        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
-        with:
-          repository: org-ai-assisted/developer-meta-files
-          ref: ${{ env.DMF_REF }}
-          path: .github/dmf
-          persist-credentials: false
-
       - name: Checkout dist-ai (gate script)
         if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
@@ -134,7 +122,11 @@ jobs:
         run: ./.github/dist-ai/usr/bin/pre-push-static "${BASE_REF}"
 
       - name: Emit step summary
-        if: always()
+        ## Carries the fork-PR guard as well as always(): on a fork PR the
+        ## helper checkout above is skipped, so a bare always() would call
+        ## a binary that is not on disk and turn a deliberately-skipped
+        ## gate into a red job.
+        if: always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
         ## Per-hook FAIL details remain in the gate step's log;
         ## this panel surfaces the headline result and the base ref
         ## so the PR Checks tab tells the reader what was diffed.
@@ -149,7 +141,7 @@ jobs:
         env:
           JOB_STATUS: ${{ job.status }}
         run: |
-          .github/dmf/ci/step-summary-emit.sh \
+          ./.github/dist-ai/usr/bin/step-summary-emit \
             --tool 'pre-push static gate' \
             --column-header field \
             --row "outcome=${JOB_STATUS}" \

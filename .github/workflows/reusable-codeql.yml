@@ -159,6 +159,7 @@ jobs:
       contents: read
 
     env:
+      DIST_AI_REF: ${{ github.repository == 'org-ai-assisted/dist-ai' && github.sha || 'master' }}
       ## Dogfood ref: caller's commit when developer-meta-files is its
       ## own caller (so a PR that modifies the script under test gets
       ## exercised); 'master' for every other caller. Routed through
@@ -230,6 +231,21 @@ jobs:
         with:
           category: "/language:${{ inputs.language }}"
 
+      ## Staged AFTER the analysis, not with the other checkouts: CodeQL
+      ## walks the whole source tree, so dist-ai sitting under it during
+      ## 'analyze' would report dist-ai's code as the CONSUMER's alerts.
+      ## Only the summary step below needs it, and that step is
+      ## 'if: always()' - so this must be too, or a failed analysis
+      ## leaves the summary calling a binary that was never fetched.
+      - name: Checkout dist-ai (shared CI helper binaries)
+        if: always()
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          repository: org-ai-assisted/dist-ai
+          ref: ${{ env.DIST_AI_REF }}
+          path: .github/dist-ai
+          persist-credentials: false
+
       - name: Emit step summary
         if: always()
         ## Route values through env and consume with shell-native
@@ -243,7 +259,7 @@ jobs:
           GITHUB_REPOSITORY: ${{ github.repository }}
           JOB_STATUS: ${{ job.status }}
         run: |
-          .github/dmf/ci/step-summary-emit.sh \
+          ./.github/dist-ai/usr/bin/step-summary-emit \
             --tool "CodeQL (${CODEQL_LANGUAGE})" \
             --column-header field \
             --row "outcome=${JOB_STATUS}" \

@@ -37,17 +37,18 @@ feedback loop.
 | Task | File |
 | --- | --- |
 | github-org-* / dm-github-* tools | [`agents/github-org-tools.md`](agents/github-org-tools.md) |
-| Canonical-vs-mirror policy split | [`agents/github-policy-canonical-vs-mirror.md`](agents/github-policy-canonical-vs-mirror.md) |
+| Org kinds and the policy each gets | [`agents/github-policy-org-kinds.md`](agents/github-policy-org-kinds.md) |
 
 Other repos (derivative-maker, helper-scripts, etc.) cross-link
 here rather than duplicating.
 
 ## Tests
 
-Comprehensive tests for two developer-meta-files tools are too high-volume for
-human review and live in the AI-maintained dist-ai repo, not here
-(https://github.com/org-ai-assisted/dist-ai). Run each against this checkout by
-passing the tool path:
+Comprehensive suites for two tools are too high-volume for human review and
+live in the AI-maintained dist-ai repo, not here
+(https://github.com/org-ai-assisted/dist-ai). Run each against this checkout:
 
-    git-meld-tests "$PWD/usr/bin/git-meld"   # usr/share/git-meld-tests/
+    git-meld-tests "$PWD/usr/bin/git-meld"                                                   # usr/share/git-meld-tests/
     dm-virtualbox-wiki-links-tests "$PWD/usr/bin/dm-virtualbox-update-local-and-wiki-links"   # usr/share/dm-virtualbox-wiki-links-tests/
+
+CI wiring: see the ci (github/gh) skill.
