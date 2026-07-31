@@ -1,3 +1,809 @@
+commit a6fd8181d144d8b66dfce8d11c19786d6c09651e
+Merge: 73303313 fda6a8d9
+Author: Patrick Schleizer <adrelanos@whonix.org>
+Date:   Fri Jul 31 13:08:38 2026 -0400
+
+    Merge remote-tracking branch 'org-ai-assisted/master'
+
+commit fda6a8d95677861398b3d2fc260deec410d95813
+Merge: 7d87b109 fe806760
+Author: assisted-by-ai (Bot Account) (Machine Account) <228987186+assisted-by-ai@users.noreply.github.com>
+Date:   Fri Jul 31 12:50:55 2026 -0400
+
+    Merge pull request #174 from org-ai-assisted/ai-dist-ai-ref
+
+    ci: companion-branch resolver for the dist-ai ref (phase 1 of 2)
+
+commit fe806760403c7967004e978e574b539a80a407ea
+Merge: 673e00a5 0351dc6b
+Author: claude (dev138 9b889944-0a22-45e7-8fd6-c189113e33b9) <noreply@anthropic.com>
+Date:   Fri Jul 31 12:43:15 2026 -0400
+
+    Merge remote-tracking branch 'org-ai-assisted/ai-dist-ai-ref' into ai-dist-ai-ref
+
+commit 673e00a58b6bd5ab049b98b25e18e2ea2694e3c7
+Author: claude (dev138 9b889944-0a22-45e7-8fd6-c189113e33b9) <noreply@anthropic.com>
+Date:   Fri Jul 31 12:42:28 2026 -0400
+
+    resolve-dist-ai-ref: make the remote probe injectable, and the test hermetic
+
+    The companion-branch case asserted against github.com: it probed
+    developer-meta-files for a branch named 'ai', which really existed. Then
+    merging PR #173 auto-deleted that branch, the resolver correctly reported
+    the fallback, and the test failed -- on a PR that had not touched it.
+
+    An assertion whose subject can be deleted by unrelated work is not an
+    assertion. It measured live remote state, so it could flip either way
+    without any code changing: it would equally have passed against a
+    resolver that never looked anything up, had the branch been absent from
+    the start.
+
+    - resolve-dist-ai-ref.sh: DIST_AI_REMOTE_URL overrides the probed remote,
+      defaulting to the public URL for DIST_AI_REPO. A seam for tests, and
+      for pointing at a mirror.
+    - The test now builds a local bare repo carrying an 'ai' branch and
+      probes THAT. Every case is offline, and the companion hit is
+      distinguishable from the fallback by construction rather than by
+      whatever github.com happens to hold.
+
+    6 pass, 0 fail, 0 skip.
+
+    Generated with assistance from Claude Code.
+
+commit 0351dc6b3b0e9d8028873bcee9c5465cdcaee9b4
+Merge: 63833b68 7d87b109
+Author: assisted-by-ai (Bot Account) (Machine Account) <228987186+assisted-by-ai@users.noreply.github.com>
+Date:   Fri Jul 31 12:32:53 2026 -0400
+
+    Merge branch 'master' into ai-dist-ai-ref
+
+commit 7d87b109912e1452808627c4420bf951eff1df1e
+Merge: 0a52b166 4980f12c
+Author: assisted-by-ai (Bot Account) (Machine Account) <228987186+assisted-by-ai@users.noreply.github.com>
+Date:   Fri Jul 31 12:32:38 2026 -0400
+
+    Merge pull request #173 from org-ai-assisted/ai
+
+    org policy allowlist + auditable --audit; CI gate on CI_ENABLED_ORG_AI_ASSISTED; PVR off everywhere
+
+commit 4980f12c8049cc44c5371feed171a59aed89c719
+Author: claude (dev138 9b889944-0a22-45e7-8fd6-c189113e33b9) <noreply@anthropic.com>
+Date:   Fri Jul 31 12:22:30 2026 -0400
+
+    org policy: disable private vulnerability reporting on every kind
+
+    PROJECT orgs were the one exception: apply_repo_policy PUT the enable
+    endpoint for them while the policy comment beside it, and half of
+    agents/github-policy-org-kinds.md, said PVR was off everywhere. Code and
+    documentation disagreed, and the doc disagreed with itself -- its table
+    said PROJECT enabled PVR, its notes said off on every role.
+
+    Decision: off everywhere, PROJECT included. We do not use it. Security
+    reports reach us as OpenPGP-encrypted e-mail and that is the only channel
+    we watch. An open GitHub private-report inbox on a repo nobody monitors
+    is worse than none: a researcher who finds it reasonably assumes it is
+    watched, and a real report could sit there unseen.
+
+    - apply_repo_policy: one unconditional PVR-off call, no kind branch.
+    - github-policy-data.bsh: POLICY_REPO_PVR_ON removed outright. Leaving
+      the constant would leave the branch one edit away from regrowing; its
+      absence is what keeps it gone.
+    - agents/github-policy-org-kinds.md: table row and rationale corrected to
+      match the notes that were already right.
+
+    Why it survived: the PROJECT kind had NO test coverage at all -- every
+    existing case ran ORGS_OVERRIDE against a MIRROR or SOURCE org, so that
+    whole branch of apply_repo_policy was never executed.
+
+    Test (dist-ai): tests/test_dm_apply_project.sh, the first PROJECT-kind
+    coverage, plus derived secure-terminal fixtures. Asserts the PVR-off line
+    IS emitted, the enable line is NOT, and -- counter-check -- that the
+    per-repo loop actually ran, so an --apply that skipped every repo cannot
+    satisfy the forbidden list by doing nothing.
+
+    Verified: test exits 0 with this change and 1 against the previous
+    PROJECT-enables-PVR behaviour. Suite 34 pass, 0 fail, 0 skip.
+
+    Reported by CodeRabbit on PR #173, which proposed correcting the comment;
+    the comment was the accurate half.
+
+    Generated with assistance from Claude Code.
+
+commit 64431e7feffdce15d293932814850f7e23184ac4
+Merge: 96c1b4e9 d3df6e27
+Author: claude (dev138 9b889944-0a22-45e7-8fd6-c189113e33b9) <noreply@anthropic.com>
+Date:   Fri Jul 31 12:09:48 2026 -0400
+
+    Merge remote-tracking branch 'org-ai-assisted/ai' into HEAD
+
+commit 96c1b4e989ac8b07c62f2476269114537d148c0a
+Author: claude (dev138 9b889944-0a22-45e7-8fd6-c189113e33b9) <noreply@anthropic.com>
+Date:   Fri Jul 31 12:08:58 2026 -0400
+
+    ghorg mock: fail the call when a request-body capture cannot be written
+
+    GHORG_MOCK_BODY_DIR exists so tests can assert the payloads we SEND, not
+    merely the labels we log -- the gap that let an empty patterns_allowed
+    ship past a fully green suite. It had the same defect it was added to
+    remove.
+
+    Measured, not assumed. With GHORG_MOCK_BODY_DIR pointing at an unwritable
+    path, `dm-github-org-policy --apply` printed 28 lines of mkdir/permission
+    errors, captured ZERO bodies, and exited 0: ghorg_mock_dispatch ignored
+    both write failures, and ghorg_api's mock branch returned a flat 0 over
+    the top. A caller got a mocked response alongside a capture that never
+    happened.
+
+    - ghorg_mock_dispatch: a failed mkdir or a failed body write returns 1,
+      naming the path.
+    - ghorg_api: the mock branch preserves the dispatcher's status instead of
+      discarding it.
+
+    Reported by CodeRabbit on PR #173; confirmed by probe before changing
+    anything.
+
+    Test (dist-ai): tests/test_mock_body_capture_failure.sh, with its probe
+    in tests/ghorg_api_capture_probe.sh.
+
+    The assertion targets ghorg_api directly, NOT `--apply`. A first version
+    asserted --apply's exit status and was worthless: --apply already returns
+    non-zero here for unrelated fixture gaps, so it passed against the very
+    code it was meant to catch. Verified after the rewrite -- the test exits
+    0 against this commit and 1 against its parent.
+
+    Suite: 27 pass, 6 fail with this change; 26 pass, 7 fail without it. The
+    six are pre-existing, from an in-flight Dependabot policy change whose
+    dmf and dist-ai halves are not yet in sync; this commit causes none of
+    them.
+
+    Generated with assistance from Claude Code.
+
+commit d3df6e270849ec9a9309a1f54f4ddd410b9f4aac
+Author: claude (dev142 b93fb2c6-e15f-4d45-8566-f3ded893b70e) <noreply@anthropic.com>
+Date:   Fri Jul 31 11:58:03 2026 -0400
+
+    github-org-lib: mock fixture keys carry no media-type extension
+
+    ghorg_mock_dispatch mapped only '/' to '_', so a path ending in a
+    filename produced a fixture named after it -- e.g.
+    GET .../contents/.github/dependabot.yml became a file ending in
+    '.yml'. A fixture is an HTTP response (body plus status line) and is
+    never the media type its path suggests, so every extension-driven
+    linter parsed those four as YAML and failed on the status line.
+
+    Flatten '.' as well. dist-ai carries the matching fixture renames.
+
+    Co-Authored-By: Claude <noreply@anthropic.com>
+
+commit 8e90fc8d68a9c93a83388de5e14d3b388523f332
+Author: claude (dev142 b93fb2c6-e15f-4d45-8566-f3ded893b70e) <noreply@anthropic.com>
+Date:   Fri Jul 31 11:52:46 2026 -0400
+
+    org policy: PROJECT header comments follow the mirror-only Dependabot pivot
+
+    The two org-kind preambles still listed Dependabot alerts as a PROJECT
+    feature. Dependabot follows the CI, which runs on the MIRROR.
+
+    Co-Authored-By: Claude <noreply@anthropic.com>
+
+commit d19e95068f88bce65a9ae0164b4c0ae1cbeb0b8e
+Merge: 9442759c 01204123
+Author: claude (dev142 b93fb2c6-e15f-4d45-8566-f3ded893b70e) <noreply@anthropic.com>
+Date:   Fri Jul 31 11:52:14 2026 -0400
+
+    Merge remote-tracking branch 'org-ai-assisted/ai' into HEAD
+
+commit 9442759c5e7d87b28ebd84de03fe6fccd39ddd03
+Author: claude (dev142 b93fb2c6-e15f-4d45-8566-f3ded893b70e) <noreply@anthropic.com>
+Date:   Fri Jul 31 11:51:59 2026 -0400
+
+    org policy: Dependabot lives on the mirror only
+
+    Dependabot follows the CI that can act on what it reports, not the
+    repo that hosts the code. GitHub Actions runs on org-ai-assisted:
+    SOURCE sets enabled_repositories=none by deliberate policy, and the
+    PROJECT repos are mirrored into org-ai-assisted for the test and
+    scanner suites. So the mirror is the one place a bump PR carries a
+    verdict and a CVE alert has a build to be fixed in.
+
+    - MIRROR: alerts and security updates PUT on (alerts first, which the
+      security-fixes PUT requires).
+    - SOURCE + PROJECT: both actively DELETEd every --apply (security
+      fixes first, which answers 422 once alerts are off), plus a per-repo
+      skip line naming .github/dependabot.yml, the only handle on version
+      updates.
+    - POLICY_REPO_DEPENDABOT_FIXES_SOURCE_OFF folded away: one off-pair
+      now covers every non-mirror kind, so the labels drop "(mirror)".
+    - The three Dependabot UI flips (grouping, auto-triage,
+      delegated dismissal) move to MIRROR; code-scanning query suite stays
+      SOURCE. Section renamed to "UI-only operator flips" accordingly.
+    - --audit compares per kind against the same literals apply enforces:
+      EXPECT_ON on MIRROR plus a 204 alerts assert, EXPECT_OFF and
+      "dependabot.yml must be absent" elsewhere. A dependabot.yml probe
+      answering neither 200 nor 404 is now a finding on EVERY kind, mirror
+      included -- printing "no:" for a probe that never answered is a
+      false green wherever it happens.
+
+    Version updates have no REST setter at any scope; confirmed against
+    GET /orgs/{org}/code-security/configurations, whose object carries
+    dependabot_alerts and dependabot_security_updates and no
+    version-updates field. The file is opt-in per repo through
+    dm-packaging-helper-script (pkg_update_consumer_workflows +
+    dependabot_yml_is_manual, honouring "## propagation: manual"), never
+    blanket-deployed -- a repo with nothing worth tracking carries none.
+
+    Recorded unresolved: a mirror repo is a fork that ff-syncs from
+    SOURCE, so .github/dependabot.yml is one object in one history. That
+    column cannot be split by file presence alone. Stated, not papered
+    over; the alerts/security pair has real per-repo setters and is what
+    the policy enforces.
+
+    DECLARATIVE on the SOURCE half: the token is role=member on
+    Kicksecure and Whonix and SOURCE_ORGS stays commented out of ORGS, so
+    --apply cannot reach them; --dry-run / --audit reach them via
+    ORGS_OVERRIDE only. Docs and --help say so.
+
+    Verified in the sandbox VM against dist-ai's mock suites: 32 passed,
+    0 failed. Canaried against the pre-change tool -- every changed and
+    new assertion fails there.
+
+    Co-Authored-By: Claude <noreply@anthropic.com>
+
+commit 63833b68bc6fc36190b62581ffa83e8654411faf
+Author: claude (dev138 9b889944-0a22-45e7-8fd6-c189113e33b9) <noreply@anthropic.com>
+Date:   Fri Jul 31 11:51:54 2026 -0400
+
+    ci: add a companion-branch resolver for the dist-ai ref
+
+    ROOT CAUSE. Ten workflows each carried the same literal:
+
+      DIST_AI_REF: ${{ github.repository == 'org-ai-assisted/dist-ai'
+                       && github.sha || 'master' }}
+
+    so dist-ai was pinned to master for every consumer. dist-ai holds the
+    tests; the consumers hold the behaviour those tests assert. A change
+    altering both therefore had NO green path:
+
+      * the consumer PR ran against dist-ai@master, still carrying the OLD
+        expectations -> red;
+      * pushing the new expectations to dist-ai master first broke dist-ai's
+        own CI against the consumer's unchanged master -> also red.
+
+    Observed live: a coordinated developer-meta-files + dist-ai policy change
+    where the dmf half sat on a branch and the dist-ai half had nowhere to go,
+    leaving PR #173 red with no way to make it green.
+
+    THE RULE. A companion branch wins: if dist-ai has a branch with the same
+    name as the branch under test, use it; else master. Both halves of a
+    cross-repo change travel under one branch name and are tested together. A
+    lone consumer branch is unaffected -- no companion exists, so it gets
+    master exactly as before. dist-ai still tests its own commit; there it is
+    the subject, not a dependency.
+
+    Every failure mode -- no companion, no branch name, an unreachable repo --
+    resolves to master rather than failing. This runs in front of unrelated
+    jobs and must never be what breaks them.
+
+    PHASE 1 OF 2, deliberately. This commit only ADDS the action; nothing
+    references it yet. Wiring the ten workflows in the same commit would have
+    made things worse, not better: a step `uses:
+    ...resolve-dist-ai-ref@master` cannot resolve until the action IS on
+    master, and step-level `uses:` takes no context expression to point it
+    elsewhere -- so the wiring PR would fail its own CI until merged. That is
+    the same chicken-and-egg this change exists to remove, and walking into it
+    while fixing it would have been ironic rather than clever. Phase 2 wires
+    the ten workflows once this is on master.
+
+    Test (dist-ai, usr/share/developer-meta-files-tests): 6 pass, 0 fail,
+    0 skip. The companion-hit case probes a repo that really does carry the
+    branch -- an absent one would be indistinguishable from the fallback,
+    which is the case most worth asserting.
+
+    Generated with assistance from Claude Code.
+
+commit 01204123cc6d999bdd0b641172583ce7c49441ca
+Author: claude (dev138 9b889944-0a22-45e7-8fd6-c189113e33b9) <noreply@anthropic.com>
+Date:   Fri Jul 31 11:34:08 2026 -0400
+
+    Close the gap the preflight removal left after each shellcheck directive
+
+    Removing helper_scripts_preflight left a blank line between every
+    `# shellcheck source=` directive and the `source` line it annotates --
+    one in each of the 18 files touched, pure removal residue.
+
+    Restores the directive/source adjacency the rest of the tree uses. No
+    functional claim is made: three attempts to build a test that
+    distinguishes an adjacent directive from a separated one were all
+    inconclusive, including a no-directive control that behaved identically,
+    so whether shellcheck cares here is unproven either way. These lines are
+    removed because they are artifacts of the previous commit, not because
+    they were shown to break anything.
+
+    Pre-existing double blank lines elsewhere (dm-github-org-policy line 110,
+    dm-prepare-release, dm-packaging-helper-script, dm-metapackage-helper)
+    are left alone -- they predate this branch and are not this change's to
+    churn.
+
+    18 files, 18 deletions. bash -n and shellcheck clean on all 18; suite
+    30 pass, 1 fail -- that failure (test_dm_dryrun_source_vs_mirror.sh) is
+    pre-existing on this branch and unrelated.
+
+    Generated with assistance from Claude Code.
+
+commit 35aad4e1d9aae0634492c92e81f0b7ef3e1aec35
+Author: claude (dev138 9b889944-0a22-45e7-8fd6-c189113e33b9) <noreply@anthropic.com>
+Date:   Fri Jul 31 10:59:00 2026 -0400
+
+    Drop helper_scripts_preflight entirely
+
+    The block was copy-pasted byte-identical into 18 files. An earlier commit
+    removed the 7 copies that were outright dead; this removes the remaining
+    11, and the function with them.
+
+    What it bought: a named error ("helper-scripts not found at <path> --
+    install the helper-scripts package, or set HELPER_SCRIPTS_PATH") instead
+    of bash's own message when `source` cannot find the file.
+
+    What it cost: ~230 lines of boilerplate across 18 files, with no shared
+    home available. Seven of the scripts never reference
+    DEVELOPER_META_FILES_PATH at all, so hoisting the check into a shared dmf
+    file would have given them a new dependency on a path they do not know --
+    and failing to find THAT file reproduces the same bare error the check
+    existed to replace.
+
+    Behaviour is preserved where it matters. Under `set -o errexit` a failed
+    `source` still aborts, non-zero, naming the file it could not read.
+    Verified with HELPER_SCRIPTS_PATH pointed at a nonexistent path:
+    dm-github-org-policy, github-org-clone, dm-check-mirrors, dm-review-branch
+    and dm-github-token-test all exit 1 and name the missing path. The only
+    loss is the package name and the fix hint.
+
+    143 deletions here, 234 across both commits. Suite: 30 pass, 1 fail --
+    that one failure (test_dm_dryrun_source_vs_mirror.sh) is pre-existing on
+    this branch, reproduced on its tip without these changes.
+
+    Generated with assistance from Claude Code.
+
+commit 00139e0adc525dd20ba2bd131bd7276abd9322da
+Merge: ba9e8366 95f800f2
+Author: claude (dev138 9b889944-0a22-45e7-8fd6-c189113e33b9) <noreply@anthropic.com>
+Date:   Fri Jul 31 10:38:24 2026 -0400
+
+    Merge remote-tracking branch 'org-ai-assisted/ai' into HEAD
+
+commit ba9e8366214c5c86ca6fc7c1fda6be339dd3a375
+Merge: 92ceb691 2a526edd
+Author: claude (dev138 9b889944-0a22-45e7-8fd6-c189113e33b9) <noreply@anthropic.com>
+Date:   Fri Jul 31 10:36:20 2026 -0400
+
+    Merge remote-tracking branch 'org-ai-assisted/ai' into HEAD
+
+commit 92ceb6911e6bc466342d7b8c29e54403ba41a77d
+Author: claude (dev138 9b889944-0a22-45e7-8fd6-c189113e33b9) <noreply@anthropic.com>
+Date:   Fri Jul 31 10:35:50 2026 -0400
+
+    github-org tools: drop the dead helper_scripts_preflight copies
+
+    The preflight block was copy-pasted into 18 files, byte-identical in
+    every one. In 7 of them it was also DEAD: the script sources
+    github-org-lib.bsh first, and that lib both defines and CALLS
+    helper_scripts_preflight, so the local copy re-defined a function that
+    had already run. 91 lines that could never change behaviour.
+
+    Removed from the 7 that source github-org-lib.bsh before their copy:
+    dm-github-org-metadata-sync, dm-github-org-policy,
+    dm-github-org-security-report, dm-github-personal-policy,
+    github-org-clone, github-org-fork, github-org-push.
+
+    The other 11 copies stay, deliberately:
+
+    - github-org-lib.bsh and github-policy-lib.bsh are each a standalone
+      entry point -- neither sources the other, so each needs its own.
+    - The remaining 9 usr/bin scripts resolve helper-scripts only; 7 of them
+      never reference DEVELOPER_META_FILES_PATH at all. Sourcing a shared
+      preflight from the dmf tree would give them a new dependency on a path
+      they do not know, and failing to find THAT file reintroduces exactly
+      the bare "No such file or directory" the preflight exists to replace.
+      Duplicating 13 lines is the cheaper trade.
+
+    Verified: with HELPER_SCRIPTS_PATH pointed at a nonexistent path, all 7
+    edited scripts still fail with the named "helper-scripts not found at
+    ..." error and exit 1 -- the check still fires, it is just no longer
+    declared twice. bash -n and shellcheck clean on all 7; suite 31 pass,
+    0 fail, 0 skip.
+
+    Generated with assistance from Claude Code.
+
+commit 95f800f21ac2803c9a4ed1a3a21532f9aa6fc649
+Author: claude (dev142 b93fb2c6-e15f-4d45-8566-f3ded893b70e) <noreply@anthropic.com>
+Date:   Fri Jul 31 10:35:40 2026 -0400
+
+    org policy: Dependabot opens no pull requests on SOURCE
+
+    Actions is disabled org-wide on Kicksecure / Whonix by deliberate
+    policy, but Dependabot does not need repo Actions, so it kept opening
+    bump PRs there that no check could ever report on. Encode the decision
+    as policy data instead of leaving it a manual flip.
+
+    - SOURCE keeps Dependabot ALERTS (a notification, no PR, and the
+      canonical repo is where a CVE must be visible) and drops both
+      PR-producing switches.
+    - Security updates: new POLICY_REPO_DEPENDABOT_FIXES_SOURCE_OFF, its
+      own constant so the log line carries the SOURCE reason; same endpoint
+      and 422 steady state as the mirror variant.
+    - Version updates: no REST setter at any scope - .github/dependabot.yml
+      presence IS the switch - so a per-repo skip line naming the file to
+      delete.
+    - Grouped-security-updates UI flip moves from SOURCE to PROJECT: with
+      no security PRs on SOURCE there is nothing to group. Alert-triage and
+      delegated-dismissal flips now fire on SOURCE + PROJECT, the kinds
+      that have alerts.
+    - --audit COMPARES all of it per kind, and counts an unreadable
+      endpoint as a finding: dependabot.yml must be absent on SOURCE, and a
+      probe answering neither 200 nor 404 is NOT VERIFIED rather than
+      "absent"; security updates are compared against the same literal
+      apply enforces; alerts are asserted via audit_expect_enabled (a
+      204/404 endpoint, where only the must-be-ON direction is
+      distinguishable from a permissions wall).
+    - Reconcile agents/github-policy-org-kinds.md, which documented the
+      opposite (Dependabot ON for SOURCE, grouping flip desired there), and
+      record the measured 2026-07-31 inventory, the sequencing, the
+      mirror-fork consequence, and the compared-vs-not-compared list.
+
+    DECLARATIVE: the token is role=member on both SOURCE orgs and
+    SOURCE_ORGS stays commented out of ORGS, so --apply cannot reach them;
+    --dry-run / --audit reach them via ORGS_OVERRIDE only. Docs and --help
+    say so rather than implying enforcement.
+
+    Verified with the mock suites in the sandbox VM: 29 pass, audit suites
+    green, plus a purpose-made SOURCE fixture set exercising clean,
+    drifted and unreadable repos (exit 1, drift named). Two assertions in
+    dist-ai's test_dm_dryrun_source_vs_mirror.sh still encode the old
+    policy and need updating there.
+
+    Co-Authored-By: Claude <noreply@anthropic.com>
+
+commit 2a526eddf50f32893dc4dc31ddb3853ccf6707a8
+Author: claude (dev142 b93fb2c6-e15f-4d45-8566-f3ded893b70e) <noreply@anthropic.com>
+Date:   Fri Jul 31 10:10:26 2026 -0400
+
+    Keep CI-runtime helper checkouts out of the scanned tree
+
+    The helper checkouts (.github/dmf, .github/dist-ai) are other repos'
+    trees staged under the caller's workspace. Whatever a scanner walks
+    there is filed as the CALLER's finding, against code the caller does
+    not host: it cannot be fixed in that repo, and the caller only
+    re-scans its own pushes, so the alert never clears.
+
+    - reusable-codeql: pass an inline 'paths-ignore' config to
+      codeql-action/init excluding both helper checkouts. .github/dmf is
+      required BEFORE init (the config-load and prepare-command steps run
+      out of it), so the post-analyze step ordering used for
+      .github/dist-ai cannot cover it; paths-ignore covers both and any
+      helper checkout added later.
+    - coverity-build-python.sh: add both helper checkouts to
+      --file-exclude-regex. 'coverity capture --project-dir "${PWD}"'
+      walks the whole tree and the existing '\.git/.*' does not match
+      '.github/' (it requires a '/' right after '.git').
+
+    Live symptom: py/empty-except alerts on msgcollector, tb-updater and
+    security-misc pointing at .github/dmf/usr/bin/dm-qemu-screendump-watch,
+    a path none of those repos contains.
+
+    Generated with assistance from Claude Code.
+
+    Co-Authored-By: Claude <noreply@anthropic.com>
+
+commit fa0091cf6f34a937b94afda634c4565a225cb23e
+Author: claude (dev142 b93fb2c6-e15f-4d45-8566-f3ded893b70e) <noreply@anthropic.com>
+Date:   Fri Jul 31 10:02:44 2026 -0400
+
+    Pin comments: name the exact version, not a bare major
+
+    - local-org-policy-live-audit.yml and -live-probe.yml labelled the
+      actions/checkout pin `# v6`. The tag `v6` resolves to
+      d23441a48e516b6c34aea4fa41551a30e30af803, a DIFFERENT commit from the
+      pinned de0fac2e4500dabe0009e67214ff5f5447ce83dd, so the comment named
+      the wrong revision outright.
+    - Both now read `# v6.0.2`, matching the sibling checkout step five lines
+      below and resolving exactly to the pinned sha.
+    - A bare major is also unmaintainable: Dependabot rewrites a trailing pin
+      comment only when it matches the version being replaced, so `# v6`
+      survives a bump untouched and silently mislabels the new sha. Already
+      observed downstream, where a v7.0.1 sha now sits next to `# v6`.
+
+    Swept every SHA pin in .github/: 8 distinct actions, all others already
+    correct (actions/cache v5.0.5, actions/checkout v6.0.2,
+    actions/upload-artifact v7.0.1, claude-code-action v1.0.183,
+    codeql-action v4.36.0, scorecard-action v2.4.3). Annotated tags were
+    dereferenced through the tag object to the commit before comparing.
+
+    Co-Authored-By: Claude <noreply@anthropic.com>
+
+commit c15d304ebaa5f6205d30946cbf24411feb8a4dd9
+Author: claude (dev138 9b889944-0a22-45e7-8fd6-c189113e33b9) <noreply@anthropic.com>
+Date:   Fri Jul 31 09:48:38 2026 -0400
+
+    ci: record the canary's W-008 carve-out
+
+    W-008 (OWNER-GATE) requires every job that runs steps to be gated on the
+    CI-enabled variable. local-ci-enabled-canary.yml is the one job that must
+    not be: it is gated on the owner literal instead, precisely so it still
+    runs -- and fails -- when the variable is missing. Gating the canary on
+    the variable would make it disappear in exactly the situation it exists
+    to detect.
+
+    The reason is recorded in the file rather than hardcoded in the
+    validator, and the validator treats an exemption with an empty reason as
+    a finding of its own.
+
+    Generated with assistance from Claude Code.
+
+commit a363de34f4a02ce076b33881820392af131a2be5
+Author: claude (dev138 9b889944-0a22-45e7-8fd6-c189113e33b9) <noreply@anthropic.com>
+Date:   Fri Jul 31 09:06:06 2026 -0400
+
+    ci: gate every reusable on CI_ENABLED_ORG_AI_ASSISTED; add the switch canary
+
+    Completes the gate across the reusables, which is what actually covers
+    the fleet: the 82 consumer-*.yml wrappers are pure `uses:` lines at
+    @master, so they need no edit and pick this up on merge.
+
+    - The six sharing the fork-PR guard (bandit, codeql, cppcheck,
+      dist-ai-tests, pre-push-static, secrets-audit): gate ANDed in front,
+      fork-PR guard kept.
+    - coverity: gate added as its job-level condition. Independent of the
+      canonical-repos gate further down -- that narrows to the repo
+      registered with scan.coverity.com, this decides whether we run CI in
+      this org at all.
+    - claude-code-review: gate is the OUTERMOST condition, so an @claude
+      mention on a fork or upstream cannot spend the org's subscription even
+      from a roster member.
+    - codex-review: left alone. Its 'if: false' is a deliberate org-wide
+      kill-switch, and it is the one W-008 exemption.
+
+    local-ci-enabled-canary.yml guards the switch itself. Gating everything
+    on one variable buys a zero-cost skip and one failure mode: unset it and
+    every gated job skips while every run still reports green -- a whole
+    org's CI dark behind a healthy-looking checks list. The canary is gated
+    on the OWNER LITERAL instead, so it cannot switch itself off, and fails
+    loudly when the variable is missing.
+
+    Verified: workflow-yaml validator 0 findings across 25 files; every
+    reusable job confirmed gated by parsing the YAML, not by eye.
+
+    Generated with assistance from Claude Code.
+
+commit 0262454ae7bec8d21d0e2a5de1d909e903036d4b
+Merge: 351ff577 683981b7
+Author: claude (dev138 9b889944-0a22-45e7-8fd6-c189113e33b9) <noreply@anthropic.com>
+Date:   Fri Jul 31 08:46:00 2026 -0400
+
+    Merge remote-tracking branch 'org-ai-assisted/ai' into HEAD
+
+commit 351ff577df40d9a4ace39b74c8928e569f09ad82
+Author: claude (dev138 9b889944-0a22-45e7-8fd6-c189113e33b9) <noreply@anthropic.com>
+Date:   Fri Jul 31 08:44:32 2026 -0400
+
+    org policy: compare every enforced setting; fix two audit false verdicts
+
+    Findings from ai-review (coderabbit Major, agy P1/P1/P2) plus two bugs the
+    new tests caught in the comparison itself.
+
+    - audit_expect: render the desired object BEFORE the pipeline and check
+      the comparison's exit status. Inline as a command argument, a malformed
+      POLICY_* literal expanded to empty, jq failed, stderr was discarded and
+      the empty result read as "matches policy" -- a silent pass over an
+      unverified org, at the comparison layer this change exists to remove.
+    - audit_expect: use has()/explicit key lookup instead of '$live[.key] //
+      null'. jq's '//' yields its right-hand side when the left is null OR
+      FALSE, so every policy value of `false` read as absent and reported
+      permanent drift. Bind the entry with 'as $e' too: inside '$live | ...'
+      the bare .key resolved against $live, not the entry.
+    - fork-PR approval and workflow GITHUB_TOKEN permissions are now COMPARED
+      rather than printed. Both have POLICY_* literals; a loosened fork-PR
+      policy or a writable token previously audited green.
+    - Expected Actions scope is chosen by org KIND, as the apply path does. A
+      correctly configured SOURCE org (Actions disabled org-wide) was reported
+      as drift and failed the audit.
+    - The four manually handled endpoints (/members, /installations, /hooks,
+      private repos) now count a non-200 as a finding. A partially scoped
+      token could reach them and still exit green, contradicting the stated
+      guarantee that anything unread fails.
+    - The success line names what was actually compared, rather than claiming
+      the whole live policy matches: 2FA and code-security defaults are
+      reported for a human and have no desired-state literal.
+
+    Tests: 30 pass, 0 fail, 0 skip. Seven drift cases, each a static fixture
+    overlay, plus a control so a tool that always failed could not pass.
+
+    Generated with assistance from Claude Code.
+
+commit 683981b714a50b343c54e034cafb590de094dbd5
+Merge: 9e390526 3dc8beba
+Author: claude (dev137 d9fb559b-0dab-4323-b124-aebf3bf5f7a9) <noreply@anthropic.com>
+Date:   Fri Jul 31 08:27:51 2026 -0400
+
+    Merge remote-tracking branch 'org-ai-assisted/ai' into ai
+
+commit 9e390526a3f78d8b0d2bf2c11e4163c99a78609e
+Merge: 9cc29eae 3bd13945
+Author: claude (dev137 d9fb559b-0dab-4323-b124-aebf3bf5f7a9) <noreply@anthropic.com>
+Date:   Fri Jul 31 08:27:16 2026 -0400
+
+    Merge remote-tracking branch 'org-ai-assisted/ai' into ai
+
+commit 3dc8beba756832018b2e371546fce0a5ae474f37
+Author: claude (dev138 9b889944-0a22-45e7-8fd6-c189113e33b9) <noreply@anthropic.com>
+Date:   Fri Jul 31 08:27:07 2026 -0400
+
+    ci: pilot the CI_ENABLED_ORG_AI_ASSISTED gate on three workflows
+
+    Our workflows run wherever the branch lands: a branch merged upstream
+    burns Kicksecure/Whonix runner quota and posts our AI reviewers into
+    their repos, and every contributor fork runs the whole suite. Only 5 of
+    136 workflow files carried any owner gate.
+
+    Gate: a job-level `vars.CI_ENABLED_ORG_AI_ASSISTED == 'true'`, set once
+    org-wide on org-ai-assisted. Zero runner cost -- a job whose `if:` is
+    false never allocates one -- and a fork that wants a lane opts in by
+    setting the same variable rather than editing our files.
+
+    - reusable-scorecard.yml: in a CALLED reusable the vars context resolves
+      against the CALLER, so this gates both consumers from one place.
+    - local-org-policy-live-{audit,probe}.yml: ANDed with the existing repo
+      pin, which stays -- it is the tighter of the two and is what keeps the
+      secret to this repo.
+
+    Pilot slice only; the remaining reusables and local workflows follow once
+    this is confirmed in the checks list.
+
+    Verified: workflow-yaml validator 0 findings across 24 files. Behaviour
+    confirmed live on the sibling secure-terminal pilot -- with the variable
+    unset, gated jobs report SKIPPED and the run stays green.
+
+    Generated with assistance from Claude Code.
+
+commit 9cc29eaea0cac808adaea6b1caf404b4827b8098
+Author: claude (dev137 d9fb559b-0dab-4323-b124-aebf3bf5f7a9) <noreply@anthropic.com>
+Date:   Fri Jul 31 08:24:47 2026 -0400
+
+    Name the dependency when helper-scripts is missing (R-080 consumers)
+
+    `source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/has.sh` resolves
+    to the ABSOLUTE /usr/libexec/... path when the variable is unset, so an absent
+    helper-scripts dies as:
+
+      <tool>: line 24: /usr/libexec/helper-scripts/has.sh: No such file or directory
+
+    which names neither the package nor the fix. That is exactly how a CI failure
+    presented this session -- it took a two-log xtrace comparison to establish the
+    real cause was a STALE installed tool rather than a missing file.
+
+    A preflight now checks the resolved path first and dies with:
+
+      <tool>: ERROR: helper-scripts not found at '<path>' -- install the
+      helper-scripts package, or set HELPER_SCRIPTS_PATH to a checkout.
+
+    Applied to all 18 consumers under usr/bin and usr/libexec that use the
+    '${HELPER_SCRIPTS_PATH:-}' form, not just the one that broke -- R-080 mandates
+    the idiom repo-wide, so the failure mode was repo-wide too. The
+    `# shellcheck source=` directives stay relative and anchored (gate-enforced).
+
+    Every patched file re-checked with bash -n and shellcheck -x; the guard's
+    message verified against an unset variable with helper-scripts absent.
+
+    Generated with assistance from Claude Code.
+
+commit 3bd13945e3f4391556e85ccaddda780004512db1
+Author: claude (dev138 9b889944-0a22-45e7-8fd6-c189113e33b9) <noreply@anthropic.com>
+Date:   Fri Jul 31 08:17:11 2026 -0400
+
+    org policy: allow the developer-meta-files reusables; make --audit able to fail
+
+    The allowlist shipped as allowed_actions=selected with patterns_allowed=[],
+    which blocks cross-org reusable-workflow calls. Every consumer outside
+    org-ai-assisted failed with startup_failure and zero jobs; 10 of the last
+    15 runs in secure-terminal/secure-terminal. Same-org calls bypass the
+    policy, which is why org-ai-assisted looked healthy.
+
+    - github-policy-data.bsh: allow the dmf reusable workflows and composite
+      actions. The PATH is mandatory -- GitHub's syntax is
+      OWNER/REPOSITORY/PATH/FILENAME@REF, so a bare 'owner/repo@*' matches
+      ACTIONS ONLY. Verified live: the repo-only form left consumers broken;
+      the path form took a previously failing consumer-bandit run green.
+    - dm-github-org-policy: --audit compares live state against the same
+      POLICY_* literals --apply writes, and exits non-zero on drift or on any
+      endpoint it could not read. It previously returned 0 unconditionally
+      and rendered patterns_allowed as a count compared to nothing, so it
+      could not have caught this or anything else.
+    - github-org-lib.bsh: the mock records request bodies (opt-in via
+      GHORG_MOCK_BODY_DIR), so tests can assert what we SEND. Nothing could
+      before -- the mock discarded bodies, so a payload could be wrong while
+      its log label stayed right, which is what happened here.
+
+    Tests (dist-ai, separate commit): 30 pass, 0 fail, 0 skip. The two new
+    assertions fail against this commit's parent.
+
+    Generated with assistance from Claude Code.
+
+commit 0a52b166247c2f193f8347a5ef07321c5c06d4e4
+Merge: 73303313 e72e572c
+Author: assisted-by-ai (Bot Account) (Machine Account) <228987186+assisted-by-ai@users.noreply.github.com>
+Date:   Fri Jul 31 07:32:27 2026 -0400
+
+    Merge pull request #172 from org-ai-assisted/ai
+
+    dm-upload-images DNS host fix; reprepro-freshness pipeline split; writability probe without ':'; dm-reproducible-verify comment trim
+
+commit e72e572c4200dd93124c65ba92c9c98b7bc674aa
+Author: claude (dev137 d9fb559b-0dab-4323-b124-aebf3bf5f7a9) <noreply@anthropic.com>
+Date:   Fri Jul 31 07:29:16 2026 -0400
+
+    dm-reproducible-compare-artifacts: drop the writability-probe comment
+
+    The code says what it does; the rationale does not need restating (R-151).
+
+    Generated with assistance from Claude Code.
+
+commit d7451b990bc7d8320379e937df2d4d44caca71e4
+Author: claude (dev137 d9fb559b-0dab-4323-b124-aebf3bf5f7a9) <noreply@anthropic.com>
+Date:   Fri Jul 31 07:11:14 2026 -0400
+
+    dm-upload-images: resolve the HOST, not the whole rsync target
+
+    BUG: the DNS warm-up looped over '$dist_server_with_upload_location_list' --
+    which holds rsync targets, '<user>@<host>:<path>' -- and handed each whole
+    string to nslookup:
+
+      ** server can't find <user>\@<host>:<path>: NXDOMAIN
+
+    Every lookup failed, and the blanket '|| true' hid it, so the warm-up this
+    block exists for has never once warmed anything. Reported from a real run.
+
+    Now derives the bare host, probes each distinct host once, and WARNS on a
+    failed probe instead of discarding it silently. The derivation lives in its
+    own named function so it is testable without a build environment; covered by
+    dist-ai dm_upload_images_dns_test.sh, which fails 4/5 assertions against the
+    old pass-through behaviour.
+
+    reprepro-freshness.bsh: split the source_line pipeline into steps. One
+    pipeline plus a command substitution plus a blanket '|| true' made every
+    failure indistinguishable -- including grep's rc 2 (real error) and the
+    SIGPIPE rc 141 that 'head' closing the pipe can produce under pipefail, both
+    of which were being read as "not published". 'head -n 1' -> '--lines=1'.
+
+    dm-reproducible-verify: stop naming the comparison backend. The script does
+    not run diffoscope; it calls dm-reproducible-compare-artifacts, so naming
+    that tool's internals here is drift waiting to happen. Also dropped the
+    SOURCE_DATE_EPOCH / build-container claims rather than carry assertions that
+    were not verified.
+
+    Generated with assistance from Claude Code.
+
+commit 733033130562e97febe2125f9edbe39c7d795c82
+Author: Patrick Schleizer <adrelanos@whonix.org>
+Date:   Fri Jul 31 11:10:10 2026 +0000
+
+    bumped changelog version
+
+commit 2f31eaf3d4424b849e1e13ca9b2e22b7fd180fe9
+Author: claude (dev137 d9fb559b-0dab-4323-b124-aebf3bf5f7a9) <noreply@anthropic.com>
+Date:   Fri Jul 31 07:03:11 2026 -0400
+
+    dm-reproducible-compare-artifacts: writability probe without ':'
+
+    ':' is a no-op placeholder (R-130 wants 'true' with a message) and neither
+    ':' nor a bare redirection says what it is doing under xtrace.
+
+    'printf "%s" "" | tee -- "${report}"' truncates the report to EMPTY exactly
+    as ': >' did, and tee's own exit status reports an unwritable path. Verified:
+    a writable path returns 0 and leaves 0 bytes (also when the file already had
+    content); a path in a nonexistent directory and a read-only file both return
+    non-zero.
+
+    Generated with assistance from Claude Code.
+
 commit 404c604b7a36cbaf8189316dc22df1f0e7d584d8
 Merge: f67eaf31 ede06754
 Author: Patrick Schleizer <adrelanos@whonix.org>
