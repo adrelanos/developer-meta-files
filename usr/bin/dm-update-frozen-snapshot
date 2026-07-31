@@ -55,6 +55,20 @@ SNAPSHOT_MR='https://snapshot.debian.org/mr'
 source_root="${HOME}/derivative-maker"
 dry_run='false'
 
+## Files carrying the pin as a literal timestamp, rewritten together, relative to
+## --source-root. The FIRST is authoritative: the current pin is read from it and every other
+## must already agree before anything is written. The rest are optional when absent -- an
+## older tree may not carry them -- but strict when present, because a pin file left behind on
+## an old snapshot is the failure this list exists to prevent.
+PIN_FILES=(
+   'build_sources/debian_stable_frozen_clearnet.sources'
+   'build_sources/debian_stable_frozen_direct_clearnet.sources'
+)
+
+## Plain one-line copy of the pin. Consumers 'cat' this instead of parsing a URI path segment
+## out of deb822; the sanity check against the deb822 files is a grep and a string compare.
+PIN_TIMESTAMP_FILE='build_sources/frozen-snapshot-timestamp'
+
 ## The atomic rewrite (below) creates a temp beside the sources file; track it
 ## globally and remove it on EXIT so a failure mid-rewrite under errexit cannot
 ## leave untracked garbage in build_sources/ (which would break git-cleanliness
@@ -66,6 +80,58 @@ frozen_snapshot_cleanup() {
    [ -z "${frozen_tmp_file}" ] || rm --force -- "${frozen_tmp_file}"
 }
 trap frozen_snapshot_cleanup EXIT
+
+## Rewrite one file's pin token, as close to atomically as a shell reasonably gets: create the
+## temp BESIDE the target (same filesystem, so the rename is atomic in the namespace) and copy
+## the target's mode first -- mktemp defaults to 0600, and a plain /tmp temp + cross-filesystem
+## mv would silently make the file 0600 (unreadable to other build accounts in a shared
+## checkout) and non-atomic.
+##
+## Honest limit: the rename is atomic, the DURABILITY is not. Without an fsync of the temp
+## before the rename, a crash in that window can leave a truncated or empty file on some
+## filesystems. 'sync' below closes that at the cost of one flush on a tool that runs
+## occasionally by hand.
+##
+## $1 = file, $2 = old timestamp, $3 = new timestamp.
+rewrite_pin_file() {
+   local target="$1" old_ts="$2" new_ts="$3"
+   ## Resolve a symlink to the file it points at BEFORE writing. Shared-checkout layouts do
+   ## point build_sources/ entries at a common tree, and 'mv'ing onto a symlink replaces the
+   ## LINK with a regular file: the real file keeps its old pin, the build keeps using it, and
+   ## the diff looks applied. A '-r' test does not catch this because a symlink to a readable
+   ## file is readable.
+   target="$(readlink --canonicalize -- "${target}")"
+   frozen_tmp_file="$(mktemp -- "${target}.XXXXXX")"
+   chmod --reference="${target}" -- "${frozen_tmp_file}"
+   sed "s|${old_ts}|${new_ts}|g" -- "${target}" > "${frozen_tmp_file}"
+   sync -- "${frozen_tmp_file}"
+   mv -- "${frozen_tmp_file}" "${target}"
+   ## 'mv' consumed the temp; clear the global so the EXIT cleanup is a no-op.
+   frozen_tmp_file=''
+   printf 'dm-update-frozen-snapshot: %s -> %s in %s\n' "${old_ts}" "${new_ts}" "${target}"
+}
+
+## Same atomic dance for the plain one-line pin file, which is written whole rather than
+## substituted (it may not exist yet, so there is no old token to replace).
+## $1 = file, $2 = timestamp.
+write_pin_timestamp_file() {
+   local target="$1" new_ts="$2"
+   if [ -e "${target}" ]; then
+      target="$(readlink --canonicalize -- "${target}")"
+   fi
+   frozen_tmp_file="$(mktemp -- "${target}.XXXXXX")"
+   if [ -e "${target}" ]; then
+      chmod --reference="${target}" -- "${frozen_tmp_file}"
+   else
+      ## Created fresh: match what a checked-out 0644 file would be, minus the umask.
+      chmod 0644 -- "${frozen_tmp_file}"
+   fi
+   printf '%s\n' "${new_ts}" > "${frozen_tmp_file}"
+   sync -- "${frozen_tmp_file}"
+   mv -- "${frozen_tmp_file}" "${target}"
+   frozen_tmp_file=''
+   printf 'dm-update-frozen-snapshot: wrote %s to %s\n' "${new_ts}" "${target}"
+}
 
 usage() {
    cat -- <<'EOF'
@@ -442,6 +508,45 @@ update_frozen_snapshot() {
       return 1
    fi
 
+   ## Every other pin file must already agree, and so must the plain timestamp file. The check
+   ## is deliberately dumb -- grep each file for timestamp tokens, cat the plain one, compare
+   ## the strings -- because anything cleverer is a second place for the pin to be wrong.
+   ## Absent optional files are fine; present-and-disagreeing is not, since the rewrite below
+   ## substitutes the OLD token and would silently skip a file already on a different one.
+   local pin_file pin_file_path pin_file_ts stray_ts recorded_ts
+   for pin_file in "${PIN_FILES[@]:1}"; do
+      pin_file_path="${source_root}/${pin_file}"
+      [ -e "${pin_file_path}" ] || continue
+      ## 'URIs:' lines only. These files carry example snapshot URLs in their
+      ## header prose, and a bare grep over the whole file reports those example
+      ## dates as extra pins -- which reads exactly like drift.
+      stray_ts="$(grep -E '^[[:space:]]*URIs:' -- "${pin_file_path}" \
+         | grep -oE '[0-9]{8}T[0-9]{6}Z' | sort --unique || true)"
+      if [ -z "${stray_ts}" ]; then
+         printf 'dm-update-frozen-snapshot: no pinned timestamp found in %s\n' "${pin_file_path}" >&2
+         return 1
+      fi
+      if [ ! "${stray_ts}" = "${current_ts}" ]; then
+         printf 'dm-update-frozen-snapshot: %s is pinned to %s, not %s (from %s)\n' \
+            "${pin_file_path}" "$(tr '\n' ' ' <<< "${stray_ts}")" "${current_ts}" "${frozen_sources}" >&2
+         printf 'dm-update-frozen-snapshot: a single-token rewrite cannot reconcile them; fix by hand first.\n' >&2
+         return 1
+      fi
+   done
+
+   pin_file_path="${source_root}/${PIN_TIMESTAMP_FILE}"
+   if [ -e "${pin_file_path}" ]; then
+      recorded_ts="$(< "${pin_file_path}")"
+      ## Tolerate trailing whitespace/newline, nothing else.
+      recorded_ts="${recorded_ts//[[:space:]]/}"
+      if [ ! "${recorded_ts}" = "${current_ts}" ]; then
+         printf 'dm-update-frozen-snapshot: %s records %s, but %s is pinned to %s\n' \
+            "${pin_file_path}" "${recorded_ts:-empty}" "${frozen_sources}" "${current_ts}" >&2
+         printf 'dm-update-frozen-snapshot: fix the drift by hand first.\n' >&2
+         return 1
+      fi
+   fi
+
    printf 'dm-update-frozen-snapshot: current pin %s (suite %s / %s); querying snapshot.debian.org ...\n' \
       "${current_ts}" "${suite}" "${security_suite}" >&2
    if ! latest_valid_snapshot "${suite}" "${security_suite}"; then
@@ -472,36 +577,31 @@ update_frozen_snapshot() {
    fi
 
    if [ "${dry_run}" = 'true' ]; then
-      printf 'dm-update-frozen-snapshot: DRY-RUN -- would bump %s -> %s in %s\n' "${current_ts}" "${new_ts}" "${frozen_sources}"
+      printf 'dm-update-frozen-snapshot: DRY-RUN -- would bump %s -> %s in:\n' "${current_ts}" "${new_ts}"
+      for pin_file in "${PIN_FILES[@]}"; do
+         pin_file_path="${source_root}/${pin_file}"
+         [ -e "${pin_file_path}" ] || continue
+         printf '  %s\n' "${pin_file_path}"
+      done
+      printf '  %s (plain timestamp)\n' "${source_root}/${PIN_TIMESTAMP_FILE}"
       return 0
    fi
 
-   ## Resolve a symlink to the file it points at BEFORE writing. Shared-checkout layouts do
-   ## point build_sources/ entries at a common tree, and 'mv'ing onto a symlink replaces the
-   ## LINK with a regular file: the real sources file keeps its old pin, the build keeps using
-   ## it, and the diff looks applied. The '-r' test earlier does not catch this because a
-   ## symlink to a readable file is readable.
-   frozen_sources="$(readlink --canonicalize -- "${frozen_sources}")"
+   ## Replace the exact old timestamp token in every pin file, leaving the rest untouched. The
+   ## checks above proved they all carry that same token, so one substitution per file is
+   ## sufficient and cannot half-apply.
+   for pin_file in "${PIN_FILES[@]}"; do
+      pin_file_path="${source_root}/${pin_file}"
+      [ -e "${pin_file_path}" ] || continue
+      rewrite_pin_file "${pin_file_path}" "${current_ts}" "${new_ts}"
+   done
 
-   ## Rewrite as close to atomically as a shell reasonably gets: create the temp BESIDE the
-   ## target (same filesystem, so the rename is atomic in the namespace) and copy the
-   ## target's mode first -- mktemp defaults to 0600, and a plain /tmp temp + cross-filesystem
-   ## mv would silently make the sources file 0600 (unreadable to other build accounts in a
-   ## shared checkout) and non-atomic. Replace the exact old timestamp token, which the check
-   ## above proved is shared by both frozen URIs, leaving the rest of the file untouched.
-   ##
-   ## Honest limit: the rename is atomic, the DURABILITY is not. Without an fsync of the temp
-   ## before the rename, a crash in that window can leave a truncated or empty sources file on
-   ## some filesystems. 'sync' below closes that at the cost of one flush on a tool that runs
-   ## occasionally by hand.
-   frozen_tmp_file="$(mktemp -- "${frozen_sources}.XXXXXX")"
-   chmod --reference="${frozen_sources}" -- "${frozen_tmp_file}"
-   sed "s|${current_ts}|${new_ts}|g" -- "${frozen_sources}" > "${frozen_tmp_file}"
-   sync -- "${frozen_tmp_file}"
-   mv -- "${frozen_tmp_file}" "${frozen_sources}"
-   ## 'mv' consumed the temp; clear the global so the EXIT cleanup is a no-op.
-   frozen_tmp_file=''
-   printf 'dm-update-frozen-snapshot: bumped frozen snapshot pin %s -> %s in %s\n' "${current_ts}" "${new_ts}" "${frozen_sources}"
+   ## Written last: if a rewrite above fails under errexit, the plain file still records the
+   ## old pin, which the drift check then reports rather than the tool silently claiming a
+   ## bump it did not finish.
+   write_pin_timestamp_file "${source_root}/${PIN_TIMESTAMP_FILE}" "${new_ts}"
+
+   printf 'dm-update-frozen-snapshot: bumped frozen snapshot pin %s -> %s\n' "${current_ts}" "${new_ts}"
    printf 'dm-update-frozen-snapshot: review and commit the diff so the new pin is reproducible.\n'
 }
 
