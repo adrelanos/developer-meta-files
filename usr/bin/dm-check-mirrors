@@ -11,7 +11,6 @@ shopt -s shift_verbose
 ## 'helper-scripts' resolves via HELPER_SCRIPTS_PATH for a from-source build;
 ## empty falls back to the installed system path.
 # shellcheck source=../../../helper-scripts/usr/libexec/helper-scripts/strings.bsh
-
 source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/strings.bsh
 
 curl_built_in_args="\

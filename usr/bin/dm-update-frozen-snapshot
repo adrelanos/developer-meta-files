@@ -41,7 +41,6 @@ shopt -s shift_verbose
 ## HELPER_SCRIPTS_PATH for a from-source build, else the installed path. Available wherever
 ## sanitize-string and scurl are: all three ship in helper-scripts.
 # shellcheck source=../../../helper-scripts/usr/libexec/helper-scripts/strings.bsh
-
 source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/strings.bsh
 
 ## HTTPS, not HTTP: over plain HTTP a network attacker or untrusted proxy could forge the month
