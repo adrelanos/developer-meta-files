@@ -58,14 +58,40 @@ readonly POLICY_WORKFLOW_PERMS_LABEL='workflow GITHUB_TOKEN read-only, no PR app
 ## actions will start failing the moment this lands. Run --audit
 ## first; whitelist or replace any non-github-owned, non-verified
 ## action before applying.
+##
+## The allowlist governs REUSABLE WORKFLOWS as well as actions, and a
+## cross-org `uses: <org>/<repo>/.github/workflows/<x>.yml@<ref>` is
+## checked against it. So an empty patterns_allowed does not merely
+## restrict third-party actions -- it breaks every consumer outside the
+## org that hosts the reusables, with `startup_failure` and zero jobs.
+## Same-org calls bypass the policy, which is why org-ai-assisted looked
+## healthy while secure-terminal's consumers were all failing.
+##
+## developer-meta-files hosts every reusable workflow and composite
+## action we publish, so two path-scoped patterns cover the whole
+## surface.
+##
+## The PATH is mandatory. GitHub's syntax for a reusable workflow is
+## OWNER/REPOSITORY/PATH/FILENAME@REF -- a bare 'owner/repo@*' matches
+## ACTIONS ONLY and silently fails to admit reusable workflows, which
+## still fail with startup_failure. Verified live: with 'owner/repo@*'
+## the consumers stayed broken; with the patterns below a previously
+## failing consumer-bandit run went green.
+##
+## '@*' rather than '@master' so a future SHA-pinned or tagged call does
+## not silently fail. Deliberately NOT 'org-ai-assisted/*', which would
+## additionally admit anything published from any other repo in the org.
 readonly POLICY_ACTIONS_ALLOWLIST='{
    github_owned_allowed: true,
    verified_allowed: true,
-   patterns_allowed: []
+   patterns_allowed: [
+      "org-ai-assisted/developer-meta-files/.github/workflows/*@*",
+      "org-ai-assisted/developer-meta-files/.github/actions/*@*"
+   ]
 }'
 readonly POLICY_ACTIONS_ALLOWLIST_ENDPOINT='/orgs/__ORG__/actions/permissions/selected-actions'
 readonly POLICY_ACTIONS_ALLOWLIST_METHOD='PUT'
-readonly POLICY_ACTIONS_ALLOWLIST_LABEL='selected-actions = github-owned + verified-creators'
+readonly POLICY_ACTIONS_ALLOWLIST_LABEL='selected-actions = github-owned + verified-creators + developer-meta-files reusables'
 
 ## ============================================================================
 ## Org-policy bodies - used by dm-github-org-policy
