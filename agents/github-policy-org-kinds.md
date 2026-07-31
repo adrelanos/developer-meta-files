@@ -26,52 +26,64 @@ somewhere ELSE to be maintained:
   it lives. A PROJECT org is not a copy of anything -- it holds one
   self-contained first-party project (the secure-terminal app, the
   output-lies site) with no upstream to file against. So both keep
-  issues, Dependabot alerts and private vulnerability reporting ON.
+  issues ON. (Private vulnerability reporting is a narrower question
+  and does NOT follow this split -- see the table below.)
 
-MIRROR is therefore the only kind that switches those off, and
-"mirror" means specifically "mirrors Kicksecure / Whonix" -- not
-"any org that is not SOURCE".
+"Mirror" means specifically "mirrors Kicksecure / Whonix" -- not "any
+org that is not SOURCE".
+
+A second axis cuts across the first, and Dependabot follows the
+SECOND one, not the first: **where does the CI that acts on the
+report run?** SOURCE has Actions disabled org-wide
+(`enabled_repositories=none`), and the PROJECT repos are mirrored
+into `org-ai-assisted`, where the AI-assisted test and scanner
+suites run. `org-ai-assisted` is therefore the one place a bump PR
+can carry a verdict and a CVE alert has a build to fix it in, so
+Dependabot is ON on MIRROR only and actively OFF on every other kind.
+See "Dependabot lives on the mirror only" below.
 
 ## Free-plan code-security replacements
 
 Applied per-repo on the org side after the org-level Code Security
-Configurations API turned out to be PAID PLAN ONLY. Enabled wherever
-the code is actually maintained (SOURCE, PROJECT) and disabled where
-it is a copy (MIRROR): a mirror running these would duplicate every
-alert the canonical SOURCE repo already raises. Empirically tested on
-Free 2026-05.
+Configurations API turned out to be PAID PLAN ONLY. Empirically
+tested on Free 2026-05.
 
 | Feature | SOURCE | MIRROR | PROJECT | PERSON | BOT |
 | --- | --- | --- | --- | --- | --- |
-| Dependabot alerts (`PUT /vulnerability-alerts` enable, `DELETE` on MIRROR) | on | actively disabled | on | off | off |
-| Dependabot security updates (`PUT /automated-security-fixes` enable, `DELETE` on MIRROR) | on | actively disabled | on | off | off |
-| Private vulnerability reporting (PVR) | actively disabled | actively disabled | **on** | off | off |
+| Dependabot alerts (`PUT /vulnerability-alerts` on MIRROR, `DELETE` elsewhere) | actively disabled | **on** | actively disabled | off | off |
+| Dependabot security updates (`PUT /automated-security-fixes` on MIRROR, `DELETE` elsewhere) | actively disabled | **on** | actively disabled | off | off |
+| Dependabot version updates (no REST setter; `.github/dependabot.yml` presence IS the switch) | must be absent | opt-in per repo | must be absent | - | - |
+| Private vulnerability reporting (PVR) | actively disabled | actively disabled | actively disabled | off | off |
 | `secret_scanning` + push protection (in PATCH body) | on | on | on | on | on |
 | Branch + tag rulesets (`POST /repos/{}/{}/rulesets`) | on | on | on | on | on |
 | `has_issues` | on | off | on | - | - |
 | `has_wiki` / `has_discussions` | off | off | off | - | - |
 
-PROJECT is the only kind that ENABLES private vulnerability
-reporting. SOURCE disables it because Kicksecure and Whonix take
-security reports through their own documented channel, not GitHub;
-a PROJECT org has no such channel, so GitHub's is the one a
-researcher can find.
+PVR is actively disabled on EVERY kind, PROJECT included. Security
+reports reach us as OpenPGP-encrypted e-mail, and that is the only
+channel we watch; for Kicksecure / Whonix the canonical route is the
+wiki linked from `.github/SECURITY.md`. An open GitHub private-report
+inbox on any repo would be a second one nobody reads -- worse than
+none, because a researcher who finds it reasonably assumes it is
+monitored and a real report could sit there unseen.
+
+This table and the notes below previously disagreed with each other on
+this row: the table said PROJECT enabled PVR while the notes said it was
+off everywhere. The code agreed with the table; the decision is off
+everywhere, and `test_dm_apply_project.sh` now pins it.
 
 Notes:
 
-- Dependabot off on MIRROR/PERSON/BOT for the split-inbox /
-  duplicate-notifications reason; ON for PROJECT, which has no
-  upstream inbox to split against. On MIRROR `apply_repo_policy`
-  actively DELETEs the two Dependabot settings (every `--apply`
-  reconciles), so leftovers from older un-gated runs or
-  accidental UI flips are cleaned up. Order: DEPENDABOT_FIXES_OFF
-  before DEPENDABOT_ALERTS_OFF - the security-fixes endpoint
-  returns HTTP 422 once alerts are off, which is the idempotent
-  steady state and is captured as ok via the
-  `_EXTRA_OK_STATUS=422` knob (see G-035 in
-  `github-org-tools.md`). On PERSON/BOT
-  `dm-github-personal-policy` keeps step 8 commented out for the
-  same reason (with the canonical-home-uncomment note); the
+- Dependabot is ON on MIRROR and actively DELETEd on every other kind
+  (every `--apply` reconciles), so leftovers from older un-gated runs
+  or accidental UI flips are cleaned up. Order on the disable side:
+  DEPENDABOT_FIXES_OFF before DEPENDABOT_ALERTS_OFF - the
+  security-fixes endpoint returns HTTP 422 once alerts are off, which
+  is the idempotent steady state and is captured as ok via the
+  `_EXTRA_OK_STATUS=422` knob (see G-035 in `github-org-tools.md`).
+  On the enable side the order is reversed: alerts first, because
+  `PUT /automated-security-fixes` requires them. On PERSON/BOT
+  `dm-github-personal-policy` keeps step 8 commented out; the
   personal mirror never had these on so an active-disable pass
   is unnecessary.
 
@@ -101,7 +113,9 @@ Notes:
 | Ruleset bypass | `[OrgAdmin]` (org owner can bypass; non-admins still blocked) | `[OrgAdmin]` on MIRROR; `[User: target_user_id]` on PERSON (computed at apply time from `GET /users/{login}` since user-owned repos have no org-admin actor); `[]` on BOT (no rule needs a bypass and the bot must not be able to force-push or delete its own branches) |
 | Ruleset `required_signatures` ("allow only signed commits") | **on** (org owner bypasses via `[OrgAdmin]`) | **on PERSON** (owner bypasses via `[User]`); **off on MIRROR / BOT** (AI-assisted automation pushes commits without a verifiable GPG key for the bot identity) |
 | CI / Actions | **disabled entirely, org-wide** (`enabled_repositories=none`); canonical CI runs on the org's own infra, not GitHub Actions | disabled entirely on PERSON/BOT (mirrors only); MIRROR keeps CI on, allow-list = github-owned + verified-creators (it is where AI-assisted dev + CI run) |
-| Dependabot alerts + security updates | on | off (would duplicate upstream alerts) |
+| Dependabot alerts | **off** (Actions is off on SOURCE; alerts belong where the fix gets built and tested) | **on MIRROR**; off on PERSON/BOT |
+| Dependabot security updates | **off** (they open PRs; Actions is off on SOURCE, so nothing can verify them) | **on MIRROR**; off on PERSON/BOT |
+| Dependabot version updates (`.github/dependabot.yml`) | **must be absent** (same no-CI reason) | opt-in per repo on MIRROR, which is where a bump gets a CI verdict; absent on PERSON/BOT |
 | PVR (Private Vulnerability Reporting) | **off everywhere** (canonical disclosure is the wiki - see `.github/SECURITY.md`) | off |
 | GitHub Pages site | not touched | `DELETE /pages` on PERSON/BOT (mirror should not host Pages) |
 
@@ -147,42 +161,49 @@ Net deliberate diffs after this split:
    selected-actions allow-list - it is where the AI-assisted test +
    scanner suites run. The canonical SOURCE repos run their own CI,
    not GitHub Actions.
-5. Dependabot enabled only on SOURCE; PVR (Private Vulnerability
-   Reporting) actively disabled everywhere because the canonical
-   disclosure channel is the wiki (per `.github/SECURITY.md`),
-   not GitHub's PVR flow.
+5. Dependabot -- all three switches -- on MIRROR only, actively
+   disabled on SOURCE and PROJECT. It follows GitHub Actions, and
+   Actions runs on `org-ai-assisted` alone. PVR (Private
+   Vulnerability Reporting) actively disabled everywhere except
+   PROJECT, because the canonical disclosure channel is the wiki (per
+   `.github/SECURITY.md`), not GitHub's PVR flow. The two do NOT
+   share a pivot: Dependabot follows CI, PVR follows who receives a
+   researcher's report.
 6. GitHub Pages cleanup (DELETE) only on PERSON/BOT.
 
 Everything else (fork-PR approval policy, workflow GITHUB_TOKEN
 permissions, secret scanning, rulesets) is identical content with
 only the API scope (org-level vs per-repo) differing.
 
-## SOURCE-side UI-only operator flips
+## UI-only operator flips
 
 Dependabot and Code-scanning settings whose desired state is known
 to the policy but which have **no documented REST setter** as of
 2026-05. `dm-github-org-policy --apply` (and `--dry-run`) emits a
-`skip: ... see <URL>` log line on every SOURCE org / repo so the
-operator can complete each flip via the UI. Each setting applies
-to SOURCE only - the same toggle would be moot on MIRROR / PERSON
-/ BOT for the reasons in the right column.
+`skip: ... see <URL>` log line on every org / repo the setting
+applies to, so the operator can complete each flip via the UI.
 
-| Setting | Scope | Desired (SOURCE) | Why moot on MIRROR / PERSON / BOT |
-| --- | --- | --- | --- |
-| Dependabot grouped security updates | org | **on** | Dependabot off entirely; no security PRs to group |
-| Code scanning: recommend security-extended query suite | org | **on** | MIRROR repos use the reusable `codeql.yml` workflow (advanced setup), which carries its own `queries:` value and ignores the default-setup recommendation |
-| Auto-triage rule "Dismiss low-impact dev-scoped" preset | repo | **off** | Dependabot off; no alerts to triage |
-| Auto-triage rule "Dismiss package malware alerts" preset | repo | **off** | Dependabot off; no malware alerts to (not-)dismiss |
-| Delegated Dependabot alert dismissal ("Prevent direct alert dismissals") | repo | **on** | Dependabot off; no dismissals to delegate |
+The emitting kind is per row -- a flip is emitted where its subject
+exists. The three Dependabot rows are MIRROR only, because MIRROR is
+the only kind with Dependabot alerts or security-update PRs at all.
+
+| Setting | Scope | Emitted on | Desired | Why moot elsewhere |
+| --- | --- | --- | --- | --- |
+| Dependabot grouped security updates | org | MIRROR | **on** | Every other kind has Dependabot off entirely; no security-update PRs to group |
+| Code scanning: recommend security-extended query suite | org | SOURCE | **on** | MIRROR repos use the reusable `codeql.yml` workflow (advanced setup), which carries its own `queries:` value and ignores the default-setup recommendation |
+| Auto-triage rule "Dismiss low-impact dev-scoped" preset | repo | MIRROR | **off** | Alerts off everywhere else; none to triage |
+| Auto-triage rule "Dismiss package malware alerts" preset | repo | MIRROR | **off** | Alerts off; no malware alerts to (not-)dismiss |
+| Delegated Dependabot alert dismissal ("Prevent direct alert dismissals") | repo | MIRROR | **on** | Alerts off; no dismissals to delegate |
+| Dependabot version updates (delete `.github/dependabot.yml`) | repo | SOURCE, PROJECT | **off** | Not a UI flip at all -- the fix is a commit; listed here because it shares the "no REST setter" shape. See "Dependabot lives on the mirror only" below |
 
 Rationale per setting:
 
 - **Grouped security updates**: one PR per ecosystem + directory
   bundling all available security fixes instead of one PR per
-  vulnerable dep. Org-wide UI flip applies to every SOURCE repo;
-  per-repo `dependabot.yml` `groups:` blocks override the org
-  default for finer control (see "Dependabot version updates"
-  below). One source of truth - prefer the org-level UI flip.
+  vulnerable dep. Emitted on MIRROR, the only kind that opens
+  security-update PRs; per-repo `dependabot.yml` `groups:`
+  blocks override the org default for finer control. One source of
+  truth - prefer the org-level UI flip.
 
 - **Code scanning extended query suite recommendation**: nudges
   new opt-ins toward broader coverage (default suite + lower
@@ -206,20 +227,179 @@ Rationale per setting:
   approve. Institutional gate against a single maintainer
   silently dismissing alerts that should reach human review.
 
-## Dependabot version updates (file-driven, not a toggle)
+## Dependabot lives on the mirror only (decision 2026-07-31)
 
-Separately, **Dependabot version updates** are off everywhere by
-default and become active only when `.github/dependabot.yml`
-exists in a repo. Recommendation: opt in per-repo, on the
-canonical SOURCE repo, where the repo has a non-trivial
-npm/pip/cargo/etc manifest worth tracking. `audit_org_state`
-already reports `dependabot.yml` have/missing counts under the
-"Dependency-Update-Tool" Scorecard heading.
+**Decision: Dependabot runs on `org-ai-assisted` and nowhere else.
+Alerts, security updates and version updates are all OFF on
+Kicksecure, Whonix and the PROJECT orgs.**
 
-The same `dependabot.yml` `groups:` block (with
-`applies-to: security-updates`) is the durable, source-controlled
-form for per-repo custom grouping when the org-wide grouping
-default needs finer control.
+Why: every Dependabot output -- an alert, a security-update PR, a
+version-bump PR -- only becomes work somebody can finish where CI can
+build and test the result, and where merging it is the normal
+workflow. SOURCE has GitHub Actions disabled org-wide by deliberate
+policy (the canonical repos run their own CI - see the CI / Actions
+row above), so a bump PR raised there can never carry a verdict. The
+PROJECT repos are mirrored into `org-ai-assisted`, which is where the
+AI-assisted test and scanner suites run, so Dependabot output on the
+PROJECT side only splits one alert inbox and one bump stream in two.
+An unverifiable PR stream is worse than no PR stream: it costs review
+attention and produces a green-looking merge button backed by
+nothing.
+
+This REPLACES the earlier "Dependabot alerts belong on the canonical
+repo, which is where a CVE must be visible" reasoning and the "opt in
+per-repo on the canonical SOURCE repo" recommendation. Both are
+overruled. The mirror is the single place.
+
+### The three switches, and how each is flipped
+
+| | ALERTS | SECURITY updates | VERSION updates |
+| --- | --- | --- | --- |
+| What turns it on | `PUT /repos/{o}/{r}/vulnerability-alerts` | `PUT /repos/{o}/{r}/automated-security-fixes` | `.github/dependabot.yml` exists in the repo |
+| What turns it off | `DELETE` on the same endpoint | `DELETE` on the same endpoint | deleting that file (a commit) |
+| Scope | per repo, setting-based | per repo, setting-based | per repo, content-based |
+| Org-wide setter | none; per-repo only | none; per-repo only | **none exists at any scope** |
+| Needs a config file | no | no -- a repo with no `dependabot.yml` still emits security PRs | yes |
+| Policy constant | `POLICY_REPO_DEPENDABOT_ALERTS` / `_ALERTS_OFF` | `POLICY_REPO_DEPENDABOT_FIXES` / `_FIXES_OFF` | `POLICY_DEPENDABOT_VERSION_UPDATES_OFF_*` (a skip line, not an API call) |
+
+Measured 2026-07-31 against `GET
+/orgs/{org}/code-security/configurations`: the configuration object
+carries `dependabot_alerts` and `dependabot_security_updates` but no
+version-updates field at all, so the file really is the only switch
+for the third column, at any scope. GitHub documents exactly one
+config path, `.github/dependabot.yml`; that single path is what the
+tools probe.
+
+### How `dependabot.yml` reaches a repo: opt-in, not blanket
+
+`usr/bin/dm-packaging-helper-script` is the deployment mechanism, and
+it is deliberately NOT "put the file on every repo":
+
+- The canonical copy is
+  `developer-meta-files/consumer-templates/.github/dependabot.yml`
+  (`canonical_dependabot_yml`).
+- `pkg_update_consumer_workflows` refreshes a package's copy from the
+  canonical one, and `dependabot_yml_is_manual` skips that refresh for
+  any file carrying a `## propagation: manual` marker -- the opt-out
+  for a hand-tuned config that must not be overwritten.
+- A repo with nothing worth tracking carries no file, and nothing in
+  the toolchain adds one on its behalf. The repos that need it are
+  the ones pinning third-party Action SHAs, which is what the W-007
+  `DEPENDABOT-MISSING` check in `test_workflow_yaml.py` flags.
+
+So "Dependabot on the mirror" means "on the mirror repos that opted
+in", never "on all of them".
+
+### Consequence for the shared tree, unresolved
+
+MIRROR repos are forks that ff-sync from SOURCE, so
+`.github/dependabot.yml` on the mirror IS the SOURCE file: one object
+in one history, not two independent settings. Deleting it on SOURCE
+removes it from the mirror at the next sync; keeping it for the
+mirror keeps it on SOURCE. The version-updates column therefore
+cannot be split along the org-kind axis by file presence alone --
+mirror-side version bumps would need the config to live somewhere
+that is not ff-synced from SOURCE, or a deliberate mirror-only
+divergence.
+
+Recorded, not decided: it is a maintenance-model question, not a
+policy-encoding one. What the policy DOES encode without ambiguity is
+the pair with real per-repo API setters -- alerts and security
+updates -- which are ON on the mirror and actively DELETEd everywhere
+else, and which need no config file to work.
+
+### Measured SOURCE inventory (2026-07-31)
+
+124 repos (Kicksecure 93, Whonix 31). Exactly 15 carry
+`.github/dependabot.yml`, zero carry a `.yaml` variant:
+
+- Kicksecure: developer-meta-files, msgcollector, helper-scripts,
+  tb-updater, usability-misc, security-misc, genmkfile,
+  derivative-maker, grml-debootstrap, hardened_malloc
+  (ARCHIVED), mediawiki-extensions-Kicksecure (ARCHIVED)
+- Whonix: whonix-firewall, kloak, derivative-maker,
+  Whonix-Installer
+
+Most are the github-actions (+docker) weekly template. Two
+outliers: `hardened_malloc` sets `target-branch: main` on a repo
+with no `main` branch, so its config is inert;
+`mediawiki-extensions-Kicksecure` is the only one configuring
+composer/npm, daily. The two ARCHIVED repos must be un-archived
+before their config can be deleted -- Dependabot does not run on an
+archived repo, so those two configs are inert until that happens,
+and `--audit` does not enumerate archived repos at all.
+
+`security_and_analysis` was NOT READABLE with the bot token on any
+of the 124 repos (403/404 permissions wall), so the per-repo alert
+and security-update state on SOURCE is currently UNKNOWN. The audit
+reports it as NOT VERIFIED rather than assuming it is off.
+
+### Sequencing (do not disable first)
+
+Disabling Dependabot on SOURCE also stops the mechanism that
+retires the currently-open SOURCE bump PRs: Dependabot closes its
+own PR as superseded once the dependency is already at the new
+version upstream. Turn it off first and that batch has to be
+closed by hand. Cheaper order: let the mirror-side bumps land
+upstream, let the SOURCE copies retire themselves, then disable.
+
+### DECLARATIVE, not enforced -- the SOURCE half
+
+The bot is `role=member` on both SOURCE orgs, and `SOURCE_ORGS` is
+commented out of the `ORGS` array in `dm-github-org-policy` pending
+an admin token. The SOURCE half of this section cannot be applied by
+the tool today:
+
+- `--apply` never reaches Kicksecure / Whonix.
+- `--dry-run` / `--audit` reach them only via
+  `ORGS_OVERRIDE='Kicksecure,Whonix'`.
+- The version-update half would not be an API call even with an
+  admin token: it is a commit deleting a file in 13 non-archived
+  repos, i.e. 13 pull requests an owner has to merge.
+
+So the SOURCE half is the desired state an owner can act on, plus the
+measurement that says how far the live state is from it. It is not a
+claim that the live state matches. The MIRROR and PROJECT halves are
+reachable by `--apply` and are enforced on every run.
+
+### What `--audit` compares
+
+Compared (a finding on drift, and a finding on any endpoint that
+could not be read - an unread endpoint is never a pass):
+
+- MIRROR: security updates must read `enabled: true` from
+  `GET /automated-security-fixes`, against
+  `POLICY_REPO_DEPENDABOT_FIXES_EXPECT_ON` -- the read-side
+  counterpart of the literal `--apply` PUTs.
+- MIRROR: alerts must read enabled
+  (`GET /vulnerability-alerts` -> HTTP 204).
+- SOURCE + PROJECT: security updates must read `enabled: false`,
+  against `POLICY_REPO_DEPENDABOT_FIXES_EXPECT_OFF`. With the current
+  member token that endpoint answers 404 on SOURCE, so this reports
+  NOT VERIFIED -- honestly, since the state genuinely is unknown.
+- SOURCE + PROJECT: `.github/dependabot.yml` must be ABSENT. Present
+  is reported as drift.
+- EVERY kind: a `dependabot.yml` probe answering neither 200 nor 404
+  is reported as NOT VERIFIED, MIRROR included, where either answer
+  would otherwise be in policy. Reading "could not tell" as "absent"
+  is the exact false green this audit exists to prevent, and the
+  `no:` inventory line it would print is just as wrong on the mirror.
+
+Not compared, deliberately stated rather than implied:
+
+- The "alerts off" claim on SOURCE / PROJECT cannot be verified
+  through this endpoint at all: `GET /vulnerability-alerts` answers
+  404 both when alerts are off and when the token cannot see the
+  repo, so a must-be-OFF assertion would be indistinguishable from a
+  permissions wall. Only the must-be-ON direction is asserted, on
+  MIRROR.
+- Per-repo settings other than Dependabot (the repo PATCH body,
+  PVR, rulesets) are applied but not compared. Pre-existing gap,
+  same shape, same fixture cost.
+
+The `dependabot.yml` `groups:` block (with
+`applies-to: security-updates`) remains the durable,
+source-controlled form for per-repo custom grouping on the mirror.
 
 ## Potential future tightenings (not in policy yet)
 
@@ -271,9 +451,10 @@ appetite for the friction trade-off.
   toggle, not in any of our policy scripts.
 
 - **GitHub Code Quality** (CodeQL with the quality query suite,
-  public preview since 2025-10-28). Differs from the Dependabot
-  pattern because Code Quality fires on PR diffs and on the
-  default branch; PRs only exist on whichever side carries them.
+  public preview since 2025-10-28). Fires on PR diffs and on the
+  default branch, so it lands on whichever side carries the PRs --
+  the same MIRROR-only conclusion Dependabot reaches, for the same
+  reason.
 
   | Role | Code Quality | Why |
   | --- | --- | --- |
@@ -282,9 +463,9 @@ appetite for the friction trade-off.
   | PERSON | off | No PRs land here |
   | BOT | off | No PRs land here; Actions disabled entirely |
 
-  NOT the Dependabot SOURCE-only shape: Code Quality on MIRROR
-  is the point where AI-authored diffs first get a quality
-  signal. Engine is CodeQL with an extra query suite, so the
+  Code Quality on MIRROR is the point where AI-authored diffs
+  first get a quality signal. Engine is CodeQL with an extra
+  query suite, so the
   Actions-minute cost is incremental on top of the existing
   Code Security scan. `require_code_quality_results` ruleset
   rule (with a `Severity` threshold) belongs on SOURCE only;

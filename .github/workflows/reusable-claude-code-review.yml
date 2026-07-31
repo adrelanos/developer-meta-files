@@ -264,7 +264,13 @@ jobs:
     ##
     ## The substring match wraps both haystack and needle in commas
     ## so that "bob" does not match "alice,bobby,charlie".
+    ## 3. CI runs only where we enabled it. In a CALLED reusable the vars
+    ##    context resolves against the CALLER, so this gates every
+    ##    consumer. It is the outermost condition on purpose: an @claude
+    ##    mention on a fork or upstream must not spend the org's
+    ##    subscription even if the commenter happens to be on the roster.
     if: |
+      vars.CI_ENABLED_ORG_AI_ASSISTED == 'true' &&
       contains(format(',{0},', inputs.allowed-users), format(',{0},', github.actor)) && (
         (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
         (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude'))
