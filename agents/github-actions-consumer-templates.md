@@ -84,6 +84,9 @@ this repo plus the per-consumer PRs referenced from them.
                 |-- consumer-coverity.yml         ## parameterized
                 |-- consumer-cppcheck.yml         ## parameterized
                 |-- consumer-codeql-cpp.yml       ## parameterized
+                |-- consumer-codeql-javascript.yml
+                |-- consumer-codeql-python.yml
+                |-- consumer-dist-ai-tests.yml
                 |-- consumer-pre-push-static.yml
                 |-- consumer-scorecard.yml
                 `-- consumer-secrets-audit.yml
@@ -363,21 +366,35 @@ surface is technically overridable.
 - `timeout-minutes`: **hardcoded in reusable** at the current
   default (15).
 
-### `reusable-codeql.yml` (consumer-codeql-cpp.yml and consumer-codeql-actions.yml)
+### `reusable-codeql.yml` (the `consumer-codeql-*.yml` family)
 
-TODO: consumer-codeql-python.yml isn't taken into account here
+Four wrappers call this reusable, one per CodeQL language:
+`consumer-codeql-actions.yml`, `consumer-codeql-cpp.yml`,
+`consumer-codeql-javascript.yml`, `consumer-codeql-python.yml`.
+Each is byte-identical across its own consumers; they differ
+from each other only by the hardcoded-in-wrapper values below.
 
-- `language`: **hardcoded in wrapper**.
-  `consumer-codeql-cpp.yml` passes `"c-cpp"`;
-  `consumer-codeql-actions.yml` passes `"actions"`. Each template
-  is byte-identical across its consumers; the two templates
-  differ from each other by exactly this value.
-- `prepare-command`: **dm-consumer.yml** (optional), only for
-  c-cpp. `consumer-codeql-actions.yml` does not pass it.
+- `language`: **hardcoded in wrapper**. `"actions"`, `"c-cpp"`,
+  `"javascript-typescript"` (one id covers both JavaScript and
+  TypeScript), `"python"`.
+- `dm-consumer-section`: **hardcoded in wrapper**. `""` for
+  actions and javascript (no per-repo config, so
+  `.github/dm-consumer.yml` is never read); `"codeql-cpp"` for
+  c-cpp; `"codeql-python"` for python.
+- `prepare-command`: **dm-consumer.yml** (optional), for c-cpp
+  and python only.
 - `build-mode`: **hardcoded in wrapper**. `"manual"` for c-cpp;
-  `"none"` for actions.
+  `"none"` (the reusable's default, not passed) for actions,
+  javascript and python.
 - `build-command`: **dm-consumer.yml** (required), only for
   c-cpp.
+
+Consequence for python and javascript consumers: a repo that
+installs only those wrappers needs no `.github/dm-consumer.yml`.
+`ci/dm-consumer-load.sh` soft-skips when the file or the named
+section is absent and the section has no required keys, which is
+the case for `codeql-python`. Only `codeql-cpp` hard-fails on a
+missing section, because `build-command` is required there.
 - `queries`: **hardcoded in reusable** at the current default
   (`"security-and-quality"`).
 - `timeout-minutes`: **hardcoded in reusable** at the current
