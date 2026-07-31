@@ -49,16 +49,17 @@ die_if_not_has github-org-fork
 ##          has_projects=false, has_discussions=false.
 ## PROJECT = org holding one self-contained first-party project
 ##          (secure-terminal, output-lies). Not a copy of anything,
-##          so issues, Dependabot alerts and private vulnerability
-##          reporting live here. Defaults: has_issues=true,
-##          has_wiki=false, has_discussions=false.
+##          so issues and private vulnerability reporting live here.
+##          Dependabot does not: it follows the CI, which runs on the
+##          MIRROR. Defaults: has_issues=true, has_wiki=false,
+##          has_discussions=false.
 ##
 ## Vocabulary aligns with dm-github-fork-sync.
 readonly SOURCE_ORGS=( 'Kicksecure' 'Whonix' )
 readonly MIRROR_ORGS=( 'org-ai-assisted' )
 ## PROJECT = an org holding one self-contained first-party project, not a copy of anything
-## upstream. Issues / alerts / private vulnerability reporting belong HERE, because there is
-## no canonical repo elsewhere to carry them.
+## upstream. Issues and private vulnerability reporting belong HERE, because there is no
+## canonical repo elsewhere to carry them.
 readonly PROJECT_ORGS=( 'secure-terminal' 'output-lies' )
 
 ## SOURCE_ORGS currently commented out pending an admin token scoped
