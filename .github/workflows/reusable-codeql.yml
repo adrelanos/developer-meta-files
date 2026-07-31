@@ -14,6 +14,15 @@
 ## github/codeql-action - first-party. Same trust scope as
 ## actions/checkout, which we already use across the org.
 ##
+## ## Scan scope
+##
+## The CI-runtime helper checkouts (.github/dmf, .github/dist-ai)
+## are excluded from extraction via the init step's inline
+## 'paths-ignore'. Add any further helper checkout there too:
+## whatever the extractor walks is reported as the CALLER's alert,
+## and an alert about code the caller does not host can never
+## clear, because the caller only re-scans its own pushes.
+##
 ## ## Per-repo configuration: .github/dm-consumer.yml (optional)
 ##
 ## When a caller passes `dm-consumer-section: <section>`, the
@@ -227,6 +236,24 @@ jobs:
           languages: ${{ inputs.language }}
           build-mode: ${{ inputs.build-mode }}
           queries: ${{ inputs.queries }}
+          ## Scan-path exclusion for the CI-runtime helper checkouts.
+          ## They are other repos' trees staged under the caller's
+          ## workspace, so the extractor walks them and files their
+          ## findings as the CALLER's alerts - against code that does
+          ## not exist in the caller, cannot be fixed there, and never
+          ## re-scans, so such an alert can never clear on its own.
+          ## .github/dmf must exist BEFORE init (the config-load and
+          ## prepare-command steps run out of it), so step ordering
+          ## cannot solve it the way it does for .github/dist-ai;
+          ## paths-ignore is the mechanism that covers both, and any
+          ## future helper checkout added to this list.
+          ## Honoured for interpreted languages and for build-mode
+          ## 'none'; under a manual c-cpp build the build-command
+          ## alone decides what gets extracted.
+          config: |
+            paths-ignore:
+              - .github/dmf
+              - .github/dist-ai
 
       ## Manual build path - dm-consumer.yml.<section>.build-command.
       ## Only runs when build-mode=manual.
