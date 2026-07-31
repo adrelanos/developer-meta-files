@@ -1,0 +1,64 @@
+## Copyright (C) 2026 - 2026 ENCRYPTED SUPPORT LLC <adrelanos@whonix.org>
+## See the file COPYING for copying conditions.
+
+## AI-Assisted
+
+## Guards the org-wide CI switch itself.
+##
+## Every workflow we own is gated on `vars.CI_ENABLED_ORG_AI_ASSISTED ==
+## 'true'`. That gives us a zero-cost skip everywhere we have not opted
+## in -- and one failure mode: if the variable is ever unset, renamed, or
+## its visibility narrowed, EVERY gated job silently skips and every run
+## still reports green. A whole org's CI would go dark while the checks
+## list looked healthy.
+##
+## So this workflow is gated on the OWNER LITERAL instead of the
+## variable, and fails when the variable is missing. It is the one place
+## the switch cannot switch itself off. Deliberately exempt from W-008
+## (OWNER-GATE) for exactly that reason.
+##
+## Cheap: one ubuntu runner, no checkout, a single string comparison.
+
+name: CI-enabled canary
+
+on:
+  schedule:
+    ## Daily. An unset variable is not urgent enough for per-push noise,
+    ## but must not wait for someone to notice missing check runs.
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+
+## Default-deny: this job reads nothing and writes nothing.
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  canary:
+    name: CI-enabled variable is set
+    ## The owner literal, NOT the variable. Gating this on the variable
+    ## would make it disappear in exactly the situation it exists to
+    ## detect.
+    if: github.repository_owner == 'org-ai-assisted'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Assert the org-wide CI switch is set
+        ## Routed through env: rather than inlined into run:, per the
+        ## script-injection rule in agents/github-actions-security.md.
+        env:
+          CI_ENABLED: ${{ vars.CI_ENABLED_ORG_AI_ASSISTED }}
+        run: |
+          if [ "${CI_ENABLED}" = 'true' ]; then
+            printf '%s\n' 'CI_ENABLED_ORG_AI_ASSISTED=true -- gated workflows will run.'
+            exit 0
+          fi
+          printf '%s\n' \
+            "ERROR: CI_ENABLED_ORG_AI_ASSISTED is '${CI_ENABLED}', expected 'true'." \
+            'Every gated workflow in this org is currently SKIPPING, and those runs' \
+            'report green. Restore the organization variable (Settings ->' \
+            'Secrets and variables -> Actions -> Variables), value true,' \
+            'visibility all repositories.' >&2
+          exit 1
