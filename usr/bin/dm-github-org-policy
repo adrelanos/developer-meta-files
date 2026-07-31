@@ -49,16 +49,17 @@ die_if_not_has github-org-fork
 ##          has_projects=false, has_discussions=false.
 ## PROJECT = org holding one self-contained first-party project
 ##          (secure-terminal, output-lies). Not a copy of anything,
-##          so issues, Dependabot alerts and private vulnerability
-##          reporting live here. Defaults: has_issues=true,
-##          has_wiki=false, has_discussions=false.
+##          so issues and private vulnerability reporting live here.
+##          Dependabot does not: it follows the CI, which runs on the
+##          MIRROR. Defaults: has_issues=true, has_wiki=false,
+##          has_discussions=false.
 ##
 ## Vocabulary aligns with dm-github-fork-sync.
 readonly SOURCE_ORGS=( 'Kicksecure' 'Whonix' )
 readonly MIRROR_ORGS=( 'org-ai-assisted' )
 ## PROJECT = an org holding one self-contained first-party project, not a copy of anything
-## upstream. Issues / alerts / private vulnerability reporting belong HERE, because there is
-## no canonical repo elsewhere to carry them.
+## upstream. Issues and private vulnerability reporting belong HERE, because there is no
+## canonical repo elsewhere to carry them.
 readonly PROJECT_ORGS=( 'secure-terminal' 'output-lies' )
 
 ## SOURCE_ORGS currently commented out pending an admin token scoped
@@ -121,9 +122,13 @@ show_help() {
 Apply project-wide GitHub security/policy settings to the source
 organizations (Kicksecure, Whonix) and the mirror org
 (org-ai-assisted). Idempotent and reconciling: every run also turns
-OFF the settings the policy wants off (Dependabot on the mirror,
-Dependabot security-update PRs on the source orgs, private
-vulnerability reporting everywhere).
+OFF the settings the policy wants off (Dependabot everywhere except
+the mirror org, private vulnerability reporting everywhere except the
+project orgs).
+
+Dependabot runs on the mirror org only - that is where GitHub Actions
+runs, so it is the only place a bump pull request can carry a CI
+verdict.
 
 The source orgs are commented out of the ORGS array pending an admin
 token, so their policy is DECLARATIVE: --audit measures it under
@@ -239,7 +244,7 @@ apply_org_policy() {
    local org kind
 
    org="$1"
-   ## kind is also consumed by the SOURCE-only UI-flip skip lines at
+   ## kind is also consumed by the UI-flip skip lines at
    ## the end of this function; the commented-out PAID-plan ruleset
    ## bypass-actor pivot below would also use it.
    kind="$(org_kind "${org}")" || return 1
@@ -297,15 +302,12 @@ apply_org_policy() {
 
    ## UI-flip notices for org-level Dependabot + Code-scanning settings
    ## with no documented REST setter as of 2026-05; see
-   ## agents/github-policy-org-kinds.md "SOURCE-side
-   ## UI-only operator flips".
+   ## agents/github-policy-org-kinds.md "UI-only operator flips".
    ##
    ## Grouped security updates bundle SECURITY-UPDATE PULL REQUESTS, so
-   ## the flip is only meaningful where those exist: PROJECT. MIRROR has
-   ## Dependabot off entirely, and SOURCE keeps alerts but opens no
-   ## security-update PRs (Actions is off there, so nothing could verify
-   ## them) - nothing to group in either case.
-   if [ "${kind}" = 'project' ]; then
+   ## the flip is only meaningful where those exist: MIRROR, the only kind
+   ## that runs Dependabot at all.
+   if [ "${kind}" = 'mirror' ]; then
       policy_skip_ui "${org}" GROUPED_SECURITY_UPDATES
    fi
    ## MIRROR runs CodeQL via the reusable codeql.yml workflow (advanced
@@ -715,9 +717,11 @@ audit_org_state() {
    ## org-level Dependabot alerts enabled, repos missing the file
    ## still fail Scorecard.
    ##
-   ## On SOURCE the same probe is a POLICY CHECK, not an inventory line:
-   ## the file IS the version-update switch and SOURCE must not carry
-   ## one (Actions is off there, so a bump PR could never be verified).
+   ## Off the mirror the same probe is a POLICY CHECK, not an inventory
+   ## line: the file IS the version-update switch and only MIRROR may
+   ## carry one, because only MIRROR runs the CI that verifies the bump
+   ## PRs it opens. On MIRROR the file is opt-in per repo (see
+   ## dm-packaging-helper-script), so either answer is in policy there.
    ## Archived repos are outside this enumeration; Dependabot does not
    ## run on them, so a leftover config there is inert until the repo is
    ## un-archived.
@@ -741,8 +745,8 @@ audit_org_state() {
             200)
                have_count=$(( have_count + 1 ))
                log notice "    yes: ${org}/${repo}"
-               if [ "${audit_kind}" = 'source' ]; then
-                  log warn "    ${org}/${repo}: DRIFT from policy: Dependabot version updates are ON (${POLICY_DEPENDABOT_VERSION_UPDATES_OFF_PATH} present); SOURCE has no CI to verify the PRs they open"
+               if [ "${audit_kind}" != 'mirror' ]; then
+                  log warn "    ${org}/${repo}: DRIFT from policy: Dependabot version updates are ON (${POLICY_DEPENDABOT_VERSION_UPDATES_OFF_PATH} present); only the mirror org has CI to verify the PRs they open"
                   audit_findings=$(( audit_findings + 1 ))
                fi
                ;;
@@ -753,41 +757,40 @@ audit_org_state() {
             *)
                ## Neither a hit nor a clean 404 is an UNKNOWN, not an
                ## absence. Counted with the missing ones so the inventory
-               ## summary keeps one meaning, but called out below - and on
-               ## SOURCE, where the policy claims the file is gone, reading
-               ## it as "absent" would be exactly the false green this
-               ## audit exists to prevent.
+               ## summary keeps one meaning, but reported as a finding on
+               ## every kind: printing "no:" for a probe that never
+               ## answered is exactly the false green this audit exists to
+               ## prevent, and it is equally false on the mirror.
                unreadable_count=$(( unreadable_count + 1 ))
                missing_count=$(( missing_count + 1 ))
                log notice "    no:  ${org}/${repo}"
-               if [ "${audit_kind}" = 'source' ]; then
-                  log warn "    ${org}/${repo}: HTTP ${status} probing ${POLICY_DEPENDABOT_VERSION_UPDATES_OFF_PATH} -- NOT VERIFIED"
-                  audit_findings=$(( audit_findings + 1 ))
-               fi
+               log warn "    ${org}/${repo}: HTTP ${status} probing ${POLICY_DEPENDABOT_VERSION_UPDATES_OFF_PATH} -- NOT VERIFIED"
+               audit_findings=$(( audit_findings + 1 ))
                ;;
          esac
 
          ## Second Dependabot switch: SECURITY updates, the one with a
          ## REST endpoint. Compared against the same literal the apply
-         ## path enforces, per kind. MIRROR's own off-claim is not
-         ## compared here yet -- see agents/github-policy-org-kinds.md,
+         ## path enforces, per kind: ON on the mirror, OFF everywhere
+         ## else.
+         ##
+         ## Alerts are asserted only in the must-be-ON direction, on
+         ## MIRROR. GET /vulnerability-alerts answers 404 both when
+         ## alerts are off and when the token cannot see the repo, so a
+         ## must-be-OFF claim through it would be indistinguishable from a
+         ## permissions wall -- see agents/github-policy-org-kinds.md,
          ## "What --audit compares".
-         case "${audit_kind}" in
-            source)
-               audit_expect "dependabot security updates ${org}/${repo}" \
-                  "/repos/${org}/${repo}/automated-security-fixes" \
-                  "${POLICY_REPO_DEPENDABOT_FIXES_EXPECT_OFF}"
-               audit_expect_enabled "dependabot alerts ${org}/${repo}" \
-                  "/repos/${org}/${repo}/vulnerability-alerts"
-               ;;
-            project)
-               audit_expect "dependabot security updates ${org}/${repo}" \
-                  "/repos/${org}/${repo}/automated-security-fixes" \
-                  "${POLICY_REPO_DEPENDABOT_FIXES_EXPECT_ON}"
-               audit_expect_enabled "dependabot alerts ${org}/${repo}" \
-                  "/repos/${org}/${repo}/vulnerability-alerts"
-               ;;
-         esac
+         if [ "${audit_kind}" = 'mirror' ]; then
+            audit_expect "dependabot security updates ${org}/${repo}" \
+               "/repos/${org}/${repo}/automated-security-fixes" \
+               "${POLICY_REPO_DEPENDABOT_FIXES_EXPECT_ON}"
+            audit_expect_enabled "dependabot alerts ${org}/${repo}" \
+               "/repos/${org}/${repo}/vulnerability-alerts"
+         elif [ -n "${audit_kind}" ]; then
+            audit_expect "dependabot security updates ${org}/${repo}" \
+               "/repos/${org}/${repo}/automated-security-fixes" \
+               "${POLICY_REPO_DEPENDABOT_FIXES_EXPECT_OFF}"
+         fi
       done <<< "${repos}"
       log notice "    summary: have=${have_count}, missing=${missing_count}"
       if [ "${unreadable_count}" -gt 0 ]; then
@@ -814,25 +817,22 @@ apply_repo_policy() {
    policy_apply_repo "${owner}" "${repo}" "REPO_${kind^^}" ENDPOINT
 
    # Order: G-035 / see github-policy-org-kinds.md
-   ## Dependabot ALERTS: MIRROR is the only kind that turns them off, because they would
-   ## duplicate the ones the canonical SOURCE repo already raises. SOURCE and PROJECT both
-   ## hold code somebody has to fix where it lives, and an alert is a notification, not a
-   ## pull request, so it needs no CI to be actionable.
-   ##
-   ## Dependabot SECURITY UPDATES open pull requests, so they pivot differently: only
-   ## PROJECT keeps them. SOURCE has Actions disabled org-wide (ACTIONS_DISABLED_ORG
-   ## above), so a bump PR raised there can never carry a CI verdict; the verified bump is
-   ## the MIRROR's job. See agents/github-policy-org-kinds.md.
+   ## Dependabot runs on MIRROR and nowhere else. SOURCE has Actions disabled org-wide
+   ## (ACTIONS_DISABLED_ORG above), so a bump PR raised there can never carry a CI
+   ## verdict. PROJECT repos are mirrored into org-ai-assisted, where the AI-assisted
+   ## test + scanner suites run, so running Dependabot on both sides only splits one
+   ## alert inbox and one bump stream in two. Everywhere except MIRROR both switches are
+   ## actively DELETEd every --apply, so a leftover from an older run or a UI flip is
+   ## reconciled away. Order: FIXES before ALERTS on the disable side - the
+   ## security-fixes endpoint answers 422 once alerts are off, the idempotent steady
+   ## state; reversed on the enable side, where the PUT requires alerts first.
+   ## See agents/github-policy-org-kinds.md.
    if [ "${kind}" = 'mirror' ]; then
+      policy_apply_repo "${owner}" "${repo}" REPO_DEPENDABOT_ALERTS ENDPOINT
+      policy_apply_repo "${owner}" "${repo}" REPO_DEPENDABOT_FIXES  ENDPOINT
+   else
       policy_apply_repo "${owner}" "${repo}" REPO_DEPENDABOT_FIXES_OFF  ENDPOINT
       policy_apply_repo "${owner}" "${repo}" REPO_DEPENDABOT_ALERTS_OFF ENDPOINT
-   else
-      policy_apply_repo "${owner}" "${repo}" REPO_DEPENDABOT_ALERTS ENDPOINT
-      if [ "${kind}" = 'source' ]; then
-         policy_apply_repo "${owner}" "${repo}" REPO_DEPENDABOT_FIXES_SOURCE_OFF ENDPOINT
-      else
-         policy_apply_repo "${owner}" "${repo}" REPO_DEPENDABOT_FIXES ENDPOINT
-      fi
    fi
 
    ## PVR is a narrower question than Dependabot and does NOT follow the same split. SOURCE
@@ -858,22 +858,18 @@ apply_repo_policy() {
 
    ## UI-flip notices for per-repo Dependabot ALERT settings with no
    ## documented REST setter as of 2026-05; see
-   ## agents/github-policy-org-kinds.md "SOURCE-side
-   ## UI-only operator flips". Emitted wherever alerts exist to be
-   ## triaged or dismissed - SOURCE and PROJECT. MIRROR has alerts off
-   ## entirely, so auto-triage rules and delegated-dismissal are moot
-   ## there.
-   if [ "${kind}" != 'mirror' ]; then
+   ## agents/github-policy-org-kinds.md "UI-only operator flips".
+   ## Emitted where alerts exist to be triaged or dismissed - MIRROR only,
+   ## the one kind that runs Dependabot.
+   if [ "${kind}" = 'mirror' ]; then
       policy_skip_ui_repo "${owner}" "${repo}" AUTO_TRIAGE_DISMISS_DEV
       policy_skip_ui_repo "${owner}" "${repo}" AUTO_TRIAGE_DISMISS_MALWARE
       policy_skip_ui_repo "${owner}" "${repo}" DELEGATED_DISMISSAL
-   fi
-
-   ## Dependabot VERSION updates have no REST setter at any scope: the
-   ## presence of .github/dependabot.yml is the switch, so turning them
-   ## off on SOURCE means a commit that deletes the file. Emitted per
-   ## repo because that is the granularity the fix has.
-   if [ "${kind}" = 'source' ]; then
+   else
+      ## Dependabot VERSION updates have no REST setter at any scope: the
+      ## presence of .github/dependabot.yml is the switch, so turning them
+      ## off means a commit that deletes the file. Emitted per repo
+      ## because that is the granularity the fix has.
       policy_skip_ui_repo "${owner}" "${repo}" DEPENDABOT_VERSION_UPDATES_OFF
    fi
 }

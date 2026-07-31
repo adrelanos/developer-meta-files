@@ -293,9 +293,17 @@ ghorg_parse_rate_limit_wait() {
 ##
 ##   GET /orgs/Kicksecure/repos          -> GET_orgs_Kicksecure_repos
 ##   POST /orgs/Whonix/forks             -> POST_orgs_Whonix_forks
+##   GET /repos/o/r/contents/.github/dependabot.yml
+##                                       -> GET_repos_o_r_contents__github_dependabot_yml
 ##
-## Slashes become underscores. Query strings are stripped. The fixture
-## contents must end with an HTTP_STATUS:NNN line.
+## Slashes AND dots become underscores. Query strings are stripped. The
+## fixture contents must end with an HTTP_STATUS:NNN line.
+##
+## Dots are flattened so a fixture never inherits a media-type extension
+## from the URL path it encodes. A fixture is an HTTP response - a body
+## plus a status line - and is never the type its path suggests, so a
+## name ending in '.yml' invites every extension-driven linter to parse
+## it as YAML and fail.
 ##
 ## Missing fixture maps to "HTTP 599 mock not configured" so tests fail
 ## loudly rather than appearing to succeed against unset state.
@@ -307,6 +315,7 @@ ghorg_mock_dispatch() {
   body="${3:-}"
   clean_path="${path%%\?*}"
   key="${method}${clean_path//\//_}"
+  key="${key//./_}"
   fixture="${GHORG_MOCK_DIR}/${key}"
 
   ## Record the REQUEST BODY so a test can assert what we actually send,
