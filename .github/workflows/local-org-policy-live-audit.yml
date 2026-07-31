@@ -70,7 +70,12 @@ jobs:
     ## Pin to org-ai-assisted so no other repo's workflow can use the
     ## secret (GitHub also blocks this by default for forked PRs, but
     ## the explicit guard documents intent).
-    if: ${{ github.repository == 'org-ai-assisted/developer-meta-files' }}
+    ## ANDed with the CI-enabled variable, the org-wide switch every
+    ## workflow of ours carries. The repo pin above is the tighter of the
+    ## two and stays: it is what keeps the secret to this one repo.
+    if: >-
+      ${{ github.repository == 'org-ai-assisted/developer-meta-files'
+      && vars.CI_ENABLED_ORG_AI_ASSISTED == 'true' }}
 
     env:
       DIST_AI_REF: ${{ github.repository == 'org-ai-assisted/dist-ai' && github.sha || 'master' }}
