@@ -53,17 +53,24 @@ tested on Free 2026-05.
 | Dependabot alerts (`PUT /vulnerability-alerts` on MIRROR, `DELETE` elsewhere) | actively disabled | **on** | actively disabled | off | off |
 | Dependabot security updates (`PUT /automated-security-fixes` on MIRROR, `DELETE` elsewhere) | actively disabled | **on** | actively disabled | off | off |
 | Dependabot version updates (no REST setter; `.github/dependabot.yml` presence IS the switch) | must be absent | opt-in per repo | must be absent | - | - |
-| Private vulnerability reporting (PVR) | actively disabled | actively disabled | **on** | off | off |
+| Private vulnerability reporting (PVR) | actively disabled | actively disabled | actively disabled | off | off |
 | `secret_scanning` + push protection (in PATCH body) | on | on | on | on | on |
 | Branch + tag rulesets (`POST /repos/{}/{}/rulesets`) | on | on | on | on | on |
 | `has_issues` | on | off | on | - | - |
 | `has_wiki` / `has_discussions` | off | off | off | - | - |
 
-PROJECT is the only kind that ENABLES private vulnerability
-reporting. SOURCE disables it because Kicksecure and Whonix take
-security reports through their own documented channel, not GitHub;
-a PROJECT org has no such channel, so GitHub's is the one a
-researcher can find.
+PVR is actively disabled on EVERY kind, PROJECT included. Security
+reports reach us as OpenPGP-encrypted e-mail, and that is the only
+channel we watch; for Kicksecure / Whonix the canonical route is the
+wiki linked from `.github/SECURITY.md`. An open GitHub private-report
+inbox on any repo would be a second one nobody reads -- worse than
+none, because a researcher who finds it reasonably assumes it is
+monitored and a real report could sit there unseen.
+
+This table and the notes below previously disagreed with each other on
+this row: the table said PROJECT enabled PVR while the notes said it was
+off everywhere. The code agreed with the table; the decision is off
+everywhere, and `test_dm_apply_project.sh` now pins it.
 
 Notes:
 

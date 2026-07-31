@@ -835,15 +835,13 @@ apply_repo_policy() {
       policy_apply_repo "${owner}" "${repo}" REPO_DEPENDABOT_ALERTS_OFF ENDPOINT
    fi
 
-   ## PVR is a narrower question than Dependabot and does NOT follow the same split. SOURCE
-   ## disables it because Kicksecure and Whonix take security reports through their own
-   ## documented channel, not GitHub. Only PROJECT enables it: it has no such channel, so
-   ## GitHub's is the only one a researcher can find.
-   if [ "${kind}" = 'project' ]; then
-      policy_apply_repo "${owner}" "${repo}" REPO_PVR_ON ENDPOINT
-   else
-      policy_apply_repo "${owner}" "${repo}" REPO_PVR_OFF ENDPOINT
-   fi
+   ## PVR is disabled on EVERY kind, PROJECT included. We do not use it:
+   ## security reports come in as OpenPGP-encrypted e-mail, and that is
+   ## the only channel we watch. Leaving GitHub's private-report inbox
+   ## open on any repo would create a second one nobody reads -- worse
+   ## than no channel, because a researcher who finds it reasonably
+   ## assumes it is monitored.
+   policy_apply_repo "${owner}" "${repo}" REPO_PVR_OFF ENDPOINT
 
    bypass_var="POLICY_RULESET_BYPASS_${kind^^}"
    rules_var="POLICY_RULESET_RULES_${kind^^}"

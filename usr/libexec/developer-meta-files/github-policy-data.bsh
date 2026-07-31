@@ -319,12 +319,19 @@ readonly POLICY_REPO_DEPENDABOT_FIXES_ENDPOINT='/repos/__OWNER__/__REPO__/automa
 readonly POLICY_REPO_DEPENDABOT_FIXES_METHOD='PUT'
 readonly POLICY_REPO_DEPENDABOT_FIXES_LABEL='enable Dependabot security updates'
 
-## Private Vulnerability Reporting (PVR) is NOT enabled anywhere.
-## Canonical disclosure for Kicksecure / Whonix is the wiki linked
-## from org-ai-assisted/.github/SECURITY.md. PVR would split the
-## inbox between that wiki flow and a parallel GitHub-side flow. The
-## DELETE side (POLICY_REPO_PVR_OFF below) is applied on both SOURCE
-## and MIRROR every --apply; no PUT-style enable constants exist.
+## Private Vulnerability Reporting (PVR) is NOT enabled anywhere -- every
+## org kind, PROJECT included.
+##
+## We do not use it. Security reports reach us as OpenPGP-encrypted
+## e-mail, and that is the only channel we watch; for Kicksecure / Whonix
+## the canonical route is the wiki linked from
+## org-ai-assisted/.github/SECURITY.md. An open GitHub private-report
+## inbox on any repo would be a second one nobody reads, which is worse
+## than none: a researcher who finds it reasonably assumes it is
+## monitored, and a real report could sit there unseen.
+##
+## POLICY_REPO_PVR_OFF is therefore applied to every repo of every kind
+## on every --apply, so a manual UI flip is reconciled back off.
 
 ## --- Account-wide settings, applied by dm-github-personal-policy
 ## once per --apply (NOT per repo). Endpoints use the token-authed
@@ -400,12 +407,10 @@ readonly POLICY_REPO_PVR_OFF_ENDPOINT='/repos/__OWNER__/__REPO__/private-vulnera
 readonly POLICY_REPO_PVR_OFF_METHOD='DELETE'
 readonly POLICY_REPO_PVR_OFF_LABEL='disable private vulnerability reporting'
 
-## PROJECT orgs publish code nobody else maintains, so a researcher has no upstream to
-## report to privately. The OFF variant above stays correct for SOURCE and MIRROR.
-readonly POLICY_REPO_PVR_ON='{}'
-readonly POLICY_REPO_PVR_ON_ENDPOINT='/repos/__OWNER__/__REPO__/private-vulnerability-reporting'
-readonly POLICY_REPO_PVR_ON_METHOD='PUT'
-readonly POLICY_REPO_PVR_ON_LABEL='enable private vulnerability reporting'
+## No PUT-style enable constant exists on purpose. PVR is off on every
+## kind, so an enable variant would only be here for someone to wire back
+## in; its absence is what keeps apply_repo_policy's single OFF call from
+## quietly regrowing a branch.
 
 ## Branch + tag ruleset bypass actor list.
 ##
