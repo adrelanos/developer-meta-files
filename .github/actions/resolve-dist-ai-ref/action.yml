@@ -1,0 +1,36 @@
+---
+## Copyright (C) 2026 - 2026 ENCRYPTED SUPPORT LLC <adrelanos@whonix.org>
+## See the file COPYING for copying conditions.
+
+## AI-Assisted
+
+name: 'Resolve dist-ai ref'
+description: >-
+  Decide which org-ai-assisted/dist-ai ref to check out: this commit when
+  dist-ai is the repo under test, a same-named companion branch when one
+  exists, else master. See resolve-dist-ai-ref.sh for why.
+
+outputs:
+  ref:
+    description: 'The dist-ai ref to check out.'
+    value: ${{ steps.resolve.outputs.ref }}
+
+runs:
+  using: composite
+  steps:
+    - name: Resolve dist-ai ref
+      id: resolve
+      shell: bash
+      ## github.head_ref is set on pull_request only; ref_name covers push
+      ## and workflow_dispatch. Routed through env: rather than inlined
+      ## into run:, per the script-injection rule in
+      ## agents/github-actions-security.md -- head_ref is attacker-named
+      ## on a fork PR.
+      env:
+        THIS_REPO: ${{ github.repository }}
+        THIS_SHA: ${{ github.sha }}
+        BRANCH_NAME: ${{ github.head_ref || github.ref_name }}
+        DIST_AI_REPO: org-ai-assisted/dist-ai
+      ## $GITHUB_ACTION_PATH is runtime-resolved, so this works both
+      ## in-repo and when GitHub downloads the action for a consumer.
+      run: "$GITHUB_ACTION_PATH/resolve-dist-ai-ref.sh"
