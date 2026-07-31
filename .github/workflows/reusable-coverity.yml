@@ -134,6 +134,15 @@ permissions:
 jobs:
   coverity:
     name: Coverity Scan
+    ## CI runs only where we enabled it. In a CALLED reusable the vars
+    ## context resolves against the CALLER's repository and org, so this
+    ## one condition gates every consumer -- upstream and forks skip with
+    ## no runner allocated and the run stays green.
+    ##
+    ## Independent of the canonical-repos gate further down: that one
+    ## narrows to the repo registered with scan.coverity.com, this one
+    ## decides whether we run CI in this org at all.
+    if: vars.CI_ENABLED_ORG_AI_ASSISTED == 'true'
     ## Pinned to ubuntu-24.04 so the apt-packaged yq (kislyuk's
     ## python-yq jq wrapper) remains stable across runner-image
     ## transitions; the config-load step's syntax depends on that
