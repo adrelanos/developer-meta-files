@@ -1,0 +1,25 @@
+---
+## Copyright (C) 2026 - 2026 ENCRYPTED SUPPORT LLC <adrelanos@whonix.org>
+## See the file COPYING for copying conditions.
+
+## AI-Assisted
+
+## W-008 (OWNER-GATE) carve-outs for this repo.
+##
+## Every job that runs steps must be gated on
+## `vars.CI_ENABLED_ORG_AI_ASSISTED == 'true'` so a workflow of ours
+## cannot run in an org that never opted in. A job listed here is
+## allowed to run un-gated, and MUST say why -- an unexplained
+## carve-out is how a gate quietly stops covering things, so the
+## validator treats an empty reason as a finding in its own right.
+##
+## Keys are '<workflow path>:<job id>', relative to the repo root.
+
+owner-gate-exempt:
+  .github/workflows/local-ci-enabled-canary.yml:canary: >-
+    Guards the switch itself. Every other workflow is gated on the
+    CI-enabled variable, so if that variable is ever unset or renamed,
+    every gated job silently skips and every run still reports green --
+    a whole org's CI dark behind a healthy-looking checks list. This job
+    is gated on the OWNER LITERAL instead and fails when the variable is
+    missing, which only works if it is exempt from the rule it polices.
