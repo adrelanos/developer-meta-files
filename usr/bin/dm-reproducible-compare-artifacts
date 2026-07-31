@@ -188,7 +188,7 @@ fi
 ## errexit and the script exits 1 -- which the caller and the CI workflow read as "artifacts
 ## differ", turning an unwritable --output path into a false reproducibility failure. Setup
 ## errors are 2.
-if ! : > "${report}" 2>/dev/null; then
+if ! printf '%s' "" | tee -- "${report}" >/dev/null 2>&1; then
    printf '%s\n' "${0##*/}: --output is not writable: ${report}" >&2
    exit 2
 fi

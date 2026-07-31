@@ -67,6 +67,18 @@ show_files() {
    done
 }
 
+## Derive the bare hostname from an rsync target ('<user>@<host>:<path>').
+## Named and standalone so the derivation is testable on its own; passing the
+## whole target to a resolver yields NXDOMAIN for every entry.
+dns_probe_host_from_target() {
+   local upload_target probe_host
+
+   upload_target="$1"
+   probe_host="${upload_target##*@}"
+   probe_host="${probe_host%%:*}"
+   printf '%s\n' "${probe_host}"
+}
+
 upload_files() {
    if [ "${dist_build_installer_dist}" = "true" ]; then
       dist_server_with_upload_location_item_with_version_maybe="${dist_server_with_upload_location_item}/"
@@ -106,9 +118,27 @@ upload_files() {
       ## Overrule with '|| true' as the failure would be handled below by 'rsync'.
       ## Use a dedicated loop variable so the current pair's
       ## dist_server_with_upload_location_item (the rsync target) is not clobbered.
-      local dns_probe_item
+      ##
+      ## The list holds rsync targets ('<user>@<host>:<path>'), NOT hostnames, so
+      ## the whole string must not be handed to nslookup: it then resolves
+      ## nothing and reports NXDOMAIN every time, which the '|| true' hid -- the
+      ## warm-up never actually warmed anything. Strip the user and the path, and
+      ## probe each distinct host once.
+      local dns_probe_item dns_probe_host
+      local -a dns_probed_host_list
+      dns_probed_host_list=()
       for dns_probe_item in ${dist_server_with_upload_location_list}; do
-         nslookup "${dns_probe_item}" || true
+         dns_probe_host="$(dns_probe_host_from_target "${dns_probe_item}")"
+         if [ -z "${dns_probe_host}" ]; then
+            continue
+         fi
+         if printf '%s\n' "${dns_probed_host_list[@]+"${dns_probed_host_list[@]}"}" \
+            | grep --line-regexp --fixed-strings -- "${dns_probe_host}" >/dev/null 2>&1; then
+            continue
+         fi
+         dns_probed_host_list+=( "${dns_probe_host}" )
+         nslookup "${dns_probe_host}" \
+            || printf '%s\n' "${0##*/}: WARNING: DNS probe failed for host '${dns_probe_host}'." >&2
       done
 
       rsync_exit_code="0"

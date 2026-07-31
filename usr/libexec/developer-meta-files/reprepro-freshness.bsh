@@ -25,6 +25,7 @@
 ## inside the command substitution's subshell so it does not leak to the caller.
 dm_reprepro_published_source_version() {
    local apt_codename source_pkg repository_name query_output source_line
+   local source_matches source_grep_rc
    local -a fields
    apt_codename="$1"
    source_pkg="$2"
@@ -41,7 +42,21 @@ dm_reprepro_published_source_version() {
    ## and take the FIRST match explicitly -- reprepro prints one line per component, so a
    ## package published in more than one yields several and the 'read' below would silently
    ## consume only one of them regardless.
-   source_line="$(printf '%s\n' "${query_output}" | grep --fixed-strings -- "|source: " | head -n 1)" || true
+   ## Split into steps: one pipeline plus a substitution plus a blanket
+   ## '|| true' made every failure look identical, and 'head' closing the pipe
+   ## early can kill grep with SIGPIPE (rc 141 under pipefail), which the
+   ## '|| true' then hid as well. Separating them also distinguishes grep's
+   ## "no match" (rc 1) from a real error (rc >1), which must not be silently
+   ## treated as "not published".
+   source_grep_rc=0
+   source_matches="$(printf '%s\n' "${query_output}" | grep --fixed-strings -- "|source: ")" \
+      || source_grep_rc="$?"
+   if [ "${source_grep_rc}" -gt 1 ]; then
+      printf '%s\n' "${FUNCNAME[0]}: ERROR: reprepro output could not be searched (grep exit ${source_grep_rc})." >&2
+      return 1
+   fi
+   [ -n "${source_matches}" ] || return 0
+   source_line="$(printf '%s\n' "${source_matches}" | head --lines=1)"
    [ -n "${source_line}" ] || return 0
    read -r -a fields <<< "${source_line}"
    ## Expect exactly '<codename>|<component>|source:' '<pkg>' '<version>'. Taking the LAST
