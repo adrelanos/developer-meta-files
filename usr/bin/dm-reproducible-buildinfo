@@ -158,6 +158,55 @@ else
    fi
 fi
 
+## Source-Version and the recorded Source-Commit MUST name the same commit.
+##
+## They are produced independently: Source-Commit comes from the pre-sign state
+## file that help-steps/sign-and-tag wrote, while 'dist_build_version' is
+## auto-detected by help-steps/variables ONLY when unset -- so a value inherited
+## from the environment silently wins over the actual tree. An observed record
+## carried Source-Commit 02096cd4... beside Source-Version ...-ge65ff458..., i.e.
+## two DIFFERENT commits in one record, from a reused workspace holding a stale
+## dist_build_version. A rebuild keyed on either field then reproduces the wrong
+## tree, which is exactly what this record exists to prevent.
+##
+## 'git describe' ends in '-g<sha>' and that sha IS the described commit, so when
+## the suffix is present it must equal Source-Commit. A clean tag build carries no
+## suffix, and an 'unrecorded' state block has nothing to compare -- neither is
+## constrained.
+recorded_commit=""
+case "${source_state_block}" in
+   "Source-Commit: unrecorded"*)
+      ;;
+   "Source-Commit: "*)
+      recorded_commit="${source_state_block#Source-Commit: }"
+      recorded_commit="${recorded_commit%%$'\n'*}"
+      ;;
+esac
+
+described_commit=""
+case "${dist_build_version:-}" in
+   *-g*)
+      described_commit="${dist_build_version##*-g}"
+      ;;
+esac
+## Non-hex means this is not a describe suffix (a tag may legitimately contain
+## '-g'), so there is nothing to compare.
+case "${described_commit}" in
+   *[!0-9a-f]*|"")
+      described_commit=""
+      ;;
+esac
+
+if [ -n "${recorded_commit}" ] && [ -n "${described_commit}" ] \
+   && [ ! "${described_commit}" = "${recorded_commit}" ]; then
+   error "Source-Version and Source-Commit disagree -- this record would point a rebuild at the wrong tree.
+  Source-Version: ${dist_build_version}
+    (describes:   ${described_commit})
+  Source-Commit:  ${recorded_commit}
+  'dist_build_version' is auto-detected only when UNSET, so a value inherited from
+  the environment overrides the real HEAD. Unset it, or set it to match this commit."
+fi
+
 ## Deb822 (RFC822-style): greppable, signable, and the shop's idiom. The trailing
 ## blank line is the Deb822 record terminator. Fields follow Debian '.buildinfo'
 ## + live-build 'summary.txt' + the Tails apt-snapshot-pinning discipline.
