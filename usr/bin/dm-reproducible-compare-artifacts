@@ -394,7 +394,7 @@ nbd_device_settle() {
 ## Mount both images read-only so the filesystems can be diffed. Non-zero means the caller
 ## should fall back to comparing the artifacts directly.
 filesystem_mounts_setup() {
-   local image_a="$1" image_b="$2" partition partition_b
+   local image_a="$1" image_b="$2" partition partition_b modprobe_failed
    ## Loading the module is a MEANS; a usable '/dev/nbd*' is the requirement. This
    ## tool runs inside the derivative-maker container, which ships no kmod, so
    ## 'modprobe' is "command not found" there -- while the module is already loaded
@@ -405,12 +405,33 @@ filesystem_mounts_setup() {
    ##
    ## Only the absence of a usable device is fatal, and it says which of the two
    ## reasons applies rather than leaving the caller to guess.
+   modprobe_failed=false
    if ! sudo --non-interactive modprobe nbd max_part=16 2>/dev/null; then
-      if [ ! -b /dev/nbd0 ]; then
-         printf '%s\n' "${0##*/}: nbd unavailable: 'modprobe nbd' failed and /dev/nbd0 is not a block device. Load 'nbd' on the HOST (the container has no kmod); note 'max_part' only takes effect at load time." >&2
-         return 1
+      modprobe_failed=true
+   fi
+
+   ## The device probe is UNCONDITIONAL, not nested in the modprobe failure: a
+   ## modprobe that SUCCEEDS does not guarantee a node appeared (nbds_max=0, or
+   ## udev has not published the nodes yet), and this function's requirement is
+   ## the device, not the module.
+   ##
+   ## It asks nbd_device_claim rather than testing '/dev/nbd0' directly, so the
+   ## preflight cannot disagree with the claim made below: a host whose nbd0 is
+   ## busy but whose nbd1 is free is usable, and testing '-b /dev/nbd0' both
+   ## rejected that host and accepted a stale-but-busy nbd0. The function is a
+   ## pure lookup -- it prints a name and reserves nothing -- so calling it here
+   ## costs nothing and changes no state. The real claim still happens below and
+   ## is still checked, because a device can go busy in between.
+   if ! nbd_device_claim >/dev/null; then
+      if [ "${modprobe_failed}" = "true" ]; then
+         printf '%s\n' "${0##*/}: nbd unavailable: 'modprobe nbd' failed and no usable /dev/nbd* block device exists. Load 'nbd' on the HOST (the container has no kmod); note 'max_part' only takes effect at load time." >&2
+      else
+         printf '%s\n' "${0##*/}: nbd unavailable: 'modprobe nbd' succeeded but no usable /dev/nbd* block device is present (nbds_max=0, or the nodes are all busy)." >&2
       fi
-      printf '%s\n' "${0##*/}: 'modprobe nbd' unavailable here; using the already-present /dev/nbd0." >&2
+      return 1
+   fi
+   if [ "${modprobe_failed}" = "true" ]; then
+      printf '%s\n' "${0##*/}: 'modprobe nbd' unavailable here; using an already-present /dev/nbd* device." >&2
    fi
    sudo --non-interactive mkdir --parents -- "${mount_a}" "${mount_b}" || return 1
    ## '--format' is pinned rather than probed, which removes raw/qcow2 format CONFUSION on a
