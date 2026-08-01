@@ -141,6 +141,30 @@ jobs:
         ## inline here (no embedded shell scripts in CI files).
         run: dist-ai/ci/dist-ai-tests-ci-config.sh component/.github/dm-consumer.yml
 
+      ## Opt-in per repo (dm-consumer.yml 'submodules: true'). Some suites assert
+      ## on files that live in a SUBMODULE -- derivative-maker's
+      ## dm-grub-smbios-tests compares the disk-side SMBIOS reader in
+      ## vm-config-dist against the ISO-side copy in the main tree. Without them
+      ## the suite cannot resolve its subject and exits 77, which correctly fails
+      ## the run as an unauthorized skip. Must run AFTER the config step, which
+      ## is what reads the opt-in.
+      - name: Initialize component submodules
+        if: steps.cfg.outputs.submodules == 'true'
+        working-directory: component
+        env:
+          REPOSITORY_OWNER: ${{ github.repository_owner }}
+        run: |
+          ## A component may pin submodule commits that exist only in THIS org's
+          ## forks while .gitmodules still points at upstream, so a plain init
+          ## cannot find them. That mapping belongs to the component; run its own
+          ## helper when it ships one, exactly as its build lane does.
+          if [ -x ./ci/configure-fork-mirror ]; then
+            ./ci/configure-fork-mirror "${REPOSITORY_OWNER}" "${REPOSITORY_OWNER}"
+          fi
+          ## Not --recursive: the suites assert on the component's OWN
+          ## submodules, and recursing multiplies the checkout for no coverage.
+          git submodule update --init
+
       - name: Checkout helper-scripts (for suites that drive its tools)
         if: steps.cfg.outputs.helper_scripts == 'true'
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
