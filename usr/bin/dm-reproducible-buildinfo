@@ -52,6 +52,7 @@ error() {
 target=""
 image=""
 output=""
+dry_run="false"
 
 while [ "$#" -gt 0 ]; do
    case "${1:-}" in
@@ -70,6 +71,21 @@ while [ "$#" -gt 0 ]; do
          output="$2"
          shift 2
          ;;
+      --dry-run)
+         ## Emit the record WITHOUT requiring the image to exist. Every field but
+         ## Image-File comes from the environment and the pre-sign source-state
+         ## file, both of which exist seconds into a build -- so the whole record
+         ## is derivable long before the artifact is. Without this, observing a
+         ## change to this file costs a full build (~60 min) or ci/dry-run
+         ## (~36 min, measured); with it, ~12 ms.
+         ##
+         ## It skips ONLY the existence check: the same code produces the same
+         ## fields by the same path, so what it emits is what a real run emits.
+         ## Image-File still comes from --image, which is why --image stays
+         ## required -- a record naming no artifact would be a different record.
+         dry_run='true'
+         shift
+         ;;
       -h|--help)
          grep '^##' -- "${BASH_SOURCE[0]}" | sed 's/^## \{0,1\}//'
          exit 0
@@ -82,7 +98,11 @@ done
 
 [ -n "${target}" ] || error "--target is required."
 [ -n "${image}" ]  || error "--image is required."
-[ -f "${image}" ]  || error "image does not exist: '${image}'"
+if [ "${dry_run}" = 'true' ]; then
+   [ -f "${image}" ] || printf '%s\n' "INFO: --dry-run: '${image}' does not exist; emitting the record anyway." >&2
+else
+   [ -f "${image}" ] || error "image does not exist: '${image}'"
+fi
 [ -n "${output}" ] || output="${image}.dm-buildinfo"
 
 ## Read a build-exported variable; 'unknown' when unset so the record is always
