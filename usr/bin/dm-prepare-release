@@ -23,36 +23,11 @@ MYDIR="$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" && pwd )"
 dm_prepare_release_dir="${MYDIR}"
 signing_lib_dir="${MYDIR}/../libexec/developer-meta-files"
 
-if [ ! "${MYDIR}" = "/usr/bin" ]; then
-   true "INFO: Run from: source code folder"
-   derivative_maker_source_code_dir="$(cd -- "${MYDIR}" && cd -- "../../../../../" && pwd)"
-elif [ -n "${source_code_folder_dist:-}" ]; then
-   ## Authoritative when set: help-steps/variables exports it and the build
-   ## preserves it across its sudo boundary, so it names the tree wherever it is.
-   true "INFO: Run from: /usr/bin, tree from source_code_folder_dist"
-   derivative_maker_source_code_dir="${source_code_folder_dist}"
-elif [ -r "${PWD}/help-steps/pre" ]; then
-   ## dm-build-official-one runs this with the source tree as cwd, so PWD is a
-   ## better answer than a guess. Checked, not assumed.
-   true "INFO: Run from: /usr/bin, tree from PWD"
-   derivative_maker_source_code_dir="${PWD}"
-else
-   ## Last resort, and only a convention: the installed copy has nothing tying it
-   ## to a checkout.
-   true "INFO: Run from: /usr/bin, tree from the conventional location"
-   derivative_maker_source_code_dir="${HOME}/derivative-maker"
-fi
-
-## Fail here, naming what to set. Sourcing a missing file gives only
-## "No such file or directory" from bash -- and this runs in the release phase,
-## after the entire build, which is the worst moment for an unexplained error.
-if [ ! -r "${derivative_maker_source_code_dir}/help-steps/pre" ]; then
-   printf '%s\n' \
-      "${0##*/}: no derivative-maker source tree at '${derivative_maker_source_code_dir}'." \
-      "  (looked for '${derivative_maker_source_code_dir}/help-steps/pre')" \
-      "Set 'source_code_folder_dist' to the checkout, or run this from one." >&2
-   exit 1
-fi
+## One shared resolver, so every tool that can run installed answers this the
+## same way. See source-tree-lib.bsh for the order and why.
+# shellcheck source=../libexec/developer-meta-files/source-tree-lib.bsh
+source "${signing_lib_dir}/source-tree-lib.bsh"
+derivative_maker_source_tree_resolve "${MYDIR}" || exit 1
 
 source "${derivative_maker_source_code_dir}/help-steps/pre"
 source "${derivative_maker_source_code_dir}/help-steps/variables"

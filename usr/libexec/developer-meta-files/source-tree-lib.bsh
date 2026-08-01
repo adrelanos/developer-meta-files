@@ -1,0 +1,53 @@
+#!/bin/bash
+
+## Copyright (C) 2026 - 2026 ENCRYPTED SUPPORT LLC <adrelanos@whonix.org>
+## See the file COPYING for copying conditions.
+
+## AI-Assisted
+
+## Resolve the derivative-maker source tree for a tool that may run either from
+## inside the checkout or as the INSTALLED '/usr/bin' copy.
+##
+## The installed copy has nothing tying it to a checkout, so tools hardcoded
+## "$HOME/derivative-maker". Any build whose tree lives elsewhere then ran to
+## completion and died in the RELEASE phase on bash's bare "No such file or
+## directory" from 'source' -- the worst possible moment for an unexplained
+## error. Resolving it in ONE place keeps every tool honest about the same
+## question.
+##
+## Usage:
+##   source .../source-tree-lib.bsh
+##   derivative_maker_source_tree_resolve "${MYDIR}" || exit 1
+##   ## sets: derivative_maker_source_code_dir
+
+## Order, most authoritative first:
+##   1. an in-tree copy locates the tree by its own path
+##   2. $source_code_folder_dist -- help-steps/variables exports it and the build
+##      preserves it across its sudo boundary, so it is right wherever the tree is
+##   3. $PWD, but only when it actually contains help-steps/pre -- callers such as
+##      dm-build-official-one run with the tree as cwd; checked, never assumed
+##   4. the ~/derivative-maker convention, kept as a fallback
+## Returns 1 (after a NAMED diagnostic) when none of them yields a tree.
+derivative_maker_source_tree_resolve() {
+   local caller_dir="$1"
+
+   if [ ! "${caller_dir}" = "/usr/bin" ]; then
+      derivative_maker_source_code_dir="$( cd -- "${caller_dir}" && cd -- "../../../../../" && pwd )"
+   elif [ -n "${source_code_folder_dist:-}" ]; then
+      derivative_maker_source_code_dir="${source_code_folder_dist}"
+   elif [ -r "${PWD}/help-steps/pre" ]; then
+      derivative_maker_source_code_dir="${PWD}"
+   else
+      derivative_maker_source_code_dir="${HOME}/derivative-maker"
+   fi
+
+   if [ -r "${derivative_maker_source_code_dir}/help-steps/pre" ]; then
+      return 0
+   fi
+
+   printf '%s\n' \
+      "${0##*/}: no derivative-maker source tree at '${derivative_maker_source_code_dir}'." \
+      "  (looked for '${derivative_maker_source_code_dir}/help-steps/pre')" \
+      "Set 'source_code_folder_dist' to the checkout, or run this from one." >&2
+   return 1
+}
