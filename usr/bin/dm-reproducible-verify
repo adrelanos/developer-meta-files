@@ -171,6 +171,16 @@ if [ -n "${dm_source_root}" ] && git -C "${dm_source_root}" rev-parse --git-dir 
    case "${bi_commit}" in
       "${head_commit}"|unknown|'')
          ;;
+      unrecorded*)
+         ## 'unrecorded' is its OWN state, not a differing commit: the build never
+         ## recorded provenance (dm-reproducible-buildinfo emits it, with the
+         ## reason, when sign-and-tag left no source-state file). Reporting it as a
+         ## commit MISMATCH blames the verifier's checkout for something the BUILD
+         ## did not write; silently skipping it would let a rebuild claim a match
+         ## it cannot have earned. Call it out as unverifiable instead.
+         printf '%s\n' "WARNING: buildinfo records NO source provenance (${bi_commit})." >&2
+         printf '%s\n' "  The image cannot be tied to a source commit, so a matching rebuild shows only that THIS tree reproduces it -- not that it is the tree the image came from." >&2
+         ;;
       *)
          printf '%s\n' "WARNING: local HEAD (${head_commit}) != buildinfo Source-Commit (${bi_commit}); check out the matching commit for a valid comparison." >&2
          ;;

@@ -25,10 +25,10 @@
 ##   ## sets: derivative_maker_source_code_dir
 
 ## The invocation directory, captured at SOURCE time. Reading ${PWD} inside the
-## function instead would break for any caller that has already 'cd'-ed -- and
-## dm-upload-images does exactly that ('cd -- "${MYDIR}"' first), which made the
-## cwd branch resolve to /usr/bin and never fire. Callers must therefore source
-## this before their own cd; the dist-ai suite asserts that ordering.
+## function instead would break for any caller that has already 'cd'-ed: the cwd
+## branch would then see the caller's own directory (e.g. /usr/bin) rather than
+## the tree, and never fire. Callers must therefore source this BEFORE their own
+## cd; the dist-ai suite asserts that ordering per caller.
 [ -n "${derivative_maker_invocation_pwd:-}" ] || derivative_maker_invocation_pwd="${PWD}"
 
 ## SELECTS one source, most authoritative first -- it is deliberately NOT a
