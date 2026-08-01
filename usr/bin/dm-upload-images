@@ -14,8 +14,10 @@ shopt -s shift_verbose
 true "INFO: Currently running script: ${BASH_SOURCE[0]} $*"
 
 MYDIR="$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" && pwd )"
-cd -- "${MYDIR}"
 
+## BEFORE the 'cd' below: the resolver's cwd branch is captured when this library
+## is sourced, and cd-ing first would offer it /usr/bin instead of the tree.
+##
 ## This script may run as the installed '/usr/bin' copy, where a '$MYDIR'-relative
 ## path cannot locate the tree, so resolve it explicitly. Hardcoding
 ## "$HOME/derivative-maker" made any build outside that path die HERE -- in the
@@ -23,6 +25,8 @@ cd -- "${MYDIR}"
 # shellcheck source=../libexec/developer-meta-files/source-tree-lib.bsh
 source "${MYDIR}/../libexec/developer-meta-files/source-tree-lib.bsh"
 derivative_maker_source_tree_resolve "${MYDIR}" || exit 1
+
+cd -- "${MYDIR}"
 
 ## 'helper-scripts' resolves via HELPER_SCRIPTS_PATH (set by help-steps/pre for a
 ## from-source build); this source runs BEFORE 'pre' below, so fall back to the
