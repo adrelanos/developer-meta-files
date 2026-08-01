@@ -141,7 +141,7 @@ upload_files() {
          if [ -z "${dns_probe_host}" ]; then
             continue
          fi
-         if printf '%s\n' "${dns_probed_host_list[@]+"${dns_probed_host_list[@]}"}" \
+         if printf '%s\n' "${dns_probed_host_list[@]}" \
             | grep --line-regexp --fixed-strings -- "${dns_probe_host}" >/dev/null 2>&1; then
             continue
          fi
