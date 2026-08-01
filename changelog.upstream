@@ -1,9 +1,50 @@
+commit 9b6cb45a64cc6202edfa584443a1def0b1e22f8f
+Merge: 2ea05533 9be0e836
+Author: Patrick Schleizer <adrelanos@whonix.org>
+Date:   Sat Aug 1 04:22:55 2026 -0400
+
+    Merge remote-tracking branch 'refs/remotes/org-ai-assisted/master'
+
+commit 9be0e83680b61ee5b0c803feb79ac71d7b10ee35
+Merge: 2ea05533 66489ed7
+Author: assisted-by-ai (Bot Account) (Machine Account) <228987186+assisted-by-ai@users.noreply.github.com>
+Date:   Fri Jul 31 15:51:58 2026 -0400
+
+    Merge pull request #175 from org-ai-assisted/ai
+
+    consumer-templates: add consumer-codeql-javascript.yml
+
+commit 2ea05533f9c80c1410dd2145db751af064edfa41
+Author: Patrick Schleizer <adrelanos@whonix.org>
+Date:   Fri Jul 31 18:01:28 2026 +0000
+
+    bumped changelog version
+
 commit a6fd8181d144d8b66dfce8d11c19786d6c09651e
 Merge: 73303313 fda6a8d9
 Author: Patrick Schleizer <adrelanos@whonix.org>
 Date:   Fri Jul 31 13:08:38 2026 -0400
 
     Merge remote-tracking branch 'org-ai-assisted/master'
+
+commit 66489ed7050d015adb0bfc92d895aa6b14ab3d9a
+Author: claude (dev142 b93fb2c6-e15f-4d45-8566-f3ded893b70e) <noreply@anthropic.com>
+Date:   Fri Jul 31 13:04:46 2026 -0400
+
+    consumer-templates: add consumer-codeql-javascript.yml
+
+    - Fourth consumer-codeql-* wrapper, for CodeQL language
+      javascript-typescript (one id covers JavaScript and TypeScript).
+    - Needed by output-lies.github.io, whose CodeQL coverage moves off
+      GitHub's default setup onto file-based consumer workflows.
+    - No per-repo config: build-mode none, no dm-consumer-section, so
+      .github/dm-consumer.yml is never read.
+    - Docs: consumer-templates layout listing gains the new template
+      plus the already-shipping consumer-codeql-python.yml and
+      consumer-dist-ai-tests.yml; the reusable-codeql parameter table
+      now covers all four wrappers and drops the stale python TODO.
+
+    Generated with assistance from Claude Code.
 
 commit fda6a8d95677861398b3d2fc260deec410d95813
 Merge: 7d87b109 fe806760
