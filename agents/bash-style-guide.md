@@ -155,6 +155,20 @@ when the array has never been assigned. The first `arr+=(item)`
 auto-creates, but that does not help paths where no items are
 appended (e.g., a parser that sees no positional args).
 
+**R-026: No obsolete empty-array guard `${arr[@]+"${arr[@]}"}`.**
+Expand a `arr=()`-initialized array plainly: `"${arr[@]}"`.
+GATE-ENFORCED.
+
+Why: the `+alternate` operator applied directly to `[@]` only
+existed to work around bash BEFORE 4.4, where `"${arr[@]}"` on an
+empty array under `nounset` raised `unbound variable`. Bash 4.4+
+treats an unset/empty array reference as zero words, not an error,
+so the guard is dead weight -- and R-025 already requires the
+`arr=()` init that makes the plain form safe on every path. Only
+`${name[@]+...}` is flagged; `${#arr[@]}` (length), a plain
+`${arr[@]}`, and the `${arr[@]:-default}` / `${arr[@]:+word}`
+conditional-substitution forms are legitimate and spared.
+
 
 ## printf
 
