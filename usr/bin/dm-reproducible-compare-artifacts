@@ -395,7 +395,23 @@ nbd_device_settle() {
 ## should fall back to comparing the artifacts directly.
 filesystem_mounts_setup() {
    local image_a="$1" image_b="$2" partition partition_b
-   sudo --non-interactive modprobe nbd max_part=16 || return 1
+   ## Loading the module is a MEANS; a usable '/dev/nbd*' is the requirement. This
+   ## tool runs inside the derivative-maker container, which ships no kmod, so
+   ## 'modprobe' is "command not found" there -- while the module is already loaded
+   ## on the host and the nodes are visible through the container's
+   ## '--volume /dev:/dev'. Failing on the modprobe therefore abandoned the whole
+   ## descent and reported "diffoscope could not explain the diff" on a host that
+   ## could have explained it perfectly well.
+   ##
+   ## Only the absence of a usable device is fatal, and it says which of the two
+   ## reasons applies rather than leaving the caller to guess.
+   if ! sudo --non-interactive modprobe nbd max_part=16 2>/dev/null; then
+      if [ ! -b /dev/nbd0 ]; then
+         printf '%s\n' "${0##*/}: nbd unavailable: 'modprobe nbd' failed and /dev/nbd0 is not a block device. Load 'nbd' on the HOST (the container has no kmod); note 'max_part' only takes effect at load time." >&2
+         return 1
+      fi
+      printf '%s\n' "${0##*/}: 'modprobe nbd' unavailable here; using the already-present /dev/nbd0." >&2
+   fi
    sudo --non-interactive mkdir --parents -- "${mount_a}" "${mount_b}" || return 1
    ## '--format' is pinned rather than probed, which removes raw/qcow2 format CONFUSION on a
    ## crafted artifact. It does NOT make this route safe against a hostile image, and an
