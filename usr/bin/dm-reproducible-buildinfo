@@ -89,6 +89,24 @@ done
 ## well-formed (the verifier validates the ones it needs to rebuild).
 val() { local v="${!1:-}"; printf '%s' "${v:-unknown}"; }
 
+## The source state recorded by help-steps/sign-and-tag BEFORE it amended
+## anything. It has to come from there: sign-tag-head rewrites the parent's HEAD
+## and every submodule's HEAD, and those commits exist only inside that build, so
+## reading them here would publish a signed record pointing at commits nobody can
+## fetch. It also carries the submodule SHAs the build actually used, which CI's
+## fork-branch checkout resolves from moving branch tips and records nowhere else.
+source_state_file="${dm_source_state_file:-${binary_build_folder_dist:-}/dm-source-state}"
+source_state_block=""
+if [ -r "${source_state_file}" ]; then
+   source_state_block="$(cat -- "${source_state_file}")"
+else
+   ## Say so in the record rather than silently emitting 'unknown': a missing
+   ## state file means the image was built by a path that did not record its
+   ## provenance, and a verifier needs to know that is why, not guess.
+   source_state_block="Source-Commit: unrecorded (help-steps/sign-and-tag did not run, or wrote no ${source_state_file})
+Submodule-State: unrecorded"
+fi
+
 ## Deb822 (RFC822-style): greppable, signable, and the shop's idiom. The trailing
 ## blank line is the Deb822 record terminator. Fields follow Debian '.buildinfo'
 ## + live-build 'summary.txt' + the Tails apt-snapshot-pinning discipline.
@@ -102,7 +120,7 @@ printf '%s\n' "\
 Format: 1.0
 Buildinfo-Type: derivative-image
 Source-Repo: $(val project_clearnet)
-Source-Commit: $(val dist_build_current_git_head)
+${source_state_block}
 Source-Version: $(val dist_build_version)
 Flavor: $(val dist_build_flavor)
 Target: ${target}
