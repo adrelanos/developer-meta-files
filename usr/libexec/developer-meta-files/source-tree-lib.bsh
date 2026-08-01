@@ -31,15 +31,22 @@
 ## this before their own cd; the dist-ai suite asserts that ordering.
 [ -n "${derivative_maker_invocation_pwd:-}" ] || derivative_maker_invocation_pwd="${PWD}"
 
-## Order, most authoritative first:
-##   1. an in-tree copy locates the tree by its own path
-##   2. $source_code_folder_dist -- help-steps/variables exports it and the build
-##      preserves it across its sudo boundary, so it is right wherever the tree is
-##   3. the INVOCATION directory, but only when it actually contains
+## SELECTS one source, most authoritative first -- it is deliberately NOT a
+## fallback chain that retries the others:
+##   1. an in-tree copy locates the tree by its own path, and that is final. It
+##      must operate on the tree it is PART OF; silently falling back to another
+##      one would let dm-prepare-release sign artifacts from a tree other than
+##      the code doing the signing. $source_code_folder_dist is ignored here on
+##      purpose, and the diagnostic below says so rather than suggesting it.
+##   2. otherwise $source_code_folder_dist -- help-steps/variables exports it and
+##      the build preserves it across its sudo boundary, so it is right wherever
+##      the tree is. An explicit instruction is honoured, not second-guessed.
+##   3. otherwise the INVOCATION directory, but only when it actually contains
 ##      help-steps/pre -- callers such as dm-build-official-one run with the tree
-##      as cwd; checked, never assumed
-##   4. the ~/derivative-maker convention, kept as a fallback
-## Returns 1 (after a NAMED diagnostic) when none of them yields a tree.
+##      as cwd; checked, never assumed.
+##   4. otherwise the ~/derivative-maker convention.
+## Returns 1, after a NAMED diagnostic, when the SELECTED source does not hold a
+## tree.
 derivative_maker_source_tree_resolve() {
    local caller_dir="$1"
 
@@ -59,7 +66,16 @@ derivative_maker_source_tree_resolve() {
 
    printf '%s\n' \
       "${0##*/}: no derivative-maker source tree at '${derivative_maker_source_code_dir}'." \
-      "  (looked for '${derivative_maker_source_code_dir}/help-steps/pre')" \
-      "Set 'source_code_folder_dist' to the checkout, or run this from one." >&2
+      "  (looked for '${derivative_maker_source_code_dir}/help-steps/pre')" >&2
+   if [ ! "${caller_dir}" = "/usr/bin" ]; then
+      ## Branch 1 was taken, so naming source_code_folder_dist here would send the
+      ## operator after a variable this path does not consult.
+      printf '%s\n' \
+         "  (derived from this script's own location: '${caller_dir}')" \
+         "This is the in-tree copy, so it uses the tree it belongs to and nothing else." >&2
+   else
+      printf '%s\n' \
+         "Set 'source_code_folder_dist' to the checkout, or run this from one." >&2
+   fi
    return 1
 }
