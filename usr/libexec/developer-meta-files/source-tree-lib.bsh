@@ -49,10 +49,27 @@
 ## tree.
 derivative_maker_source_tree_resolve() {
    local caller_dir="$1"
+   local derivative_maker_in_tree_candidate
 
    if [ ! "${caller_dir}" = "/usr/bin" ]; then
-      derivative_maker_source_code_dir="$( cd -- "${caller_dir}" && cd -- "../../../../../" && pwd )"
-   elif [ -n "${source_code_folder_dist:-}" ]; then
+      ## Five levels up is the derivative-maker root ONLY for the submodule layout
+      ## '<dm>/packages/<team>/developer-meta-files/usr/bin'. A STANDALONE
+      ## developer-meta-files checkout has the same '<repo>/usr/bin' shape but no
+      ## tree above it, so the same arithmetic lands on an unrelated directory.
+      ## Verify before committing to it; an unverified answer here was final and
+      ## made source_code_folder_dist unreachable from such a checkout.
+      derivative_maker_in_tree_candidate="$( cd -- "${caller_dir}" && cd -- "../../../../../" && pwd )"
+      if [ -r "${derivative_maker_in_tree_candidate}/help-steps/pre" ]; then
+         derivative_maker_source_code_dir="${derivative_maker_in_tree_candidate}"
+         return 0
+      fi
+   fi
+
+   ## Reached when this copy is NOT inside a derivative-maker tree. Falling
+   ## through is correct here and does NOT weaken the rule above: a copy that IS
+   ## in a tree still binds to that tree and never looks further, so
+   ## dm-prepare-release cannot sign artifacts from some other checkout.
+   if [ -n "${source_code_folder_dist:-}" ]; then
       derivative_maker_source_code_dir="${source_code_folder_dist}"
    elif [ -r "${derivative_maker_invocation_pwd}/help-steps/pre" ]; then
       derivative_maker_source_code_dir="${derivative_maker_invocation_pwd}"
@@ -67,9 +84,9 @@ derivative_maker_source_tree_resolve() {
    printf '%s\n' \
       "${0##*/}: no derivative-maker source tree at '${derivative_maker_source_code_dir}'." \
       "  (looked for '${derivative_maker_source_code_dir}/help-steps/pre')" >&2
-   if [ ! "${caller_dir}" = "/usr/bin" ]; then
-      ## Branch 1 was taken, so naming source_code_folder_dist here would send the
-      ## operator after a variable this path does not consult.
+   if [ "${derivative_maker_source_code_dir}" = "${derivative_maker_in_tree_candidate:-}" ]; then
+      ## Bound to the tree this copy lives in, so naming source_code_folder_dist
+      ## would send the operator after a variable that path does not consult.
       printf '%s\n' \
          "  (derived from this script's own location: '${caller_dir}')" \
          "This is the in-tree copy, so it uses the tree it belongs to and nothing else." >&2
