@@ -384,7 +384,7 @@ Description: All systems, physical hardware, server packages
 Package: dist-baremetal-gui-all
 Architecture: all
 Pre-Depends: legacy-dist
-Depends: virtualbox-guest-additions-iso | virtualbox-7.2 | virtualbox-7.3 | virtualbox-7.4 | virtualbox-8.0 | virtualbox-8.1 | virtualbox-8.2 | virtualbox-8.3 | virtualbox-8.4,
+Depends: virtualbox-guest-additions-iso [amd64 arm64] | virtualbox-7.2 [amd64] | virtualbox-7.3 [amd64] | virtualbox-7.4 [amd64] | virtualbox-8.0 [amd64] | virtualbox-8.1 [amd64] | virtualbox-8.2 [amd64] | virtualbox-8.3 [amd64] | virtualbox-8.4 [amd64],
  ${misc:Depends}
 Breaks: virtualbox-guest-x11,
  virtualbox-guest-utils
@@ -434,7 +434,7 @@ Description: All systems, VMs, server packages
 Package: dist-vm-gui-all
 Architecture: all
 Pre-Depends: legacy-dist
-Depends: virtualbox-guest-additions-iso | virtualbox-7.2 | virtualbox-7.3 | virtualbox-7.4 | virtualbox-8.0 | virtualbox-8.1 | virtualbox-8.2 | virtualbox-8.3 | virtualbox-8.4,
+Depends: virtualbox-guest-additions-iso [amd64 arm64] | virtualbox-7.2 [amd64] | virtualbox-7.3 [amd64] | virtualbox-7.4 [amd64] | virtualbox-8.0 [amd64] | virtualbox-8.1 [amd64] | virtualbox-8.2 [amd64] | virtualbox-8.3 [amd64] | virtualbox-8.4 [amd64],
  ${misc:Depends}
 Breaks: virtualbox-guest-x11,
  virtualbox-guest-utils
