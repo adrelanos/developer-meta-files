@@ -227,6 +227,20 @@ if [ -n "${recorded_commit}" ] && [ -n "${described_commit}" ] \
   the environment overrides the real HEAD. Unset it, or set it to match this commit."
 fi
 
+## An image built with --reproducible-dist-build-version carries a NORMALIZED
+## version (the describe suffix stripped), so it is NOT the artifact an official
+## build of this commit would produce. Say so IN the record: otherwise such an
+## image is indistinguishable from a release one, and someone could compare the
+## two and read the difference as a reproducibility failure.
+##
+## Emitted only when normalization actually happened, so an ordinary record is
+## byte-unchanged and existing comparisons keep working.
+version_normalized_field=""
+if [ "${dist_build_version_reproducible:-}" = "true" ]; then
+   version_normalized_field="
+Version-Normalized: true"
+fi
+
 ## Deb822 (RFC822-style): greppable, signable, and the shop's idiom. The trailing
 ## blank line is the Deb822 record terminator. Fields follow Debian '.buildinfo'
 ## + live-build 'summary.txt' + the Tails apt-snapshot-pinning discipline.
@@ -241,7 +255,7 @@ Format: 1.0
 Buildinfo-Type: derivative-image
 Source-Repo: $(val project_clearnet)
 ${source_state_block}
-Source-Version: $(val dist_build_version)
+Source-Version: $(val dist_build_version)${version_normalized_field}
 Flavor: $(val dist_build_flavor)
 Target: ${target}
 Build-Type: $(val dist_build_type)
