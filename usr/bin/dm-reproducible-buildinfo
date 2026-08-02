@@ -178,54 +178,29 @@ else
    fi
 fi
 
-## Source-Version and the recorded Source-Commit MUST name the same commit.
+## Source-Version and Source-Commit name DIFFERENT commits by design. Do not
+## assert they agree.
 ##
-## They are produced independently: Source-Commit comes from the pre-sign state
-## file that help-steps/sign-and-tag wrote, while 'dist_build_version' is
-## auto-detected by help-steps/variables ONLY when unset -- so a value inherited
-## from the environment silently wins over the actual tree. An observed record
-## carried Source-Commit 02096cd4... beside Source-Version ...-ge65ff458..., i.e.
-## two DIFFERENT commits in one record, from a reused workspace holding a stale
-## dist_build_version. A rebuild keyed on either field then reproduces the wrong
-## tree, which is exactly what this record exists to prevent.
+## A previous version of this file required them to be equal, and that check
+## fails every signed build:
+##   - sign-and-tag records Source-Commit from 'git rev-parse HEAD' BEFORE it
+##     signs, deliberately -- see its own comment. It then runs sign-tag-head,
+##     which rewrites the parent's HEAD via 'commit --amend -S'.
+##   - 'dist_build_version' is derived by 'git describe' AFTER that amend, so its
+##     '-g<sha>' suffix names the amended commit.
+## The pre-sign commit is the one a rebuilder can actually fetch; the amended one
+## exists only inside that build. Recording the fetchable commit while the
+## version describes the ephemeral one is the intended behaviour, so equality is
+## the wrong invariant -- it blocked CI on a correct record.
 ##
-## 'git describe' ends in '-g<sha>' and that sha IS the described commit, so when
-## the suffix is present it must equal Source-Commit. A clean tag build carries no
-## suffix, and an 'unrecorded' state block has nothing to compare -- neither is
-## constrained.
-recorded_commit=""
-case "${source_state_block}" in
-   "Source-Commit: unrecorded"*)
-      ;;
-   "Source-Commit: "*)
-      recorded_commit="${source_state_block#Source-Commit: }"
-      recorded_commit="${recorded_commit%%$'\n'*}"
-      ;;
-esac
-
-described_commit=""
-case "${dist_build_version:-}" in
-   *-g*)
-      described_commit="${dist_build_version##*-g}"
-      ;;
-esac
-## Non-hex means this is not a describe suffix (a tag may legitimately contain
-## '-g'), so there is nothing to compare.
-case "${described_commit}" in
-   *[!0-9a-f]*|"")
-      described_commit=""
-      ;;
-esac
-
-if [ -n "${recorded_commit}" ] && [ -n "${described_commit}" ] \
-   && [ ! "${described_commit}" = "${recorded_commit}" ]; then
-   error "Source-Version and Source-Commit disagree -- this record would point a rebuild at the wrong tree.
-  Source-Version: ${dist_build_version}
-    (describes:   ${described_commit})
-  Source-Commit:  ${recorded_commit}
-  'dist_build_version' is auto-detected only when UNSET, so a value inherited from
-  the environment overrides the real HEAD. Unset it, or set it to match this commit."
-fi
+## The underlying hazard is real and NOT covered here: 'dist_build_version' is
+## auto-detected only when UNSET, so a value inherited from a reused workspace
+## silently wins over the actual tree (observed: Source-Commit 02096cd4... beside
+## Source-Version ...-ge65ff458...). Catching that needs a comparison against the
+## tree's CURRENT HEAD, which this script cannot obtain reliably -- it runs both
+## in-tree during a build and from an installed /usr/bin path, and guessing a
+## repository from the working directory is how the last false positive happened.
+## Belongs where dist_build_version is set (help-steps/variables), not here.
 
 ## An image built with --reproducible-dist-build-version carries a NORMALIZED
 ## version (the describe suffix stripped), so it is NOT the artifact an official
