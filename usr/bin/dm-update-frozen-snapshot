@@ -24,6 +24,12 @@
 ##   --source-root DIR        derivative-maker source tree holding build_sources/ (default ~/derivative-maker).
 ##   --dry-run                Show what would change; write nothing.
 
+## FIXME: Does this need to be this complicated? Can't we just use the current
+## time as the new timestamp, double-check that it has the repos we want (it
+## almost certainly will), error out of it doesn't, use it if it does?
+
+## TODO: This still needs reviewed.
+
 set -o errexit
 set -o nounset
 set -o pipefail
@@ -34,7 +40,7 @@ shopt -s shift_verbose
 ## style-ok: no-has -- standalone operator tool; does not source derivative-maker helper-scripts.
 ## style-ok: no-safe-rm -- the only removal is the mktemp'd rewrite temp on the EXIT
 ## cleanup path (a fixed '.XXXXXX' path beside the sources file, never user input);
-## safe-rm is not sourced by this standalone tool.
+## safe-rm is not needed by this standalone tool.
 
 ## HTTPS, not HTTP: over plain HTTP a network attacker or untrusted proxy could forge the month
 ## listing and the per-snapshot Release checks, pinning an attacker-selected stale or nonexistent
@@ -44,13 +50,8 @@ SNAPSHOT_BASE='https://snapshot.debian.org/archive'
 source_root="${HOME}/derivative-maker"
 dry_run='false'
 
-## The atomic rewrite (below) creates a temp beside the sources file; track it
-## globally and remove it on EXIT so a failure mid-rewrite under errexit cannot
-## leave untracked garbage in build_sources/ (which would break git-cleanliness
-## checks in reproducible builds). A successful 'mv' clears the global first, so
-## the trap then removes nothing.
+## Cleanup temp file on exit.
 frozen_tmp_file=''
-
 frozen_snapshot_cleanup() {
    [ -z "${frozen_tmp_file}" ] || rm --force -- "${frozen_tmp_file}"
 }

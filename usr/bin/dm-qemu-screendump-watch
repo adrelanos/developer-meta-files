@@ -190,6 +190,7 @@ def main():
                 settled += 1
                 if settled >= 2:
                     verdict = "up"
+                    ## FIXME: The wlgreet greeter is black-and-white. Will we really have >200 colors when it shows up?
                     log("reached a rendered greeter/desktop at frame %04d (t=%ds)" % (index, elapsed))
                     break
             else:

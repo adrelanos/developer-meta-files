@@ -8,8 +8,7 @@
 ## Sourceable release signing + verification helpers, factored out of
 ## 'dm-prepare-release' so the reproducibility verifier
 ## ('dm-reproducible-verify') reuses the SAME sign/verify code instead of
-## hand-rolling 'sq'/'signify' invocations. Behaviour is byte-for-byte the
-## former inline implementation.
+## hand-rolling 'sq'/'signify' invocations.
 ##
 ## Callers set these (help-steps/variables already resolves them):
 ##   DEBEMAIL              OpenPGP signer email
@@ -65,9 +64,6 @@ verify_cmd_openpgp() {
 }
 
 verify_cmd_signinfy() {
-   ## Match the threshold in sign_cmd_signify; otherwise files in the
-   ## 100..999 MB band would be signed but never re-verified, and any
-   ## bug in signing would go undetected.
    if [ "$file_size_mb" -ge "1000" ]; then
       return 0
    fi

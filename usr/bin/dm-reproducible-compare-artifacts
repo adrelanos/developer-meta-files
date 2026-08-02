@@ -88,6 +88,11 @@ case "$target" in
       artifact_glob="*.ova"
       ;;
    qcow2)
+      ## TODO: Is this the correct artifact type to look for? Our KVM images
+      ## are distributed as XZ-compressed tarballs that include sometimes
+      ## multiple qcow2 files and accompanying data. This may be incomplete,
+      ## and may break the assertion below that "A build emits exactly one
+      ## image of a given extension".
       artifact_glob="*.qcow2"
       ;;
    *)
@@ -105,7 +110,7 @@ esac
 found_artifact=""
 find_artifact() {
    local dir="$1"
-   local -a matches=()
+   local -a match_list=()
    ## A directory whose name starts with '-' would be read by find(1) as an option
    ## or expression; prefix './' so it is unambiguously a path operand.
    [ "${dir#-}" = "$dir" ] || dir="./$dir"
@@ -113,12 +118,12 @@ find_artifact() {
       printf '%s\n' "${0##*/}: no such directory: $dir" >&2
       exit 2
    fi
-   mapfile -t matches < <(find "$dir" -type f -name "$artifact_glob" | LC_ALL=C sort)
-   if [ "${#matches[@]}" -ne 1 ]; then
-      printf '%s\n' "${0##*/}: expected exactly one ${artifact_glob} under ${dir}, found ${#matches[@]}" >&2
+   mapfile -t match_list < <(find "$dir" -type f -name "$artifact_glob" | LC_ALL=C sort)
+   if [ "${#match_list[@]}" -ne 1 ]; then
+      printf '%s\n' "${0##*/}: expected exactly one ${artifact_glob} under ${dir}, found ${#match_list[@]}" >&2
       exit 2
    fi
-   found_artifact="${matches[0]}"
+   found_artifact="${match_list[0]}"
 }
 
 find_artifact "$dir_a"
@@ -166,7 +171,7 @@ if [ "$sha_a" = "$sha_b" ]; then
 fi
 
 {
-   printf '%s\n' "RESULT: artifacts DIFFER (not bit-reproducible)"
+   printf '%s\n' "RESULT: artifacts DIFFER"
    printf '%s\n' "diffoscope explanation follows (best-effort; may be truncated or skipped):"
 } | tee --append -- "$report"
 
@@ -178,7 +183,7 @@ diffoscope_rc=0
 diffoscope --text - --max-report-size 4194304 --max-diff-block-lines 512 \
    -- "$artifact_a" "$artifact_b" >> "$report" 2>&1 || diffoscope_rc="$?"
 if [ "$diffoscope_rc" -gt 1 ]; then
-   printf '%s\n' "(diffoscope could not explain the diff (exit ${diffoscope_rc}); the sha256 mismatch above is the verdict)" >> "$report"
+   printf '%s\n' "(diffoscope could not explain the diff (exit ${diffoscope_rc}))" >> "$report"
 fi
 
 exit 1

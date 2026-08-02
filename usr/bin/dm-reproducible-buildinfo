@@ -71,6 +71,8 @@ while [ "$#" -gt 0 ]; do
          shift 2
          ;;
       -h|--help)
+         ## FIXME: Violation of Bash Style Guide R-153 (do not extract help
+         ## from comments
          grep '^##' -- "${BASH_SOURCE[0]}" | sed 's/^## \{0,1\}//'
          exit 0
          ;;
@@ -87,6 +89,8 @@ done
 
 ## Read a build-exported variable; 'unknown' when unset so the record is always
 ## well-formed (the verifier validates the ones it needs to rebuild).
+## FIXME: Violation of Bash Style Guide R-074 (no semicolon command chaining)
+## FIXME: Violation of Bash Style Guide R-141 (carefully guard implied eval)
 val() { local v="${!1:-}"; printf '%s' "${v:-unknown}"; }
 
 ## Deb822 (RFC822-style): greppable, signable, and the shop's idiom. The trailing

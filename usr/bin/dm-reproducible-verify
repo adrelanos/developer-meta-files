@@ -89,6 +89,8 @@ while [ "$#" -gt 0 ]; do
          shift
          ;;
       -h|--help)
+         ## FIXME: Violation of Bash Style Guide R-153 (do not extract help
+         ## from comments
          grep '^##' -- "${BASH_SOURCE[0]}" | sed 's/^## \{0,1\}//'
          exit 0
          ;;
@@ -126,6 +128,7 @@ done
 ## via the shared signing lib -- not a hand-rolled invocation.
 [ -f "${signify_public_key}" ] || error "signify public key not found: '${signify_public_key}' (pass --signify-pubkey)."
 printf '%s\n' "INFO: verifying buildinfo + sha512sums signatures (sq + signify)..." >&2
+## FIXME: "verify_and_check" is a bad function name, "verify" and "check" are near synonyms.
 verify_and_check "${buildinfo_file}" \
    || error "buildinfo signature verification FAILED -- refusing to trust it."
 verify_and_check "${sha_file}" \

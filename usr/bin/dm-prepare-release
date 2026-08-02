@@ -35,7 +35,6 @@ fi
 source "$derivative_maker_source_code_dir/help-steps/pre"
 source "$derivative_maker_source_code_dir/help-steps/variables"
 
-## Release signing + verification helpers (shared with dm-reproducible-verify).
 # shellcheck source=../libexec/developer-meta-files/signing-lib.bsh
 source "${signing_lib_dir}/signing-lib.bsh"
 

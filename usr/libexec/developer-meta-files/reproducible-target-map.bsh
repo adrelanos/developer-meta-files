@@ -23,10 +23,15 @@
 ## internal name at every call site, so no check_variable_name guard) and the
 ## build target as $2, and return 1 on an unknown target.
 
+# shellcheck source=../../../../helper-scripts/usr/libexec/helper-scripts/strings.bsh
+source /usr/libexec/helper-scripts/strings.bsh
+
 ## Set $1 to the released-image filename extension for target $2.
 dm_reproducible_target_ext() {
+   check_variable_name "${1:-}" || return 1
+
    local -n ext_ref="$1"
-   case "$2" in
+   case "${2:-}" in
       iso)
          ext_ref="iso"
          ;;
@@ -51,14 +56,17 @@ dm_reproducible_target_ext() {
 ## Set $1 to the download-URL path segment (<url_part>) for target $2. Covers the
 ## targets published for download (utm is not, so it is absent here).
 dm_reproducible_target_url_part() {
+   check_variable_name "${1:-}" || return 1
+
    local -n url_part_ref="$1"
-   case "$2" in
+   case "${2:-}" in
       iso)
          url_part_ref="iso"
          ;;
       virtualbox)
          url_part_ref="ova"
          ;;
+      ## TODO: raw isn't published for download, should this be here?
       raw)
          url_part_ref="raw"
          ;;

@@ -39,6 +39,13 @@
 ##
 ## Exit codes: 0 all sidecars fetched; 2 usage / download error.
 
+## TODO: Support for Whonix images?
+
+## TODO: The documentation above is confusing; if passing VERSION as a bare
+## argument rather than via --version, arguments like --arch, --target, etc.
+## will still need to be passed, but the first line of the documentation does
+## not mention this.
+
 set -o errexit
 set -o nounset
 set -o pipefail
@@ -110,6 +117,8 @@ while [ "$#" -gt 0 ]; do
          shift 2
          ;;
       -h|--help)
+         ## FIXME: Violation of Bash Style Guide R-153 (do not extract help
+         ## from comments
          grep '^##' -- "${BASH_SOURCE[0]}" | sed 's/^## \{0,1\}//'
          exit 0
          ;;
@@ -138,6 +147,8 @@ while [ "$#" -gt 0 ]; do
 done
 
 ## After '--', remaining args are the positional VERSION|URL (same auto-detection).
+## TODO: Maybe we should assume positionals are given after options always so
+## we can simplify this?
 while [ "$#" -gt 0 ]; do
    case "$1" in
       *://*)

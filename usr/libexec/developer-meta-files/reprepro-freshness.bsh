@@ -1,6 +1,6 @@
 #!/bin/bash
 
-## Copyright (C) 2012 - 2025 ENCRYPTED SUPPORT LLC <adrelanos@whonix.org>
+## Copyright (C) 2026 - 2026 ENCRYPTED SUPPORT LLC <adrelanos@whonix.org>
 ## See the file COPYING for copying conditions.
 
 ## AI-Assisted
@@ -15,8 +15,7 @@
 ## same changelog-version-vs-published-version mechanism as
 ## 'dm-packaging-helper-script' (dpkg --compare-versions against the source
 ## version reprepro reports), so a build can skip packages that have not been
-## version-bumped since the last build. Meant to be sourced; defines no strict
-## 'set' preamble so it inherits the caller's shell options.
+## version-bumped since the last build.
 
 ## Echo the source version currently published for a package in the local
 ## reprepro repository, or nothing if the package is absent.
