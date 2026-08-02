@@ -313,6 +313,31 @@ churn on every `install.sh` change with no security gain since
 the action is in the same repository under the same admin
 boundary.
 
+## zizmor `unpinned-uses` on the same `@master` reusable refs
+
+**Affects**: `consumer-claude-code.yml:66` and every other consumer
+wrapper line of the same shape. Reported at severity **high**,
+confidence **high**, as `error[unpinned-uses]: action is not pinned
+to a hash (required by blanket policy)`.
+
+This is the PinnedDependenciesID entry above, reached by a different
+tool. zizmor's own wording names the reason it fires: a **blanket**
+policy. Like Scorecard, it cannot distinguish a third-party
+Marketplace action from an intra-org reusable workflow under the same
+administrative boundary, and the whole argument in that section
+applies verbatim.
+
+Recorded separately because zizmor is not part of the CI gate -- it is
+reached on demand via `ai-review --with static`, so whoever runs it
+next meets this finding with no Scorecard context and would otherwise
+re-derive the analysis. `actionlint` reports the same workflows clean.
+
+Not suppressed in-tree on purpose: a `# zizmor: ignore[unpinned-uses]`
+comment on each wrapper line would have to be propagated to every
+consumer and would silence the audit for genuinely unpinned
+third-party actions added later on the same line. Reject the finding
+when reading the report, do not annotate the code.
+
 ## What we DO act on
 
 The Scorecard signals NOT in this list are real and worth fixing.

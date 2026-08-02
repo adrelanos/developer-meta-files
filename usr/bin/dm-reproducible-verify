@@ -17,12 +17,12 @@
 ## '.dm-buildinfo', so no build flags are required. This:
 ##   1. verifies the '.dm-buildinfo' + '.sha512sums' signatures (sq + signify),
 ##   2. checks the image against the signed sha512sum,
-##   3. rebuilds the recorded target locally and diffoscope-compares.
+##   3. rebuilds the recorded target locally and compares the two with
+##      'dm-reproducible-compare-artifacts'.
 ##
-## The image is only ever read by diffoscope -- never executed, booted, or
-## rw-mounted. SOURCE_DATE_EPOCH derives from debian/changelog, so a rebuild from
-## the recorded Source-Commit reproduces the image; run inside the standard build
-## container so the build path is canonical (see the reproducibility docs).
+## The image is only ever READ here -- never executed, booted, or rw-mounted.
+## How the comparison itself is performed is that tool's concern, not this
+## one's.
 ##
 ## Usage:
 ##   dm-reproducible-verify IMAGE_FILE [--signify-pubkey KEY] [--output REPORT] \
@@ -67,8 +67,16 @@ image_file=""
 ## Verification trust anchors the lib's verify_cmd_* read; defaults match
 ## help-steps/variables. For a real release, provide the maintainer OpenPGP cert
 ## to sq and point --signify-pubkey at the maintainer signify public key.
-signify_public_key="${signify_public_key:-${HOMEVAR:-${HOME}}/.signify/keyname.pub}"
-DEBEMAIL="${DEBEMAIL:-derivative-distribution@local-signing.key}"
+[ -v HOMEVAR ] || HOMEVAR="${HOME}"
+[ -v signify_public_key ] || signify_public_key="${HOMEVAR}/.signify/keyname.pub"
+[ -v DEBEMAIL ] || DEBEMAIL="derivative-distribution@local-signing.key"
+## '[ -v ]' defaults only a genuinely UNSET name, so a caller exporting an
+## empty value keeps it -- that is the point of the idiom. None of these three
+## has a meaningful empty value though, and an empty one would silently
+## verify against the wrong trust anchor, so reject it here instead of
+## letting ':-' quietly overwrite a caller's intent.
+[ -n "${HOMEVAR}" ] || error "HOMEVAR is set but empty; unset it to default to \$HOME."
+[ -n "${DEBEMAIL}" ] || error "DEBEMAIL is set but empty; unset it for the default signing identity."
 output_file=""
 skip_build="false"
 
@@ -108,8 +116,11 @@ done
 [ -n "${image_file}" ] || error "a local image file is required: dm-reproducible-verify IMAGE_FILE"
 [ -f "${image_file}" ] || error "image file does not exist: '${image_file}'"
 
+## Command-availability preflight: probe every external tool once here (R-091),
+## not lazily at each call site. signify + sq + git are all required.
 command -v signify-openbsd >/dev/null 2>&1 || error "signify-openbsd not found; cannot verify signatures."
 command -v sq >/dev/null 2>&1 || error "sq (Sequoia OpenPGP) not found; cannot verify signatures."
+command -v git >/dev/null 2>&1 || error "git not found; required for the Source-Commit sanity check."
 
 ## The sidecars sit next to the image in the same directory.
 image_dir="$( cd -- "$( dirname -- "${image_file}" )" && pwd )"
@@ -158,10 +169,20 @@ printf '%s\n' "INFO: verified buildinfo: flavor=${bi_flavor} target=${bi_target}
 
 ## Warn if the local source is not at the recorded commit -- a rebuild from a
 ## different tree will not reproduce.
-if [ -n "${dm_source_root}" ] && command -v git >/dev/null 2>&1 && git -C "${dm_source_root}" rev-parse --git-dir >/dev/null 2>&1; then
+if [ -n "${dm_source_root}" ] && git -C "${dm_source_root}" rev-parse --git-dir >/dev/null 2>&1; then
    head_commit="$(git -C "${dm_source_root}" rev-parse HEAD 2>/dev/null || printf '%s' unknown)"
    case "${bi_commit}" in
       "${head_commit}"|unknown|'')
+         ;;
+      unrecorded*)
+         ## 'unrecorded' is its OWN state, not a differing commit: the build never
+         ## recorded provenance (dm-reproducible-buildinfo emits it, with the
+         ## reason, when sign-and-tag left no source-state file). Reporting it as a
+         ## commit MISMATCH blames the verifier's checkout for something the BUILD
+         ## did not write; silently skipping it would let a rebuild claim a match
+         ## it cannot have earned. Call it out as unverifiable instead.
+         printf '%s\n' "WARNING: buildinfo records NO source provenance (${bi_commit})." >&2
+         printf '%s\n' "  The image cannot be tied to a source commit, so a matching rebuild shows only that THIS tree reproduces it -- not that it is the tree the image came from." >&2
          ;;
       *)
          printf '%s\n' "WARNING: local HEAD (${head_commit}) != buildinfo Source-Commit (${bi_commit}); check out the matching commit for a valid comparison." >&2
@@ -171,7 +192,12 @@ fi
 
 ## Rebuild the recorded target locally (reproduce inside the standard container
 ## for a canonical build path).
-build_out="${binary_build_folder_dist:-${HOMEVAR:-${HOME}}/derivative-binary}"
+[ -v binary_build_folder_dist ] || binary_build_folder_dist="${HOMEVAR}/derivative-binary"
+## Empty would reach the comparator as --dir-b '' and compare the published
+## image against nothing, which reads as a PASS. Same reasoning as the trust
+## anchors above.
+[ -n "${binary_build_folder_dist}" ] || error "binary_build_folder_dist is set but empty; unset it for the default build directory."
+build_out="${binary_build_folder_dist}"
 if [ "${skip_build}" = "true" ]; then
    printf '%s\n' "INFO: --skip-build set; comparing against the existing build under '${build_out}'." >&2
 else
@@ -183,8 +209,8 @@ else
    "${build_cmd[@]}" || error "local rebuild failed."
 fi
 
-## Compare the local image against the rebuild (diffoscope). dir-a is the image's
-## own directory; the comparator finds the image by target extension.
+## Compare the local image against the rebuild. dir-a is the image's own
+## directory; the comparator finds the image by target extension.
 compare_args=( --target "${bi_target}" --dir-a "${image_dir}" --dir-b "${build_out}" )
 [ -z "${output_file}" ] || compare_args+=( --output "${output_file}" )
 

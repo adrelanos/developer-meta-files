@@ -58,14 +58,40 @@ readonly POLICY_WORKFLOW_PERMS_LABEL='workflow GITHUB_TOKEN read-only, no PR app
 ## actions will start failing the moment this lands. Run --audit
 ## first; whitelist or replace any non-github-owned, non-verified
 ## action before applying.
+##
+## The allowlist governs REUSABLE WORKFLOWS as well as actions, and a
+## cross-org `uses: <org>/<repo>/.github/workflows/<x>.yml@<ref>` is
+## checked against it. So an empty patterns_allowed does not merely
+## restrict third-party actions -- it breaks every consumer outside the
+## org that hosts the reusables, with `startup_failure` and zero jobs.
+## Same-org calls bypass the policy, which is why org-ai-assisted looked
+## healthy while secure-terminal's consumers were all failing.
+##
+## developer-meta-files hosts every reusable workflow and composite
+## action we publish, so two path-scoped patterns cover the whole
+## surface.
+##
+## The PATH is mandatory. GitHub's syntax for a reusable workflow is
+## OWNER/REPOSITORY/PATH/FILENAME@REF -- a bare 'owner/repo@*' matches
+## ACTIONS ONLY and silently fails to admit reusable workflows, which
+## still fail with startup_failure. Verified live: with 'owner/repo@*'
+## the consumers stayed broken; with the patterns below a previously
+## failing consumer-bandit run went green.
+##
+## '@*' rather than '@master' so a future SHA-pinned or tagged call does
+## not silently fail. Deliberately NOT 'org-ai-assisted/*', which would
+## additionally admit anything published from any other repo in the org.
 readonly POLICY_ACTIONS_ALLOWLIST='{
    github_owned_allowed: true,
    verified_allowed: true,
-   patterns_allowed: []
+   patterns_allowed: [
+      "org-ai-assisted/developer-meta-files/.github/workflows/*@*",
+      "org-ai-assisted/developer-meta-files/.github/actions/*@*"
+   ]
 }'
 readonly POLICY_ACTIONS_ALLOWLIST_ENDPOINT='/orgs/__ORG__/actions/permissions/selected-actions'
 readonly POLICY_ACTIONS_ALLOWLIST_METHOD='PUT'
-readonly POLICY_ACTIONS_ALLOWLIST_LABEL='selected-actions = github-owned + verified-creators'
+readonly POLICY_ACTIONS_ALLOWLIST_LABEL='selected-actions = github-owned + verified-creators + developer-meta-files reusables'
 
 ## ============================================================================
 ## Org-policy bodies - used by dm-github-org-policy
@@ -122,7 +148,7 @@ readonly POLICY_ACTIONS_SCOPE_LABEL='actions enabled=all, allowed=selected'
 ## allowlist follow-up: allowed_actions is moot when Actions are off
 ## (and GET /selected-actions returns 409 while enabled_repositories !=
 ## "selected", which audit_org_state already tolerates). See
-## agents/github-policy-canonical-vs-mirror.md.
+## agents/github-policy-org-kinds.md.
 readonly POLICY_ACTIONS_DISABLED_ORG='{
    enabled_repositories: "none"
 }'
@@ -254,8 +280,29 @@ readonly POLICY_REPO_MIRROR_ENDPOINT='/repos/__OWNER__/__REPO__'
 readonly POLICY_REPO_MIRROR_METHOD='PATCH'
 readonly POLICY_REPO_MIRROR_LABEL='MIRROR: wiki/issues/projects/discussions off, secret-scan on'
 
-## SOURCE-only. MIRROR running these would duplicate every alert the
-## canonical SOURCE repo already raises.
+## PROJECT orgs hold first-party code that originates here, so the reasons MIRROR turns
+## things off do not apply: there is no upstream to file issues against and no canonical
+## repo already raising the alerts. Issues stay on. Wiki and discussions stay off, matching
+## SOURCE, which also keeps documentation out of the repo wiki.
+readonly POLICY_REPO_PROJECT='{
+   has_wiki: false,
+   has_issues: true,
+   has_discussions: false,
+   security_and_analysis: {
+      secret_scanning: { status: "enabled" },
+      secret_scanning_push_protection: { status: "enabled" }
+   }
+}'
+readonly POLICY_REPO_PROJECT_ENDPOINT='/repos/__OWNER__/__REPO__'
+readonly POLICY_REPO_PROJECT_METHOD='PATCH'
+readonly POLICY_REPO_PROJECT_LABEL='PROJECT: wiki/discussions off, issues on, secret-scan on'
+
+## MIRROR only. Dependabot lives in exactly one place: the org whose CI can
+## act on what it reports. GitHub Actions runs on org-ai-assisted and nowhere
+## else in this family, so that is where both an alert and the pull request
+## that answers it are useful. Every other kind gets the _OFF counterparts
+## below. See agents/github-policy-org-kinds.md, "Dependabot lives on the
+## mirror only".
 ##
 ## Endpoint takes a body but accepts an empty object; we pass '{}' so
 ## the policy_apply_repo dispatcher (which always sends body via
@@ -265,18 +312,26 @@ readonly POLICY_REPO_DEPENDABOT_ALERTS_ENDPOINT='/repos/__OWNER__/__REPO__/vulne
 readonly POLICY_REPO_DEPENDABOT_ALERTS_METHOD='PUT'
 readonly POLICY_REPO_DEPENDABOT_ALERTS_LABEL='enable Dependabot alerts'
 
-## SOURCE-only. Requires Dependabot alerts already enabled.
+## MIRROR only. Requires Dependabot alerts already enabled, so it is applied
+## after POLICY_REPO_DEPENDABOT_ALERTS.
 readonly POLICY_REPO_DEPENDABOT_FIXES='{}'
 readonly POLICY_REPO_DEPENDABOT_FIXES_ENDPOINT='/repos/__OWNER__/__REPO__/automated-security-fixes'
 readonly POLICY_REPO_DEPENDABOT_FIXES_METHOD='PUT'
 readonly POLICY_REPO_DEPENDABOT_FIXES_LABEL='enable Dependabot security updates'
 
-## Private Vulnerability Reporting (PVR) is NOT enabled anywhere.
-## Canonical disclosure for Kicksecure / Whonix is the wiki linked
-## from org-ai-assisted/.github/SECURITY.md. PVR would split the
-## inbox between that wiki flow and a parallel GitHub-side flow. The
-## DELETE side (POLICY_REPO_PVR_OFF below) is applied on both SOURCE
-## and MIRROR every --apply; no PUT-style enable constants exist.
+## Private Vulnerability Reporting (PVR) is NOT enabled anywhere -- every
+## org kind, PROJECT included.
+##
+## We do not use it. Security reports reach us as OpenPGP-encrypted
+## e-mail, and that is the only channel we watch; for Kicksecure / Whonix
+## the canonical route is the wiki linked from
+## org-ai-assisted/.github/SECURITY.md. An open GitHub private-report
+## inbox on any repo would be a second one nobody reads, which is worse
+## than none: a researcher who finds it reasonably assumes it is
+## monitored, and a real report could sit there unseen.
+##
+## POLICY_REPO_PVR_OFF is therefore applied to every repo of every kind
+## on every --apply, so a manual UI flip is reconciled back off.
 
 ## --- Account-wide settings, applied by dm-github-personal-policy
 ## once per --apply (NOT per repo). Endpoints use the token-authed
@@ -293,28 +348,69 @@ readonly POLICY_USER_EMAIL_PRIVATE_ENDPOINT='/user/email/visibility'
 readonly POLICY_USER_EMAIL_PRIVATE_METHOD='PATCH'
 readonly POLICY_USER_EMAIL_PRIVATE_LABEL='hide primary email from public profile'
 
-## --- MIRROR-only counterparts that actively turn the same three
-## features OFF. dm-github-org-policy fans these out on kind=='mirror'
-## so every --apply reconciles the state.
+## --- Counterparts that actively turn the same features OFF.
+## dm-github-org-policy fans these out on every kind EXCEPT mirror
+## (SOURCE, PROJECT) so every --apply reconciles the state, and
+## dm-github-personal-policy covers PERSON / BOT.
 ##
-## G-035: see agents/github-policy-canonical-vs-mirror.md.
+## Order: FIXES_OFF before ALERTS_OFF - the security-fixes endpoint answers
+## 422 once alerts are off, which is the idempotent steady state captured by
+## the _EXTRA_OK_STATUS knob.
+##
+## G-035: see agents/github-policy-org-kinds.md.
 
 readonly POLICY_REPO_DEPENDABOT_ALERTS_OFF='{}'
 readonly POLICY_REPO_DEPENDABOT_ALERTS_OFF_ENDPOINT='/repos/__OWNER__/__REPO__/vulnerability-alerts'
 readonly POLICY_REPO_DEPENDABOT_ALERTS_OFF_METHOD='DELETE'
-readonly POLICY_REPO_DEPENDABOT_ALERTS_OFF_LABEL='disable Dependabot alerts (mirror)'
+readonly POLICY_REPO_DEPENDABOT_ALERTS_OFF_LABEL='disable Dependabot alerts'
 
 readonly POLICY_REPO_DEPENDABOT_FIXES_OFF='{}'
 readonly POLICY_REPO_DEPENDABOT_FIXES_OFF_ENDPOINT='/repos/__OWNER__/__REPO__/automated-security-fixes'
 readonly POLICY_REPO_DEPENDABOT_FIXES_OFF_METHOD='DELETE'
-readonly POLICY_REPO_DEPENDABOT_FIXES_OFF_LABEL='disable Dependabot security updates (mirror)'
+readonly POLICY_REPO_DEPENDABOT_FIXES_OFF_LABEL='disable Dependabot security updates'
 readonly POLICY_REPO_DEPENDABOT_FIXES_OFF_EXTRA_OK_STATUS='422'
+
+## Dependabot VERSION updates have no REST setter at any scope - not per
+## repo, not org-wide, and no field for them exists in the org
+## code-security configurations API either. They run when
+## '.github/dependabot.yml' exists and stop when it does not, so the file IS
+## the switch and the only way to flip it is a commit. Hence a skip line
+## (emitted per repo by policy_skip_ui_repo on every non-mirror kind)
+## rather than an API constant.
+##
+## The file is OPT-IN per repo, never blanket-deployed: usr/bin/dm-packaging-
+## helper-script installs consumer-templates/.github/dependabot.yml only into
+## packages that already carry one or are explicitly opted in, and honours a
+## '## propagation: manual' marker for hand-tuned configs. A repo with no
+## workflow pins worth tracking simply carries no file.
+readonly POLICY_DEPENDABOT_VERSION_UPDATES_OFF_PATH='.github/dependabot.yml'
+readonly POLICY_DEPENDABOT_VERSION_UPDATES_OFF_LABEL='Dependabot version updates: delete .github/dependabot.yml (file presence IS the switch; no REST setter exists)'
+readonly POLICY_DEPENDABOT_VERSION_UPDATES_OFF_UI_URL_REPO='https://github.com/__OWNER__/__REPO__/blob/HEAD/.github/dependabot.yml'
+
+## Desired LIVE state for --audit, the read-side counterpart of the
+## apply-side constants above: _ON on MIRROR, _OFF on every other kind.
+## GET /repos/{owner}/{repo}/automated-security-fixes answers 200
+## {"enabled":bool,"paused":bool} to a token with admin on the repo and 404
+## to one without (measured 2026-07-31 across all 124 SOURCE repos with the
+## member token: 404 everywhere). audit_expect counts any non-200 as a
+## finding, so an unreadable answer is never recorded as "off".
+readonly POLICY_REPO_DEPENDABOT_FIXES_EXPECT_OFF='{
+   enabled: false
+}'
+readonly POLICY_REPO_DEPENDABOT_FIXES_EXPECT_ON='{
+   enabled: true
+}'
 
 ## Applied on BOTH SOURCE and MIRROR. See the PVR rationale block above.
 readonly POLICY_REPO_PVR_OFF='{}'
 readonly POLICY_REPO_PVR_OFF_ENDPOINT='/repos/__OWNER__/__REPO__/private-vulnerability-reporting'
 readonly POLICY_REPO_PVR_OFF_METHOD='DELETE'
 readonly POLICY_REPO_PVR_OFF_LABEL='disable private vulnerability reporting'
+
+## No PUT-style enable constant exists on purpose. PVR is off on every
+## kind, so an enable variant would only be here for someone to wire back
+## in; its absence is what keeps apply_repo_policy's single OFF call from
+## quietly regrowing a branch.
 
 ## Branch + tag ruleset bypass actor list.
 ##
@@ -357,6 +453,7 @@ readonly POLICY_REPO_PVR_OFF_LABEL='disable private vulnerability reporting'
 ## consumes these.
 readonly POLICY_RULESET_BYPASS_SOURCE='[{"actor_id":1,"actor_type":"OrganizationAdmin","bypass_mode":"always"}]'
 readonly POLICY_RULESET_BYPASS_MIRROR='[{"actor_id":1,"actor_type":"OrganizationAdmin","bypass_mode":"always"}]'
+readonly POLICY_RULESET_BYPASS_PROJECT='[{"actor_id":1,"actor_type":"OrganizationAdmin","bypass_mode":"always"}]'
 
 ## Branch + tag ruleset body shapes. POSTed to
 ## /orgs/{org}/rulesets or /repos/{owner}/{repo}/rulesets via the
@@ -419,6 +516,12 @@ readonly POLICY_RULESET_RULES_SOURCE='[
    {"type": "required_signatures"}
 ]'
 readonly POLICY_RULESET_RULES_MIRROR='[
+   {"type": "deletion"},
+   {"type": "non_fast_forward"}
+]'
+## Same rules as MIRROR: signed commits are not required, because a PROJECT org is where
+## the bot authors code directly and its commits are unsigned.
+readonly POLICY_RULESET_RULES_PROJECT='[
    {"type": "deletion"},
    {"type": "non_fast_forward"}
 ]'
@@ -589,23 +692,25 @@ readonly POLICY_REPO_TOPICS_METHOD='PUT'
 readonly POLICY_REPO_TOPICS_LABEL='topics'
 
 ## ============================================================================
-## SOURCE-side UI-only operator flips
+## UI-only operator flips
 ## ============================================================================
 ##
 ## Dependabot + Code-scanning settings whose desired state is known
 ## but has no documented REST setter as of 2026-05. The scripts emit
 ## a `skip: ... see <URL>` line on every --apply so the operator can
-## flip each manually. All apply to SOURCE only - Dependabot is off
-## entirely on MIRROR / PERSON / BOT, so the org-level grouping and
-## per-repo auto-triage / delegated-dismissal toggles are moot
-## there. Code-scanning query-suite recommendation is harmless on
-## MIRROR but never matters there because MIRROR repos use the
-## reusable `codeql.yml` workflow (advanced setup), which carries
-## its own `queries:` value and ignores the org default-setup
-## recommendation.
+## flip each manually. The emitting kind is per setting:
 ##
-## See agents/github-policy-canonical-vs-mirror.md "SOURCE-side
-## UI-only operator flips" for the per-setting rationale.
+##   - The three Dependabot flips (grouping, auto-triage,
+##     delegated dismissal) are MIRROR only, because MIRROR is the only
+##     kind that has Dependabot alerts and security-update PRs at all.
+##   - The Code-scanning query-suite recommendation is SOURCE only. It is
+##     harmless on MIRROR but never matters there, because MIRROR repos
+##     use the reusable `codeql.yml` workflow (advanced setup), which
+##     carries its own `queries:` value and ignores the org default-setup
+##     recommendation.
+##
+## See agents/github-policy-org-kinds.md "UI-only operator flips"
+## for the per-setting rationale.
 
 readonly POLICY_GROUPED_SECURITY_UPDATES_LABEL='Dependabot grouped security updates: enable in UI (one PR per ecosystem instead of one per dep)'
 readonly POLICY_GROUPED_SECURITY_UPDATES_UI_URL='https://github.com/organizations/__ORG__/settings/security_analysis'

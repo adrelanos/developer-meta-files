@@ -1,0 +1,55 @@
+## Copyright (C) 2026 - 2026 ENCRYPTED SUPPORT LLC <adrelanos@whonix.org>
+## See the file COPYING for copying conditions.
+
+## AI-Assisted
+
+## Managed by pkg_update_consumer_workflows. Byte-identical
+## across consumers; this file is `cp`-ed from
+## developer-meta-files/consumer-templates/.github/workflows/consumer-codeql-javascript.yml.
+## DO NOT hand-edit this file in the consumer repo - changes
+## will be overwritten on the next propagation pass.
+##
+## Consumer wrapper for the 'javascript-typescript' CodeQL
+## language. One CodeQL language id covers both JavaScript and
+## TypeScript; there is no separate 'typescript' id.
+##
+## Cronless on purpose (same rationale as
+## consumer-codeql-actions.yml): byte-identical propagation
+## forbids per-repo cron rewrites. Push / PR / workflow_dispatch
+## triggers cover the scan-on-change cases.
+##
+## Install only in repos that contain JavaScript or TypeScript
+## (opt-in by file presence). Repos with neither should not
+## install this; the reusable would scan nothing.
+##
+## No per-repo config: build-mode is 'none' (the CodeQL default
+## for this language), so no dm-consumer-section is passed and
+## .github/dm-consumer.yml is never read.
+##
+## Reusable docs:
+## https://github.com/org-ai-assisted/developer-meta-files/blob/master/.github/workflows/reusable-codeql.yml
+
+name: CodeQL JavaScript
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  javascript:
+    uses: org-ai-assisted/developer-meta-files/.github/workflows/reusable-codeql.yml@master
+    with:
+      language: javascript-typescript
+    permissions:
+      security-events: write
+      contents: read

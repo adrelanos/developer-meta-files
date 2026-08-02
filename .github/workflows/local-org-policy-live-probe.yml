@@ -8,9 +8,9 @@
 ## GitHub REST API:
 ##   1. unauth probe (ci/live-probe-unauth.sh): no token, smoke-tests
 ##      the read paths against the public 'octokit' org.
-##   2. dm-github-policy --audit (auth): GET-only inspection of
+##   2. dm-github-org-policy --audit (auth): GET-only inspection of
 ##      org-ai-assisted's current settings using GHORG_AUDIT_TOKEN.
-##   3. dm-github-policy --dry-run (auth): prints the PATCH/PUT/POST
+##   3. dm-github-org-policy --dry-run (auth): prints the PATCH/PUT/POST
 ##      calls it WOULD make (prefixed "DRY-RUN:") but never mutates.
 ##
 ## All three are GET-only; safe with a read-only PAT. If a step
@@ -70,12 +70,27 @@ jobs:
     ## Pin to org-ai-assisted so no other repo's workflow can use the
     ## secret (GitHub also blocks this by default for forked PRs, but
     ## the explicit guard documents intent).
-    if: ${{ github.repository == 'org-ai-assisted/developer-meta-files' }}
+    ## ANDed with the CI-enabled variable, the org-wide switch every
+    ## workflow of ours carries. The repo pin above is the tighter of the
+    ## two and stays: it is what keeps the secret to this one repo.
+    if: >-
+      ${{ github.repository == 'org-ai-assisted/developer-meta-files'
+      && vars.CI_ENABLED_ORG_AI_ASSISTED == 'true' }}
 
+    env:
+      DIST_AI_REF: ${{ github.repository == 'org-ai-assisted/dist-ai' && github.sha || 'master' }}
     steps:
       - name: Checkout developer-meta-files
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
+          persist-credentials: false
+
+      - name: Checkout dist-ai (shared CI helper binaries)
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          repository: org-ai-assisted/dist-ai
+          ref: ${{ env.DIST_AI_REF }}
+          path: .github/dist-ai
           persist-credentials: false
 
       - name: Install genmkfile + helper-scripts + self
@@ -106,15 +121,15 @@ jobs:
         continue-on-error: true
         run: ./ci/live-probe-unauth.sh
 
-      - name: Run dm-github-policy --audit (live)
+      - name: Run dm-github-org-policy --audit (live)
         env:
           GITHUB_TOKEN: ${{ secrets.GHORG_AUDIT_TOKEN }}
-        run: dm-github-policy --audit
+        run: dm-github-org-policy --audit
 
-      - name: Run dm-github-policy --dry-run (live)
+      - name: Run dm-github-org-policy --dry-run (live)
         env:
           GITHUB_TOKEN: ${{ secrets.GHORG_AUDIT_TOKEN }}
-        run: dm-github-policy --dry-run
+        run: dm-github-org-policy --dry-run
 
       - name: Emit step summary
         if: always()
@@ -126,7 +141,7 @@ jobs:
         env:
           JOB_STATUS: ${{ job.status }}
         run: |
-          ./ci/step-summary-emit.sh \
+          ./.github/dist-ai/usr/bin/step-summary-emit \
             --tool 'github-org tools (live)' \
             --column-header field \
             --row "outcome=${JOB_STATUS}" \

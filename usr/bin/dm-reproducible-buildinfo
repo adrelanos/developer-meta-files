@@ -52,6 +52,7 @@ error() {
 target=""
 image=""
 output=""
+dry_run="false"
 
 while [ "$#" -gt 0 ]; do
    case "${1:-}" in
@@ -70,6 +71,21 @@ while [ "$#" -gt 0 ]; do
          output="$2"
          shift 2
          ;;
+      --dry-run)
+         ## Emit the record WITHOUT requiring the image to exist. Every field but
+         ## Image-File comes from the environment and the pre-sign source-state
+         ## file, both of which exist seconds into a build -- so the whole record
+         ## is derivable long before the artifact is. Without this, observing a
+         ## change to this file costs a full build (~60 min) or ci/dry-run
+         ## (~36 min, measured); with it, ~12 ms.
+         ##
+         ## It skips ONLY the existence check: the same code produces the same
+         ## fields by the same path, so what it emits is what a real run emits.
+         ## Image-File still comes from --image, which is why --image stays
+         ## required -- a record naming no artifact would be a different record.
+         dry_run='true'
+         shift
+         ;;
       -h|--help)
          ## FIXME: Violation of Bash Style Guide R-153 (do not extract help
          ## from comments
@@ -84,7 +100,11 @@ done
 
 [ -n "${target}" ] || error "--target is required."
 [ -n "${image}" ]  || error "--image is required."
-[ -f "${image}" ]  || error "image does not exist: '${image}'"
+if [ "${dry_run}" = 'true' ]; then
+   [ -f "${image}" ] || printf '%s\n' "INFO: --dry-run: '${image}' does not exist; emitting the record anyway." >&2
+else
+   [ -f "${image}" ] || error "image does not exist: '${image}'"
+fi
 [ -n "${output}" ] || output="${image}.dm-buildinfo"
 
 ## Read a build-exported variable; 'unknown' when unset so the record is always
@@ -92,6 +112,121 @@ done
 ## FIXME: Violation of Bash Style Guide R-074 (no semicolon command chaining)
 ## FIXME: Violation of Bash Style Guide R-141 (carefully guard implied eval)
 val() { local v="${!1:-}"; printf '%s' "${v:-unknown}"; }
+
+## The source state recorded by help-steps/sign-and-tag BEFORE it amended
+## anything. It has to come from there: sign-tag-head rewrites the parent's HEAD
+## and every submodule's HEAD, and those commits exist only inside that build, so
+## reading them here would publish a signed record pointing at commits nobody can
+## fetch. It also carries the submodule SHAs the build actually used, which CI's
+## fork-branch checkout resolves from moving branch tips and records nowhere else.
+source_state_file="${dm_source_state_file:-}"
+if [ -z "${source_state_file}" ] && [ -n "${binary_build_folder_dist:-}" ]; then
+   source_state_file="${binary_build_folder_dist}/dm-source-state"
+fi
+
+## Say so in the record rather than silently emitting 'unknown': an absent or
+## unusable state file means the image was built by a path that did not record
+## its provenance, and a verifier needs to know that is why, not guess.
+state_unrecorded() {
+   printf '%s\n' "Source-Commit: unrecorded ($1)" "Submodule-State: unrecorded"
+}
+
+## Readability is not enough. This block is interpolated INTO the Deb822 record
+## below, where a blank line is the record TERMINATOR -- so an empty or partial
+## file does not merely lose provenance, it truncates the record and detaches
+## every field after it into an invalid paragraph. Content is therefore
+## validated, and anything short of both records is reported as unrecorded.
+source_state_block=""
+if [ -z "${source_state_file}" ]; then
+   ## Without this, an unset binary_build_folder_dist yields the absolute path
+   ## '/dm-source-state' and this reads whatever happens to sit in the root
+   ## directory.
+   source_state_block="$(state_unrecorded "neither dm_source_state_file nor binary_build_folder_dist is set")"
+elif [ ! -f "${source_state_file}" ] || [ ! -r "${source_state_file}" ]; then
+   source_state_block="$(state_unrecorded "help-steps/sign-and-tag did not run, or wrote no ${source_state_file}")"
+else
+   source_state_candidate="$(cat -- "${source_state_file}")"
+   state_reject=""
+   case "${source_state_candidate}" in
+      "")
+         state_reject="${source_state_file} is empty"
+         ;;
+      *$'\n\n'*)
+         state_reject="${source_state_file} contains a blank line, which would terminate this Deb822 record"
+         ;;
+   esac
+   if [ -z "${state_reject}" ]; then
+      case "${source_state_candidate}" in
+         "Source-Commit: "*)
+            true
+            ;;
+         *)
+            state_reject="${source_state_file} does not start with a Source-Commit field"
+            ;;
+      esac
+   fi
+   if [ -z "${state_reject}" ]; then
+      case "${source_state_candidate}" in
+         *"Submodule-State:"*)
+            true
+            ;;
+         *)
+            state_reject="${source_state_file} carries no Submodule-State field"
+            ;;
+      esac
+   fi
+   if [ -n "${state_reject}" ]; then
+      source_state_block="$(state_unrecorded "${state_reject}")"
+   else
+      source_state_block="${source_state_candidate}"
+   fi
+fi
+
+## Source-Version and Source-Commit name DIFFERENT commits by design. Do not
+## assert they agree.
+##
+## A previous version of this file required them to be equal, and that check
+## fails every signed build:
+##   - sign-and-tag records Source-Commit from 'git rev-parse HEAD' BEFORE it
+##     signs, deliberately -- see its own comment. It then runs sign-tag-head,
+##     which rewrites the parent's HEAD via 'commit --amend -S'.
+##   - 'dist_build_version' is derived by 'git describe' AFTER that amend, so its
+##     '-g<sha>' suffix names the amended commit.
+## The pre-sign commit is the one a rebuilder can actually fetch; the amended one
+## exists only inside that build. Recording the fetchable commit while the
+## version describes the ephemeral one is the intended behaviour, so equality is
+## the wrong invariant -- it blocked CI on a correct record.
+##
+## The underlying hazard is real and NOT covered here: 'dist_build_version' is
+## auto-detected only when UNSET, so a value inherited from a reused workspace
+## silently wins over the actual tree (observed: Source-Commit 02096cd4... beside
+## Source-Version ...-ge65ff458...). Catching that needs a comparison against the
+## tree's CURRENT HEAD, which this script cannot obtain reliably -- it runs both
+## in-tree during a build and from an installed /usr/bin path, and guessing a
+## repository from the working directory is how the last false positive happened.
+## Belongs where dist_build_version is set (help-steps/variables), not here.
+
+## An image built with --reproducible-dist-build-version carries a NORMALIZED
+## version (the describe suffix stripped), so it is NOT the artifact an official
+## build of this commit would produce. Say so IN the record: otherwise such an
+## image is indistinguishable from a release one, and someone could compare the
+## two and read the difference as a reproducibility failure.
+##
+## Emitted only when normalization actually happened, so an ordinary record is
+## byte-unchanged and existing comparisons keep working.
+## Record BOTH versions: the normalized one is what the image carries, the
+## unnormalized one is what an official build of this commit would have carried.
+## Keeping only the first would make a normalized image untraceable back to the
+## release artifact it corresponds to without the repo in hand.
+version_normalized_field=""
+if [ "${dist_build_version_reproducible:-}" = "true" ]; then
+   version_normalized_field="
+Version-Normalized: true"
+   if [ -n "${dist_build_version_unnormalized:-}" ]; then
+      version_normalized_field="${version_normalized_field}
+Source-Version-Unnormalized: ${dist_build_version_unnormalized}"
+   fi
+fi
 
 ## Deb822 (RFC822-style): greppable, signable, and the shop's idiom. The trailing
 ## blank line is the Deb822 record terminator. Fields follow Debian '.buildinfo'
@@ -106,8 +241,8 @@ printf '%s\n' "\
 Format: 1.0
 Buildinfo-Type: derivative-image
 Source-Repo: $(val project_clearnet)
-Source-Commit: $(val dist_build_current_git_head)
-Source-Version: $(val dist_build_version)
+${source_state_block}
+Source-Version: $(val dist_build_version)${version_normalized_field}
 Flavor: $(val dist_build_flavor)
 Target: ${target}
 Build-Type: $(val dist_build_type)

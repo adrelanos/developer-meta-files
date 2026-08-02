@@ -37,25 +37,106 @@ set -o errtrace
 shopt -s inherit_errexit
 shopt -s shift_verbose
 
-## style-ok: no-has -- standalone operator tool; does not source derivative-maker helper-scripts.
+## style-ok: no-has -- operator tool; sources only strings.bsh from helper-scripts (below),
+## not the derivative-maker help-steps stack, so 'has' is not available here.
 ## style-ok: no-safe-rm -- the only removal is the mktemp'd rewrite temp on the EXIT
 ## cleanup path (a fixed '.XXXXXX' path beside the sources file, never user input);
 ## safe-rm is not needed by this standalone tool.
 
+## Generic string validators, used ALONGSIDE this tool's own exact-shape checks. Resolves via
+## HELPER_SCRIPTS_PATH for a from-source build, else the installed path. Available wherever
+## sanitize-string and scurl are: all three ship in helper-scripts.
+# shellcheck source=../../../helper-scripts/usr/libexec/helper-scripts/strings.bsh
+source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/strings.bsh
+
 ## HTTPS, not HTTP: over plain HTTP a network attacker or untrusted proxy could forge the month
 ## listing and the per-snapshot Release checks, pinning an attacker-selected stale or nonexistent
-## timestamp. (Following redirects does not protect the initial request.)
+## timestamp. The downloads below go through scurl (the project's hardened curl wrapper), which
+## enforces '--proto =https --tlsv1.3' and so rejects any plain-HTTP hop -- including a redirect --
+## keeping this base URL https end to end.
 SNAPSHOT_BASE='https://snapshot.debian.org/archive'
+## The machine-readable api lives at the site root, not under /archive/.
+SNAPSHOT_MR='https://snapshot.debian.org/mr'
 
 source_root="${HOME}/derivative-maker"
 dry_run='false'
 
-## Cleanup temp file on exit.
+## Files carrying the pin as a literal timestamp, rewritten together, relative to
+## --source-root. The FIRST is authoritative: the current pin is read from it and every other
+## must already agree before anything is written. The rest are optional when absent -- an
+## older tree may not carry them -- but strict when present, because a pin file left behind on
+## an old snapshot is the failure this list exists to prevent.
+PIN_FILES=(
+   'build_sources/debian_stable_frozen_clearnet.sources'
+   'build_sources/debian_stable_frozen_direct_clearnet.sources'
+)
+
+## Plain one-line copy of the pin. Consumers 'cat' this instead of parsing a URI path segment
+## out of deb822; the sanity check against the deb822 files is a grep and a string compare.
+PIN_TIMESTAMP_FILE='build_sources/frozen-snapshot-timestamp'
+
+## The atomic rewrite (below) creates a temp beside the sources file; track it
+## globally and remove it on EXIT so a failure mid-rewrite under errexit cannot
+## leave untracked garbage in build_sources/ (which would break git-cleanliness
+## checks in reproducible builds). A successful 'mv' clears the global first, so
+## the trap then removes nothing.
 frozen_tmp_file=''
 frozen_snapshot_cleanup() {
    [ -z "${frozen_tmp_file}" ] || rm --force -- "${frozen_tmp_file}"
 }
 trap frozen_snapshot_cleanup EXIT
+
+## Rewrite one file's pin token, as close to atomically as a shell reasonably gets: create the
+## temp BESIDE the target (same filesystem, so the rename is atomic in the namespace) and copy
+## the target's mode first -- mktemp defaults to 0600, and a plain /tmp temp + cross-filesystem
+## mv would silently make the file 0600 (unreadable to other build accounts in a shared
+## checkout) and non-atomic.
+##
+## Honest limit: the rename is atomic, the DURABILITY is not. Without an fsync of the temp
+## before the rename, a crash in that window can leave a truncated or empty file on some
+## filesystems. 'sync' below closes that at the cost of one flush on a tool that runs
+## occasionally by hand.
+##
+## $1 = file, $2 = old timestamp, $3 = new timestamp.
+rewrite_pin_file() {
+   local target="$1" old_ts="$2" new_ts="$3"
+   ## Resolve a symlink to the file it points at BEFORE writing. Shared-checkout layouts do
+   ## point build_sources/ entries at a common tree, and 'mv'ing onto a symlink replaces the
+   ## LINK with a regular file: the real file keeps its old pin, the build keeps using it, and
+   ## the diff looks applied. A '-r' test does not catch this because a symlink to a readable
+   ## file is readable.
+   target="$(readlink --canonicalize -- "${target}")"
+   frozen_tmp_file="$(mktemp -- "${target}.XXXXXX")"
+   chmod --reference="${target}" -- "${frozen_tmp_file}"
+   sed "s|${old_ts}|${new_ts}|g" -- "${target}" > "${frozen_tmp_file}"
+   sync -- "${frozen_tmp_file}"
+   mv -- "${frozen_tmp_file}" "${target}"
+   ## 'mv' consumed the temp; clear the global so the EXIT cleanup is a no-op.
+   frozen_tmp_file=''
+   printf 'dm-update-frozen-snapshot: %s -> %s in %s\n' "${old_ts}" "${new_ts}" "${target}"
+}
+
+## Same atomic dance for the plain one-line pin file, which is written whole rather than
+## substituted (it may not exist yet, so there is no old token to replace).
+## $1 = file, $2 = timestamp.
+write_pin_timestamp_file() {
+   local target="$1" new_ts="$2"
+   if [ -e "${target}" ]; then
+      target="$(readlink --canonicalize -- "${target}")"
+   fi
+   frozen_tmp_file="$(mktemp -- "${target}.XXXXXX")"
+   if [ -e "${target}" ]; then
+      chmod --reference="${target}" -- "${frozen_tmp_file}"
+   else
+      ## Created fresh: match what a checked-out 0644 file would be, minus the umask.
+      chmod 0644 -- "${frozen_tmp_file}"
+   fi
+   printf '%s\n' "${new_ts}" > "${frozen_tmp_file}"
+   sync -- "${frozen_tmp_file}"
+   mv -- "${frozen_tmp_file}" "${target}"
+   frozen_tmp_file=''
+   printf 'dm-update-frozen-snapshot: wrote %s to %s\n' "${new_ts}" "${target}"
+}
 
 usage() {
    cat -- <<'EOF'
@@ -71,28 +152,119 @@ Options:
 EOF
 }
 
-## Extract a field value (e.g. the first 'Suites:' or 'URIs:' line's value) from a deb822 file.
-## $1 = field name, $2 = file, $3 = occurrence (1-based).
+## Print field ${2} of the single stanza in ${1} selected by ${3}:
+##   security -> the stanza whose Suites name a '-security' suite
+##   primary  -> the stanza whose Suites name something else
+##
+## grep-dctrl (dctrl-tools) does ALL the deb822 work here: paragraph boundaries, field
+## continuation lines, and the stanza selection itself. Nothing about the format is
+## re-implemented in bash.
+##
+## Selecting by PREDICATE rather than by position is what makes this correct. Addressing
+## stanzas by index over grep-dctrl's output -- 'sed -n "${n}p"' -- counts OUTPUT LINES, so a
+## wrapped field body makes stanza 1's continuation line answer as stanza 2.
+##
+## The '-security' suffix is Debian's own suite-naming convention, so the predicate survives a
+## rename of the local approx repositories (debian-frozen / debian-security-frozen), which a
+## URIs predicate would not.
+##
+## BOTH selectors are POSITIVE on Suites. A bare '--invert-match' would also select a stanza
+## that carries no Suites field at all, since an absent field cannot match the pattern; the
+## primary selector therefore reads "has a Suites AND it is not a -security one". This also
+## guarantees every selected stanza carries the field the stanza counter below relies on.
+##
+## '--pattern=' rather than a positional pattern: the pattern starts with '-' and would
+## otherwise have to be defended from option parsing by argument order.
+## $1 = file, $2 = field name, $3 = selector (security|primary).
 deb822_field() {
-   local field="$1" file="$2" occurrence="$3"
-   ## '|| true': grep exits 1 when the field is absent, which under 'set -e -o pipefail' would abort
-   ## the caller's "$(deb822_field ...)" assignment before its empty-result check can run.
-   grep -E "^${field}:" -- "${file}" | sed -n "${occurrence}p" | sed -E "s/^${field}:[[:space:]]*//" || true
+   local file="$1" field="$2" which="$3" status names stanza_count
+   local -a select=()
+   case "${which}" in
+      security)
+         select=( --field=Suites --regex --pattern=-security )
+         ;;
+      primary)
+         select=(
+            --field=Suites --regex --pattern=.
+            --and --not --field=Suites --regex --pattern=-security
+         )
+         ;;
+      *)
+         printf 'dm-update-frozen-snapshot: deb822_field: unknown selector %s\n' "${which}" >&2
+         exit 2
+         ;;
+   esac
+
+   ## Exit 1 means no stanza matched the selector; the caller's empty-result check reports
+   ## that. Exit 2 is a parser or file error -- laundering it into an empty value would let a
+   ## malformed .sources file read as "field absent" and silently take the not-found path.
+   ##
+   ## Captured on its own rather than piped straight into the counter: under pipefail a
+   ## pipeline reports the RIGHTMOST non-zero status, so a grep exit 1 downstream would mask
+   ## grep-dctrl's exit 2 here.
+   status=0
+   names="$(grep-dctrl "${select[@]}" --show-field=Suites -- "${file}")" || status="$?"
+   case "${status}" in
+      0)
+         ;;
+      1)
+         return 0
+         ;;
+      *)
+         printf 'dm-update-frozen-snapshot: grep-dctrl failed (exit %s) on %s\n' \
+            "${status}" "${file}" >&2
+         exit 2
+         ;;
+   esac
+
+   ## Count STANZAS, not lines. Field names are kept on purpose: a wrapped body adds INDENTED
+   ## continuation lines, which do not match '^Suites:', so exactly one line per stanza is
+   ## counted however the value is folded. Counting a field's value lines instead would
+   ## miscount a legally wrapped field as several stanzas.
+   ## --ignore-case: deb822 field names are case-insensitive and grep-dctrl echoes the name
+   ## as it appeared in the file, so a legal 'suites:' would count 0 and abort a valid file.
+   stanza_count="$(grep --count --ignore-case '^Suites:' <<< "${names}" || true)"
+   if [ "${stanza_count}" -ne 1 ]; then
+      printf 'dm-update-frozen-snapshot: %s selector matched %s stanzas in %s; expected exactly 1\n' \
+         "${which}" "${stanza_count}" "${file}" >&2
+      exit 2
+   fi
+
+   grep-dctrl "${select[@]}" --no-field-names --show-field="${field}" -- "${file}"
 }
 
-## True (exit 0) if snapshot ${1} serves ${archive} ${suite}'s Release with HTTP 200.
+## True (exit 0) if snapshot ${1} serves ${archive} ${suite}'s Release (HTTP 200 or 302).
 ## $1 = timestamp, $2 = archive (debian|debian-security), $3 = suite.
 snapshot_serves() {
-   local timestamp="$1" archive="$2" suite="$3" code
-   code="$(curl --silent --show-error --location --output /dev/null \
+   local timestamp="$1" archive="$2" suite="$3" code status
+   ## curl's own exit status is captured SEPARATELY from the HTTP status. Folding them
+   ## together ('|| return 1') made a connect reset, DNS failure, TLS error or --max-time
+   ## timeout indistinguishable from a 404, so the abort branch below could never fire for
+   ## the transport cases its comment claims -- the candidate was silently treated as "does
+   ## not serve" and the search fell through to an older snapshot. Anyone able to drop
+   ## packets could hold the pin behind newest that way (the rollback guard keeps it a
+   ## freeze rather than a downgrade, but it is still silent).
+   ##
+   ## stderr is NOT discarded: --show-error exists to explain exactly this failure.
+   ## --location is deliberately ABSENT. scurl pins the scheme to https but not the HOST, so
+   ## following redirects would let snapshot.debian.org hand the request to any other https
+   ## server. Nothing here needs the body: an existing Release answers 302 (the redirect to
+   ## the content-addressed /file/<sha1>/ copy) and a missing one answers 404, so the status
+   ## alone decides, and the redirect is never taken.
+   status=0
+   code="$(scurl --silent --show-error --output /dev/null \
       --write-out '%{http_code}' --max-time 60 \
-      "${SNAPSHOT_BASE}/${archive}/${timestamp}/dists/${suite}/Release" 2>/dev/null)" || return 1
-   ## 200 = served, 404 = genuinely absent. Any other status (429 rate-limit, 5xx,
-   ## or a curl '000' connect failure) is a transport/server problem, not evidence
-   ## the suite is missing -- treating it as "not served" would loop the whole
-   ## month re-probing a rate-limited snapshot.debian.org. Abort instead.
+      "${SNAPSHOT_BASE}/${archive}/${timestamp}/dists/${suite}/Release")" || status="$?"
+   if [ "${status}" -ne 0 ]; then
+      printf 'dm-update-frozen-snapshot: transport failure (curl exit %s) probing %s/%s %s; aborting rather than treating it as "suite absent".\n' \
+         "${status}" "${archive}" "${timestamp}" "${suite}" >&2
+      exit 2
+   fi
+   ## 200 = served, 404 = genuinely absent. Any other status (429 rate-limit, 5xx) is a
+   ## server problem, not evidence the suite is missing -- treating it as "not served"
+   ## would re-probe a rate-limited snapshot.debian.org for every candidate. Abort instead.
    case "${code}" in
-      200)
+      200|302)
          return 0
          ;;
       404)
@@ -110,41 +282,191 @@ snapshot_serves() {
 ## from ${2}. A deb822 'Suites:' value can list more than one suite (e.g.
 ## 'trixie trixie-updates'), so each must be probed separately -- passing the whole
 ## string as one suite would request a nonexistent '.../dists/trixie trixie-updates/Release'.
-## $1 = timestamp, $2 = archive, $3 = space-separated suite list.
+##
+## The list may arrive FOLDED. grep-dctrl emits a wrapped field body verbatim, so a legal
+## 'Suites: trixie\n trixie-updates' reaches here with a newline in it, and 'read -r -a'
+## stops at the first one -- every suite after the fold would go unprobed and the pin could
+## advance to a snapshot that does not serve them. This is the same continuation-line trap
+## the stanza counting above is written to avoid; newlines are flattened to spaces first so
+## word splitting sees the whole list.
+## $1 = timestamp, $2 = archive, $3 = whitespace-separated suite list.
 snapshot_serves_all() {
    local timestamp="$1" archive="$2" suite_list="$3" suite
    local -a suites
+   suite_list="${suite_list//$'\n'/ }"
    read -r -a suites <<< "${suite_list}"
+   if [ "${#suites[@]}" -eq 0 ]; then
+      printf 'dm-update-frozen-snapshot: empty suite list for %s; refusing to treat that as "serves everything".\n' \
+         "${archive}" >&2
+      exit 2
+   fi
    for suite in "${suites[@]}"; do
       snapshot_serves "${timestamp}" "${archive}" "${suite}" || return 1
    done
    return 0
 }
 
+## How many of the newest snapshots to consider before giving up. A snapshot that exists but
+## does not yet serve every pinned suite (mid-sync, or a suite briefly absent) is the only
+## reason to look past the newest one, and the loop exits on the first that serves, so this
+## is a bound on a pathological case rather than a normal cost.
+SNAPSHOT_CANDIDATES=20
+
+## Archives whose timestamp listings are MERGED into one candidate set. A snapshot exists in
+## exactly the archives that were synced at that instant, so a security-only push yields a
+## timestamp present in 'debian-security' and absent from 'debian'. Drawing candidates from the
+## main archive alone makes such a snapshot unreachable -- and that is precisely the snapshot a
+## DSA needs, so the tool would propose a pin predating the fix and report success. DSA-6404-1
+## (expat, 30 Jul 2026) is that case: the newest common timestamp carried no fixed expat at all,
+## so the bump would have been a silent no-op.
+##
+## Merging is sound because the service resolves a pin per archive INDEPENDENTLY, to the newest
+## snapshot at or before it: a security-only timestamp resolves to itself in 'debian-security'
+## and to the preceding snapshot in 'debian'. snapshot_serves_all still proves every pinned suite
+## is served in BOTH archives before a timestamp can win, so widening the candidate set cannot
+## weaken the check that follows it.
+SNAPSHOT_ARCHIVES=( 'debian' 'debian-security' )
+
 ## Print the newest snapshot timestamp (YYYYMMDDTHHMMSSZ) that serves BOTH the primary suite
-## (debian) and the security suite (debian-security), scanning this month then last month.
+## (debian) and the security suite (debian-security).
+##
+## Candidates come from snapshot.debian.org's MACHINE-READABLE api,
+## '/mr/timestamp/?archive=<archive>' -- a documented JSON endpoint (added Aug 2024) that
+## returns every timestamp for one archive, oldest first. '?archive=' matters: the unfiltered
+## endpoint ships all eight archives, 1.9 MB, where one archive is 465 KB. Every archive in
+## SNAPSHOT_ARCHIVES is queried and the results merged (see there for why).
+##
+## Reading the list and taking the newest entries keeps the selection explicit and locally
+## verifiable, which is what a reproducibility pin should be. The service's own resolution is
+## what USES the pin: any timestamp resolves to the newest snapshot at or before it, and since
+## snapshots are immutable and only ever gain later timestamps, nothing can become a nearer
+## preceding match for a pin already written. A pinned instant resolves to the same snapshot
+## forever, in each archive independently.
+##
+## The result goes into LATEST_SNAPSHOT rather than stdout so this runs in the CURRENT shell.
+## Under '$(latest_valid_snapshot ...)' it would run in a subshell, where snapshot_serves'
+## 'exit 2' -- its abort on a 429, a 5xx or a transport failure -- would end only that
+## subshell, and the caller would report "no snapshot serving both suites" with exit 1,
+## blaming the suites for a rate limit.
 ## $1 = primary suite, $2 = security suite. Non-zero if none found.
+LATEST_SNAPSHOT=''
 latest_valid_snapshot() {
-   local suite="$1" security_suite="$2" year month listing timestamp anchor
-   ## Anchor month arithmetic on the 15th: 'date --date="-1 month"' on the 31st of a month that
-   ## follows a shorter one (e.g. May 31 -> "April 31" -> May 1) rolls over and would scan the
-   ## current month twice and skip the previous one. Every month has a 15th, so this is exact.
-   anchor="$(date --utc +%Y-%m-15)"
-   for months_back in 0 1; do
-      ## Current or previous UTC month. 'date' arithmetic keeps this dependency-free.
-      year="$(date --utc --date="${anchor} -${months_back} month" +%Y)"
-      month="$(date --utc --date="${anchor} -${months_back} month" +%m)"
-      listing="$(curl --silent --show-error --location --max-time 60 \
-         "${SNAPSHOT_BASE}/debian/?year=${year}&month=${month}" 2>/dev/null || true)"
-      ## Newest first.
-      while read -r timestamp; do
-         [ -n "${timestamp}" ] || continue
-         if snapshot_serves_all "${timestamp}" 'debian' "${suite}" \
-            && snapshot_serves_all "${timestamp}" 'debian-security' "${security_suite}"; then
-            printf '%s\n' "${timestamp}"
-            return 0
-         fi
-      done < <(printf '%s\n' "${listing}" | grep -oE '[0-9]{8}T[0-9]{6}Z' | sort --unique --reverse)
+   local suite="$1" security_suite="$2" listing status timestamp archive extracted
+   local -a candidates=() merged=() chunk=()
+   LATEST_SNAPSHOT=''
+
+   for archive in "${SNAPSHOT_ARCHIVES[@]}"; do
+      ## --max-filesize bounds a hostile or broken server streaming unbounded data into this
+      ## command substitution. 465 KB is the real payload today and it grows by one ~18-byte
+      ## entry per snapshot, so 8 MB is centuries of headroom. Caveat worth knowing: curl
+      ## enforces this up front from Content-Length, and mid-transfer for a chunked response,
+      ## so it bounds the damage rather than making it impossible.
+      status=0
+      listing="$(scurl --silent --show-error --max-time 120 --max-filesize 8000000 \
+         "${SNAPSHOT_MR}/timestamp/?archive=${archive}")" || status="$?"
+      if [ "${status}" -ne 0 ]; then
+         printf 'dm-update-frozen-snapshot: could not fetch %s/timestamp/?archive=%s (exit %s)\n' \
+            "${SNAPSHOT_MR}" "${archive}" "${status}" >&2
+         return 1
+      fi
+
+      ## jq, not a regex over the response text: the point of using the machine-readable
+      ## endpoint is to parse it as the structured document it is.
+      ## jq's status is captured before mapfile, not inside a process substitution where
+      ## neither errexit nor pipefail can see it. Otherwise a schema change or an HTML error
+      ## page yields an empty array and gets reported as "no timestamps in the listing" --
+      ## fail-closed, but blaming the archive for a parse failure.
+      ##
+      ## The archive name keys the result object, so it is passed as data ('--arg') rather
+      ## than spliced into the filter: 'debian-security' inside a '.result.<name>' path would
+      ## parse as a subtraction.
+      status=0
+      extracted="$(printf '%s' "${listing}" \
+         | jq --raw-output --arg archive "${archive}" \
+            '.result[$archive] | .[]')" || status="$?"
+      if [ "${status}" -ne 0 ]; then
+         printf 'dm-update-frozen-snapshot: could not parse the %s listing (jq exit %s); the api schema may have changed\n' \
+            "${archive}" "${status}" >&2
+         return 1
+      fi
+
+      ## An archive with no timestamps is a schema or endpoint problem, not an empty archive.
+      ## Refuse rather than silently narrowing the candidate set back to one archive, which is
+      ## the exact failure this merge exists to remove.
+      if [ -z "${extracted}" ]; then
+         printf 'dm-update-frozen-snapshot: no timestamps for archive %s; refusing to guess\n' \
+            "${archive}" >&2
+         return 1
+      fi
+
+      chunk=()
+      mapfile -t chunk <<< "${extracted}"
+      merged+=( "${chunk[@]}" )
+   done
+
+   ## Newest first, duplicates collapsed. The timestamps are fixed-width 'YYYYMMDDTHHMMSSZ',
+   ## so a lexicographic reverse sort IS chronological. Sorted in full and then truncated in
+   ## bash rather than piped through 'head': 'sort | head' would hand sort a closed pipe once
+   ## head had its lines, and pipefail would turn that SIGPIPE into a spurious failure.
+   status=0
+   extracted="$(printf '%s\n' "${merged[@]}" | sort --reverse --unique)" || status="$?"
+   if [ "${status}" -ne 0 ]; then
+      printf 'dm-update-frozen-snapshot: could not order the merged snapshot listing (exit %s)\n' \
+         "${status}" >&2
+      return 1
+   fi
+   mapfile -t candidates <<< "${extracted}"
+   if [ "${#candidates[@]}" -gt "${SNAPSHOT_CANDIDATES}" ]; then
+      candidates=( "${candidates[@]:0:${SNAPSHOT_CANDIDATES}}" )
+   fi
+
+   if [ "${#candidates[@]}" -eq 0 ]; then
+      printf 'dm-update-frozen-snapshot: no timestamps in the snapshot.debian.org listing; refusing to guess\n' >&2
+      return 1
+   fi
+
+   for timestamp in "${candidates[@]}"; do
+      ## TWO independent gates on every server-supplied entry, because neither subsumes the
+      ## other. strings.bsh rejects the injection classes -- empty, multi-line, path
+      ## traversal, command substitution, shell metacharacters, ANSI escapes -- but accepts
+      ## anything alphanumeric, so 'not-a-timestamp' sails through it. The exact-shape case
+      ## below rejects that but is one hand-written pattern, and a mistake in it would be
+      ## caught by nothing else. Verified against both sets of inputs.
+      ##
+      ## Their stderr is suppressed and one diagnostic emitted below instead. The original
+      ## reason was that check_is_not_empty_and_only_one_line echoed the rejected value with
+      ## a plain printf; that is fixed at the source now (strings.bsh reports through stecho),
+      ## so this no longer guards a hole. It stays because the installed helper-scripts on a
+      ## given build host may predate that fix, and because one specific message about an api
+      ## entry beats two generic ones about a variable name.
+      if ! check_is_not_empty_and_only_one_line timestamp 2>/dev/null \
+         || ! check_is_alpha_numeric timestamp 2>/dev/null; then
+         printf 'dm-update-frozen-snapshot: rejected an unsafe entry from the api: %s\n' \
+            "$(printf '%s' "${timestamp}" | sanitize-string 80)" >&2
+         return 1
+      fi
+
+      ## Guard the exact shape before it can reach a URL. A malformed entry must fail loudly
+      ## here, not be pasted into a request or, worse, written into the pin.
+      case "${timestamp}" in
+         [0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]T[0-9][0-9][0-9][0-9][0-9][0-9]Z)
+            ;;
+         *)
+            ## The value is server-controlled and about to be printed to an operator's
+            ## terminal, so it goes through sanitize-string first: a hostile entry could
+            ## otherwise carry ANSI escapes or a U+202E right-to-left override and spoof
+            ## what the operator reads. The length cap also stops a megabyte-long "entry"
+            ## from flooding the screen.
+            printf 'dm-update-frozen-snapshot: unexpected timestamp shape from the api: %s\n' \
+               "$(printf '%s' "${timestamp}" | sanitize-string 80)" >&2
+            return 1
+            ;;
+      esac
+      if snapshot_serves_all "${timestamp}" 'debian' "${suite}" \
+         && snapshot_serves_all "${timestamp}" 'debian-security' "${security_suite}"; then
+         LATEST_SNAPSHOT="${timestamp}"
+         return 0
+      fi
    done
    return 1
 }
@@ -157,50 +479,134 @@ update_frozen_snapshot() {
       return 1
    fi
 
-   local suite security_suite current_ts new_ts
-   suite="$(deb822_field 'Suites' "${frozen_sources}" 1)"
-   security_suite="$(deb822_field 'Suites' "${frozen_sources}" 2)"
+   local suite security_suite current_ts new_ts frozen_uri security_uri security_ts
+   suite="$(deb822_field "${frozen_sources}" 'Suites' 'primary')"
+   security_suite="$(deb822_field "${frozen_sources}" 'Suites' 'security')"
    if [ -z "${suite}" ] || [ -z "${security_suite}" ]; then
       printf 'dm-update-frozen-snapshot: could not read Suites from %s\n' "${frozen_sources}" >&2
       return 1
    fi
 
-   ## The pinned timestamp appears as a URI path segment '.../debian-frozen/<TIMESTAMP>'.
-   current_ts="$(grep -oE '/debian-frozen/[0-9]{8}T[0-9]{6}Z' -- "${frozen_sources}" | head -n1 | grep -oE '[0-9]{8}T[0-9]{6}Z' || true)"
+   ## The pinned timestamp is a URI path segment '.../debian-frozen/<TIMESTAMP>' in the primary
+   ## stanza's URIs field. grep-dctrl extracts the field (deb822); the timestamp token inside
+   ## the value is a plain-text path segment, so grep is the right tool for that half.
+   frozen_uri="$(deb822_field "${frozen_sources}" 'URIs' 'primary')"
+   current_ts="$(grep -oE '[0-9]{8}T[0-9]{6}Z' --max-count=1 <<< "${frozen_uri}" || true)"
    if [ -z "${current_ts}" ]; then
       printf 'dm-update-frozen-snapshot: no pinned timestamp found in %s\n' "${frozen_sources}" >&2
       return 1
    fi
 
-   printf 'dm-update-frozen-snapshot: current pin %s (suite %s / %s); querying snapshot.debian.org ...\n' \
-      "${current_ts}" "${suite}" "${security_suite}" >&2
-   if ! new_ts="$(latest_valid_snapshot "${suite}" "${security_suite}")"; then
-      printf 'dm-update-frozen-snapshot: no snapshot serving both suites found in the last two months\n' >&2
+   ## The rewrite below is a substitution of the PRIMARY stanza's timestamp token, so it only
+   ## updates the security stanza because both stanzas happen to carry the same one. Verify
+   ## that instead of assuming it: if they ever diverge, the substitution would bump the
+   ## primary URI, silently leave the security URI on its old snapshot, and still exit 0 --
+   ## and the validation above already checked debian-security at the NEW timestamp, so the
+   ## tool would be reporting success for a pin combination it never wrote. A security
+   ## archive quietly frozen on an old snapshot is the worst outcome this tool has.
+   security_uri="$(deb822_field "${frozen_sources}" 'URIs' 'security')"
+   security_ts="$(grep -oE '[0-9]{8}T[0-9]{6}Z' --max-count=1 <<< "${security_uri}" || true)"
+   if [ "${security_ts}" != "${current_ts}" ]; then
+      printf 'dm-update-frozen-snapshot: the two stanzas are pinned to different snapshots (primary %s, security %s) in %s\n' \
+         "${current_ts}" "${security_ts:-none}" "${frozen_sources}" >&2
+      printf 'dm-update-frozen-snapshot: a single-token rewrite cannot update both; fix the file by hand first.\n' >&2
       return 1
    fi
 
+   ## Every other pin file must already agree, and so must the plain timestamp file. The check
+   ## is deliberately dumb -- grep each file for timestamp tokens, cat the plain one, compare
+   ## the strings -- because anything cleverer is a second place for the pin to be wrong.
+   ## Absent optional files are fine; present-and-disagreeing is not, since the rewrite below
+   ## substitutes the OLD token and would silently skip a file already on a different one.
+   local pin_file pin_file_path pin_file_ts stray_ts recorded_ts
+   for pin_file in "${PIN_FILES[@]:1}"; do
+      pin_file_path="${source_root}/${pin_file}"
+      [ -e "${pin_file_path}" ] || continue
+      ## 'URIs:' lines only. These files carry example snapshot URLs in their
+      ## header prose, and a bare grep over the whole file reports those example
+      ## dates as extra pins -- which reads exactly like drift.
+      stray_ts="$(grep -E '^[[:space:]]*URIs:' -- "${pin_file_path}" \
+         | grep -oE '[0-9]{8}T[0-9]{6}Z' | sort --unique || true)"
+      if [ -z "${stray_ts}" ]; then
+         printf 'dm-update-frozen-snapshot: no pinned timestamp found in %s\n' "${pin_file_path}" >&2
+         return 1
+      fi
+      if [ ! "${stray_ts}" = "${current_ts}" ]; then
+         printf 'dm-update-frozen-snapshot: %s is pinned to %s, not %s (from %s)\n' \
+            "${pin_file_path}" "$(tr '\n' ' ' <<< "${stray_ts}")" "${current_ts}" "${frozen_sources}" >&2
+         printf 'dm-update-frozen-snapshot: a single-token rewrite cannot reconcile them; fix by hand first.\n' >&2
+         return 1
+      fi
+   done
+
+   pin_file_path="${source_root}/${PIN_TIMESTAMP_FILE}"
+   if [ -e "${pin_file_path}" ]; then
+      recorded_ts="$(< "${pin_file_path}")"
+      ## Tolerate trailing whitespace/newline, nothing else.
+      recorded_ts="${recorded_ts//[[:space:]]/}"
+      if [ ! "${recorded_ts}" = "${current_ts}" ]; then
+         printf 'dm-update-frozen-snapshot: %s records %s, but %s is pinned to %s\n' \
+            "${pin_file_path}" "${recorded_ts:-empty}" "${frozen_sources}" "${current_ts}" >&2
+         printf 'dm-update-frozen-snapshot: fix the drift by hand first.\n' >&2
+         return 1
+      fi
+   fi
+
+   printf 'dm-update-frozen-snapshot: current pin %s (suite %s / %s); querying snapshot.debian.org ...\n' \
+      "${current_ts}" "${suite}" "${security_suite}" >&2
+   if ! latest_valid_snapshot "${suite}" "${security_suite}"; then
+      printf 'dm-update-frozen-snapshot: none of the newest %s snapshots serves both suites\n' \
+         "${SNAPSHOT_CANDIDATES}" >&2
+      return 1
+   fi
+   new_ts="${LATEST_SNAPSHOT}"
+
+   ## ROLLBACK GUARD. Everything above this point trusts snapshot.debian.org to say which
+   ## snapshot is newest, and a pin that moves BACKWARDS is a downgrade: an older snapshot is
+   ## just as validly signed, so apt's signature check cannot notice, yet it reinstates
+   ## package versions whose vulnerabilities have since been fixed. That is the classic
+   ## rollback attack, and it is the one outcome a hostile or malfunctioning listing could
+   ## still cause after the shape checks -- those prove a timestamp is well-formed, not that
+   ## it is an advance. Time only moves forward, so refuse and let a human look.
+   ## Stripping T/Z leaves YYYYMMDDHHMMSS, which compares correctly as an integer.
+   if [ "${new_ts//[TZ]/}" -lt "${current_ts//[TZ]/}" ]; then
+      printf 'dm-update-frozen-snapshot: REFUSING to move the pin backwards: %s -> %s\n' \
+         "${current_ts}" "${new_ts}" >&2
+      printf 'dm-update-frozen-snapshot: snapshot.debian.org offered an OLDER snapshot than the current pin.\n' >&2
+      printf 'dm-update-frozen-snapshot: that is a downgrade (older but validly signed packages); investigate before pinning it.\n' >&2
+      return 1
+   fi
    if [ "${new_ts}" = "${current_ts}" ]; then
       printf 'dm-update-frozen-snapshot: already at the newest valid snapshot (%s); nothing to do.\n' "${current_ts}"
       return 0
    fi
 
    if [ "${dry_run}" = 'true' ]; then
-      printf 'dm-update-frozen-snapshot: DRY-RUN -- would bump %s -> %s in %s\n' "${current_ts}" "${new_ts}" "${frozen_sources}"
+      printf 'dm-update-frozen-snapshot: DRY-RUN -- would bump %s -> %s in:\n' "${current_ts}" "${new_ts}"
+      for pin_file in "${PIN_FILES[@]}"; do
+         pin_file_path="${source_root}/${pin_file}"
+         [ -e "${pin_file_path}" ] || continue
+         printf '  %s\n' "${pin_file_path}"
+      done
+      printf '  %s (plain timestamp)\n' "${source_root}/${PIN_TIMESTAMP_FILE}"
       return 0
    fi
 
-   ## Rewrite atomically: create the temp BESIDE the target (same filesystem, so 'mv' is atomic) and
-   ## copy the target's mode first -- mktemp defaults to 0600, and a plain /tmp temp + cross-filesystem
-   ## mv would silently make the sources file 0600 (unreadable to other build accounts in a shared
-   ## checkout) and non-atomic. Replace the exact old timestamp token (it appears only in the two
-   ## frozen URIs), leaving the rest of the file untouched.
-   frozen_tmp_file="$(mktemp -- "${frozen_sources}.XXXXXX")"
-   chmod --reference="${frozen_sources}" -- "${frozen_tmp_file}"
-   sed "s|${current_ts}|${new_ts}|g" -- "${frozen_sources}" > "${frozen_tmp_file}"
-   mv -- "${frozen_tmp_file}" "${frozen_sources}"
-   ## 'mv' consumed the temp; clear the global so the EXIT cleanup is a no-op.
-   frozen_tmp_file=''
-   printf 'dm-update-frozen-snapshot: bumped frozen snapshot pin %s -> %s in %s\n' "${current_ts}" "${new_ts}" "${frozen_sources}"
+   ## Replace the exact old timestamp token in every pin file, leaving the rest untouched. The
+   ## checks above proved they all carry that same token, so one substitution per file is
+   ## sufficient and cannot half-apply.
+   for pin_file in "${PIN_FILES[@]}"; do
+      pin_file_path="${source_root}/${pin_file}"
+      [ -e "${pin_file_path}" ] || continue
+      rewrite_pin_file "${pin_file_path}" "${current_ts}" "${new_ts}"
+   done
+
+   ## Written last: if a rewrite above fails under errexit, the plain file still records the
+   ## old pin, which the drift check then reports rather than the tool silently claiming a
+   ## bump it did not finish.
+   write_pin_timestamp_file "${source_root}/${PIN_TIMESTAMP_FILE}" "${new_ts}"
+
+   printf 'dm-update-frozen-snapshot: bumped frozen snapshot pin %s -> %s\n' "${current_ts}" "${new_ts}"
    printf 'dm-update-frozen-snapshot: review and commit the diff so the new pin is reproducible.\n'
 }
 
@@ -242,5 +648,18 @@ if [ "$#" -gt 0 ]; then
    usage >&2
    exit 2
 fi
+
+## Command-availability preflight (R-091): probe every external tool once here, not lazily at
+## the first call site. grep-dctrl is load-bearing -- it does all the deb822 parsing, with no
+## hand-rolled fallback -- so its absence must be one clear message, not a mid-run failure
+## after the network probing has already started.
+command -v grep-dctrl >/dev/null 2>&1 \
+   || { printf 'dm-update-frozen-snapshot: grep-dctrl not found; install dctrl-tools.\n' >&2; exit 2; }
+command -v scurl >/dev/null 2>&1 \
+   || { printf 'dm-update-frozen-snapshot: scurl not found; helper-scripts is required.\n' >&2; exit 2; }
+command -v sanitize-string >/dev/null 2>&1 \
+   || { printf 'dm-update-frozen-snapshot: sanitize-string not found; helper-scripts is required.\n' >&2; exit 2; }
+command -v jq >/dev/null 2>&1 \
+   || { printf 'dm-update-frozen-snapshot: jq not found; required to parse the snapshot.debian.org api.\n' >&2; exit 2; }
 
 update_frozen_snapshot

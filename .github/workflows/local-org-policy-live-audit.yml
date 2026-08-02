@@ -4,8 +4,8 @@
 
 ## AI-Assisted
 
-## Manual-trigger live-API policy check. Runs `dm-github-policy
-## --audit` followed by `dm-github-policy --dry-run` against the real
+## Manual-trigger live-API policy check. Runs `dm-github-org-policy
+## --audit` followed by `dm-github-org-policy --dry-run` against the real
 ## GitHub REST API using the GHORG_AUDIT_TOKEN repo secret (a
 ## fine-grained PAT scoped read-only to org-ai-assisted). No writes;
 ## no fork CI; only fires when an authorized user clicks "Run
@@ -61,7 +61,7 @@ concurrency:
 
 jobs:
   live-policy-check:
-    name: dm-github-policy --audit + --dry-run (live)
+    name: dm-github-org-policy --audit + --dry-run (live)
     runs-on: ubuntu-latest
     timeout-minutes: 20
     container:
@@ -70,12 +70,27 @@ jobs:
     ## Pin to org-ai-assisted so no other repo's workflow can use the
     ## secret (GitHub also blocks this by default for forked PRs, but
     ## the explicit guard documents intent).
-    if: ${{ github.repository == 'org-ai-assisted/developer-meta-files' }}
+    ## ANDed with the CI-enabled variable, the org-wide switch every
+    ## workflow of ours carries. The repo pin above is the tighter of the
+    ## two and stays: it is what keeps the secret to this one repo.
+    if: >-
+      ${{ github.repository == 'org-ai-assisted/developer-meta-files'
+      && vars.CI_ENABLED_ORG_AI_ASSISTED == 'true' }}
 
+    env:
+      DIST_AI_REF: ${{ github.repository == 'org-ai-assisted/dist-ai' && github.sha || 'master' }}
     steps:
       - name: Checkout developer-meta-files
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
+          persist-credentials: false
+
+      - name: Checkout dist-ai (shared CI helper binaries)
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          repository: org-ai-assisted/dist-ai
+          ref: ${{ env.DIST_AI_REF }}
+          path: .github/dist-ai
           persist-credentials: false
 
       - name: Install genmkfile + helper-scripts + self
@@ -89,15 +104,24 @@ jobs:
           TOKEN_PRESENT: ${{ secrets.GHORG_AUDIT_TOKEN != '' }}
         run: ./ci/policy-live-verify-token.sh
 
-      - name: Run dm-github-policy --audit (live)
+      - name: Run dm-github-org-policy --audit (live)
         env:
           GITHUB_TOKEN: ${{ secrets.GHORG_AUDIT_TOKEN }}
-        run: dm-github-policy --audit
+        run: dm-github-org-policy --audit
 
-      - name: Run dm-github-policy --dry-run (live)
+      - name: Run dm-github-org-policy --dry-run (live)
         env:
           GITHUB_TOKEN: ${{ secrets.GHORG_AUDIT_TOKEN }}
-        run: dm-github-policy --dry-run
+        run: dm-github-org-policy --dry-run
+
+      ## The Claude review roster check deliberately does NOT live here.
+      ## It needs to list an org's repos and read collaborator
+      ## permissions, which wants an org-scoped token; the only one
+      ## named in this workflow is GHORG_AUDIT_TOKEN, a secret that has
+      ## never been created (this workflow has 0 runs, ever). A check
+      ## wired to a job that cannot start verifies nothing. It runs
+      ## operator-side instead, as `claude-roster-verify` in
+      ## private-ai-config, where the bot token already has org access.
 
       - name: Emit step summary
         if: always()
@@ -108,7 +132,7 @@ jobs:
         env:
           JOB_STATUS: ${{ job.status }}
         run: |
-          ./ci/step-summary-emit.sh \
+          ./.github/dist-ai/usr/bin/step-summary-emit \
             --tool 'github-org tools (live policy check)' \
             --column-header field \
             --row "outcome=${JOB_STATUS}" \

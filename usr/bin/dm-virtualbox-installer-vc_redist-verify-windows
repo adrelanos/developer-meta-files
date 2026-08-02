@@ -20,8 +20,10 @@ set -o nounset
 set -o pipefail
 set -o errtrace
 shopt -s inherit_errexit
+shopt -s shift_verbose
 
-source /usr/libexec/helper-scripts/has.sh
+# shellcheck source=../../../helper-scripts/usr/libexec/helper-scripts/has.sh
+source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/has.sh
 
 true "$0: START"
 
@@ -32,13 +34,13 @@ has sha256sum
 
 file_name="vc_redist.x64.exe"
 
-test -r "$file_name"
+test -r "${file_name}"
 
 ## Cannot find root certificate. Signature might be expired.
 #osslsigncode verify -in "$file_name"
 
 ## Debugging.
-sha256sum "$file_name"
+sha256sum "${file_name}"
 #sha512sum "$file_name"
 
 ## https://www.virustotal.com/gui/file/1821577409c35b2b9505ac833e246376cc68a8262972100444010b57226f0940?nocache=1

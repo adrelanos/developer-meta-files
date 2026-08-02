@@ -1,3 +1,2330 @@
+commit a6fd8181d144d8b66dfce8d11c19786d6c09651e
+Merge: 73303313 fda6a8d9
+Author: Patrick Schleizer <adrelanos@whonix.org>
+Date:   Fri Jul 31 13:08:38 2026 -0400
+
+    Merge remote-tracking branch 'org-ai-assisted/master'
+
+commit fda6a8d95677861398b3d2fc260deec410d95813
+Merge: 7d87b109 fe806760
+Author: assisted-by-ai (Bot Account) (Machine Account) <228987186+assisted-by-ai@users.noreply.github.com>
+Date:   Fri Jul 31 12:50:55 2026 -0400
+
+    Merge pull request #174 from org-ai-assisted/ai-dist-ai-ref
+
+    ci: companion-branch resolver for the dist-ai ref (phase 1 of 2)
+
+commit fe806760403c7967004e978e574b539a80a407ea
+Merge: 673e00a5 0351dc6b
+Author: claude (dev138 9b889944-0a22-45e7-8fd6-c189113e33b9) <noreply@anthropic.com>
+Date:   Fri Jul 31 12:43:15 2026 -0400
+
+    Merge remote-tracking branch 'org-ai-assisted/ai-dist-ai-ref' into ai-dist-ai-ref
+
+commit 673e00a58b6bd5ab049b98b25e18e2ea2694e3c7
+Author: claude (dev138 9b889944-0a22-45e7-8fd6-c189113e33b9) <noreply@anthropic.com>
+Date:   Fri Jul 31 12:42:28 2026 -0400
+
+    resolve-dist-ai-ref: make the remote probe injectable, and the test hermetic
+
+    The companion-branch case asserted against github.com: it probed
+    developer-meta-files for a branch named 'ai', which really existed. Then
+    merging PR #173 auto-deleted that branch, the resolver correctly reported
+    the fallback, and the test failed -- on a PR that had not touched it.
+
+    An assertion whose subject can be deleted by unrelated work is not an
+    assertion. It measured live remote state, so it could flip either way
+    without any code changing: it would equally have passed against a
+    resolver that never looked anything up, had the branch been absent from
+    the start.
+
+    - resolve-dist-ai-ref.sh: DIST_AI_REMOTE_URL overrides the probed remote,
+      defaulting to the public URL for DIST_AI_REPO. A seam for tests, and
+      for pointing at a mirror.
+    - The test now builds a local bare repo carrying an 'ai' branch and
+      probes THAT. Every case is offline, and the companion hit is
+      distinguishable from the fallback by construction rather than by
+      whatever github.com happens to hold.
+
+    6 pass, 0 fail, 0 skip.
+
+    Generated with assistance from Claude Code.
+
+commit 0351dc6b3b0e9d8028873bcee9c5465cdcaee9b4
+Merge: 63833b68 7d87b109
+Author: assisted-by-ai (Bot Account) (Machine Account) <228987186+assisted-by-ai@users.noreply.github.com>
+Date:   Fri Jul 31 12:32:53 2026 -0400
+
+    Merge branch 'master' into ai-dist-ai-ref
+
+commit 7d87b109912e1452808627c4420bf951eff1df1e
+Merge: 0a52b166 4980f12c
+Author: assisted-by-ai (Bot Account) (Machine Account) <228987186+assisted-by-ai@users.noreply.github.com>
+Date:   Fri Jul 31 12:32:38 2026 -0400
+
+    Merge pull request #173 from org-ai-assisted/ai
+
+    org policy allowlist + auditable --audit; CI gate on CI_ENABLED_ORG_AI_ASSISTED; PVR off everywhere
+
+commit 4980f12c8049cc44c5371feed171a59aed89c719
+Author: claude (dev138 9b889944-0a22-45e7-8fd6-c189113e33b9) <noreply@anthropic.com>
+Date:   Fri Jul 31 12:22:30 2026 -0400
+
+    org policy: disable private vulnerability reporting on every kind
+
+    PROJECT orgs were the one exception: apply_repo_policy PUT the enable
+    endpoint for them while the policy comment beside it, and half of
+    agents/github-policy-org-kinds.md, said PVR was off everywhere. Code and
+    documentation disagreed, and the doc disagreed with itself -- its table
+    said PROJECT enabled PVR, its notes said off on every role.
+
+    Decision: off everywhere, PROJECT included. We do not use it. Security
+    reports reach us as OpenPGP-encrypted e-mail and that is the only channel
+    we watch. An open GitHub private-report inbox on a repo nobody monitors
+    is worse than none: a researcher who finds it reasonably assumes it is
+    watched, and a real report could sit there unseen.
+
+    - apply_repo_policy: one unconditional PVR-off call, no kind branch.
+    - github-policy-data.bsh: POLICY_REPO_PVR_ON removed outright. Leaving
+      the constant would leave the branch one edit away from regrowing; its
+      absence is what keeps it gone.
+    - agents/github-policy-org-kinds.md: table row and rationale corrected to
+      match the notes that were already right.
+
+    Why it survived: the PROJECT kind had NO test coverage at all -- every
+    existing case ran ORGS_OVERRIDE against a MIRROR or SOURCE org, so that
+    whole branch of apply_repo_policy was never executed.
+
+    Test (dist-ai): tests/test_dm_apply_project.sh, the first PROJECT-kind
+    coverage, plus derived secure-terminal fixtures. Asserts the PVR-off line
+    IS emitted, the enable line is NOT, and -- counter-check -- that the
+    per-repo loop actually ran, so an --apply that skipped every repo cannot
+    satisfy the forbidden list by doing nothing.
+
+    Verified: test exits 0 with this change and 1 against the previous
+    PROJECT-enables-PVR behaviour. Suite 34 pass, 0 fail, 0 skip.
+
+    Reported by CodeRabbit on PR #173, which proposed correcting the comment;
+    the comment was the accurate half.
+
+    Generated with assistance from Claude Code.
+
+commit 64431e7feffdce15d293932814850f7e23184ac4
+Merge: 96c1b4e9 d3df6e27
+Author: claude (dev138 9b889944-0a22-45e7-8fd6-c189113e33b9) <noreply@anthropic.com>
+Date:   Fri Jul 31 12:09:48 2026 -0400
+
+    Merge remote-tracking branch 'org-ai-assisted/ai' into HEAD
+
+commit 96c1b4e989ac8b07c62f2476269114537d148c0a
+Author: claude (dev138 9b889944-0a22-45e7-8fd6-c189113e33b9) <noreply@anthropic.com>
+Date:   Fri Jul 31 12:08:58 2026 -0400
+
+    ghorg mock: fail the call when a request-body capture cannot be written
+
+    GHORG_MOCK_BODY_DIR exists so tests can assert the payloads we SEND, not
+    merely the labels we log -- the gap that let an empty patterns_allowed
+    ship past a fully green suite. It had the same defect it was added to
+    remove.
+
+    Measured, not assumed. With GHORG_MOCK_BODY_DIR pointing at an unwritable
+    path, `dm-github-org-policy --apply` printed 28 lines of mkdir/permission
+    errors, captured ZERO bodies, and exited 0: ghorg_mock_dispatch ignored
+    both write failures, and ghorg_api's mock branch returned a flat 0 over
+    the top. A caller got a mocked response alongside a capture that never
+    happened.
+
+    - ghorg_mock_dispatch: a failed mkdir or a failed body write returns 1,
+      naming the path.
+    - ghorg_api: the mock branch preserves the dispatcher's status instead of
+      discarding it.
+
+    Reported by CodeRabbit on PR #173; confirmed by probe before changing
+    anything.
+
+    Test (dist-ai): tests/test_mock_body_capture_failure.sh, with its probe
+    in tests/ghorg_api_capture_probe.sh.
+
+    The assertion targets ghorg_api directly, NOT `--apply`. A first version
+    asserted --apply's exit status and was worthless: --apply already returns
+    non-zero here for unrelated fixture gaps, so it passed against the very
+    code it was meant to catch. Verified after the rewrite -- the test exits
+    0 against this commit and 1 against its parent.
+
+    Suite: 27 pass, 6 fail with this change; 26 pass, 7 fail without it. The
+    six are pre-existing, from an in-flight Dependabot policy change whose
+    dmf and dist-ai halves are not yet in sync; this commit causes none of
+    them.
+
+    Generated with assistance from Claude Code.
+
+commit d3df6e270849ec9a9309a1f54f4ddd410b9f4aac
+Author: claude (dev142 b93fb2c6-e15f-4d45-8566-f3ded893b70e) <noreply@anthropic.com>
+Date:   Fri Jul 31 11:58:03 2026 -0400
+
+    github-org-lib: mock fixture keys carry no media-type extension
+
+    ghorg_mock_dispatch mapped only '/' to '_', so a path ending in a
+    filename produced a fixture named after it -- e.g.
+    GET .../contents/.github/dependabot.yml became a file ending in
+    '.yml'. A fixture is an HTTP response (body plus status line) and is
+    never the media type its path suggests, so every extension-driven
+    linter parsed those four as YAML and failed on the status line.
+
+    Flatten '.' as well. dist-ai carries the matching fixture renames.
+
+    Co-Authored-By: Claude <noreply@anthropic.com>
+
+commit 8e90fc8d68a9c93a83388de5e14d3b388523f332
+Author: claude (dev142 b93fb2c6-e15f-4d45-8566-f3ded893b70e) <noreply@anthropic.com>
+Date:   Fri Jul 31 11:52:46 2026 -0400
+
+    org policy: PROJECT header comments follow the mirror-only Dependabot pivot
+
+    The two org-kind preambles still listed Dependabot alerts as a PROJECT
+    feature. Dependabot follows the CI, which runs on the MIRROR.
+
+    Co-Authored-By: Claude <noreply@anthropic.com>
+
+commit d19e95068f88bce65a9ae0164b4c0ae1cbeb0b8e
+Merge: 9442759c 01204123
+Author: claude (dev142 b93fb2c6-e15f-4d45-8566-f3ded893b70e) <noreply@anthropic.com>
+Date:   Fri Jul 31 11:52:14 2026 -0400
+
+    Merge remote-tracking branch 'org-ai-assisted/ai' into HEAD
+
+commit 9442759c5e7d87b28ebd84de03fe6fccd39ddd03
+Author: claude (dev142 b93fb2c6-e15f-4d45-8566-f3ded893b70e) <noreply@anthropic.com>
+Date:   Fri Jul 31 11:51:59 2026 -0400
+
+    org policy: Dependabot lives on the mirror only
+
+    Dependabot follows the CI that can act on what it reports, not the
+    repo that hosts the code. GitHub Actions runs on org-ai-assisted:
+    SOURCE sets enabled_repositories=none by deliberate policy, and the
+    PROJECT repos are mirrored into org-ai-assisted for the test and
+    scanner suites. So the mirror is the one place a bump PR carries a
+    verdict and a CVE alert has a build to be fixed in.
+
+    - MIRROR: alerts and security updates PUT on (alerts first, which the
+      security-fixes PUT requires).
+    - SOURCE + PROJECT: both actively DELETEd every --apply (security
+      fixes first, which answers 422 once alerts are off), plus a per-repo
+      skip line naming .github/dependabot.yml, the only handle on version
+      updates.
+    - POLICY_REPO_DEPENDABOT_FIXES_SOURCE_OFF folded away: one off-pair
+      now covers every non-mirror kind, so the labels drop "(mirror)".
+    - The three Dependabot UI flips (grouping, auto-triage,
+      delegated dismissal) move to MIRROR; code-scanning query suite stays
+      SOURCE. Section renamed to "UI-only operator flips" accordingly.
+    - --audit compares per kind against the same literals apply enforces:
+      EXPECT_ON on MIRROR plus a 204 alerts assert, EXPECT_OFF and
+      "dependabot.yml must be absent" elsewhere. A dependabot.yml probe
+      answering neither 200 nor 404 is now a finding on EVERY kind, mirror
+      included -- printing "no:" for a probe that never answered is a
+      false green wherever it happens.
+
+    Version updates have no REST setter at any scope; confirmed against
+    GET /orgs/{org}/code-security/configurations, whose object carries
+    dependabot_alerts and dependabot_security_updates and no
+    version-updates field. The file is opt-in per repo through
+    dm-packaging-helper-script (pkg_update_consumer_workflows +
+    dependabot_yml_is_manual, honouring "## propagation: manual"), never
+    blanket-deployed -- a repo with nothing worth tracking carries none.
+
+    Recorded unresolved: a mirror repo is a fork that ff-syncs from
+    SOURCE, so .github/dependabot.yml is one object in one history. That
+    column cannot be split by file presence alone. Stated, not papered
+    over; the alerts/security pair has real per-repo setters and is what
+    the policy enforces.
+
+    DECLARATIVE on the SOURCE half: the token is role=member on
+    Kicksecure and Whonix and SOURCE_ORGS stays commented out of ORGS, so
+    --apply cannot reach them; --dry-run / --audit reach them via
+    ORGS_OVERRIDE only. Docs and --help say so.
+
+    Verified in the sandbox VM against dist-ai's mock suites: 32 passed,
+    0 failed. Canaried against the pre-change tool -- every changed and
+    new assertion fails there.
+
+    Co-Authored-By: Claude <noreply@anthropic.com>
+
+commit 63833b68bc6fc36190b62581ffa83e8654411faf
+Author: claude (dev138 9b889944-0a22-45e7-8fd6-c189113e33b9) <noreply@anthropic.com>
+Date:   Fri Jul 31 11:51:54 2026 -0400
+
+    ci: add a companion-branch resolver for the dist-ai ref
+
+    ROOT CAUSE. Ten workflows each carried the same literal:
+
+      DIST_AI_REF: ${{ github.repository == 'org-ai-assisted/dist-ai'
+                       && github.sha || 'master' }}
+
+    so dist-ai was pinned to master for every consumer. dist-ai holds the
+    tests; the consumers hold the behaviour those tests assert. A change
+    altering both therefore had NO green path:
+
+      * the consumer PR ran against dist-ai@master, still carrying the OLD
+        expectations -> red;
+      * pushing the new expectations to dist-ai master first broke dist-ai's
+        own CI against the consumer's unchanged master -> also red.
+
+    Observed live: a coordinated developer-meta-files + dist-ai policy change
+    where the dmf half sat on a branch and the dist-ai half had nowhere to go,
+    leaving PR #173 red with no way to make it green.
+
+    THE RULE. A companion branch wins: if dist-ai has a branch with the same
+    name as the branch under test, use it; else master. Both halves of a
+    cross-repo change travel under one branch name and are tested together. A
+    lone consumer branch is unaffected -- no companion exists, so it gets
+    master exactly as before. dist-ai still tests its own commit; there it is
+    the subject, not a dependency.
+
+    Every failure mode -- no companion, no branch name, an unreachable repo --
+    resolves to master rather than failing. This runs in front of unrelated
+    jobs and must never be what breaks them.
+
+    PHASE 1 OF 2, deliberately. This commit only ADDS the action; nothing
+    references it yet. Wiring the ten workflows in the same commit would have
+    made things worse, not better: a step `uses:
+    ...resolve-dist-ai-ref@master` cannot resolve until the action IS on
+    master, and step-level `uses:` takes no context expression to point it
+    elsewhere -- so the wiring PR would fail its own CI until merged. That is
+    the same chicken-and-egg this change exists to remove, and walking into it
+    while fixing it would have been ironic rather than clever. Phase 2 wires
+    the ten workflows once this is on master.
+
+    Test (dist-ai, usr/share/developer-meta-files-tests): 6 pass, 0 fail,
+    0 skip. The companion-hit case probes a repo that really does carry the
+    branch -- an absent one would be indistinguishable from the fallback,
+    which is the case most worth asserting.
+
+    Generated with assistance from Claude Code.
+
+commit 01204123cc6d999bdd0b641172583ce7c49441ca
+Author: claude (dev138 9b889944-0a22-45e7-8fd6-c189113e33b9) <noreply@anthropic.com>
+Date:   Fri Jul 31 11:34:08 2026 -0400
+
+    Close the gap the preflight removal left after each shellcheck directive
+
+    Removing helper_scripts_preflight left a blank line between every
+    `# shellcheck source=` directive and the `source` line it annotates --
+    one in each of the 18 files touched, pure removal residue.
+
+    Restores the directive/source adjacency the rest of the tree uses. No
+    functional claim is made: three attempts to build a test that
+    distinguishes an adjacent directive from a separated one were all
+    inconclusive, including a no-directive control that behaved identically,
+    so whether shellcheck cares here is unproven either way. These lines are
+    removed because they are artifacts of the previous commit, not because
+    they were shown to break anything.
+
+    Pre-existing double blank lines elsewhere (dm-github-org-policy line 110,
+    dm-prepare-release, dm-packaging-helper-script, dm-metapackage-helper)
+    are left alone -- they predate this branch and are not this change's to
+    churn.
+
+    18 files, 18 deletions. bash -n and shellcheck clean on all 18; suite
+    30 pass, 1 fail -- that failure (test_dm_dryrun_source_vs_mirror.sh) is
+    pre-existing on this branch and unrelated.
+
+    Generated with assistance from Claude Code.
+
+commit 35aad4e1d9aae0634492c92e81f0b7ef3e1aec35
+Author: claude (dev138 9b889944-0a22-45e7-8fd6-c189113e33b9) <noreply@anthropic.com>
+Date:   Fri Jul 31 10:59:00 2026 -0400
+
+    Drop helper_scripts_preflight entirely
+
+    The block was copy-pasted byte-identical into 18 files. An earlier commit
+    removed the 7 copies that were outright dead; this removes the remaining
+    11, and the function with them.
+
+    What it bought: a named error ("helper-scripts not found at <path> --
+    install the helper-scripts package, or set HELPER_SCRIPTS_PATH") instead
+    of bash's own message when `source` cannot find the file.
+
+    What it cost: ~230 lines of boilerplate across 18 files, with no shared
+    home available. Seven of the scripts never reference
+    DEVELOPER_META_FILES_PATH at all, so hoisting the check into a shared dmf
+    file would have given them a new dependency on a path they do not know --
+    and failing to find THAT file reproduces the same bare error the check
+    existed to replace.
+
+    Behaviour is preserved where it matters. Under `set -o errexit` a failed
+    `source` still aborts, non-zero, naming the file it could not read.
+    Verified with HELPER_SCRIPTS_PATH pointed at a nonexistent path:
+    dm-github-org-policy, github-org-clone, dm-check-mirrors, dm-review-branch
+    and dm-github-token-test all exit 1 and name the missing path. The only
+    loss is the package name and the fix hint.
+
+    143 deletions here, 234 across both commits. Suite: 30 pass, 1 fail --
+    that one failure (test_dm_dryrun_source_vs_mirror.sh) is pre-existing on
+    this branch, reproduced on its tip without these changes.
+
+    Generated with assistance from Claude Code.
+
+commit 00139e0adc525dd20ba2bd131bd7276abd9322da
+Merge: ba9e8366 95f800f2
+Author: claude (dev138 9b889944-0a22-45e7-8fd6-c189113e33b9) <noreply@anthropic.com>
+Date:   Fri Jul 31 10:38:24 2026 -0400
+
+    Merge remote-tracking branch 'org-ai-assisted/ai' into HEAD
+
+commit ba9e8366214c5c86ca6fc7c1fda6be339dd3a375
+Merge: 92ceb691 2a526edd
+Author: claude (dev138 9b889944-0a22-45e7-8fd6-c189113e33b9) <noreply@anthropic.com>
+Date:   Fri Jul 31 10:36:20 2026 -0400
+
+    Merge remote-tracking branch 'org-ai-assisted/ai' into HEAD
+
+commit 92ceb6911e6bc466342d7b8c29e54403ba41a77d
+Author: claude (dev138 9b889944-0a22-45e7-8fd6-c189113e33b9) <noreply@anthropic.com>
+Date:   Fri Jul 31 10:35:50 2026 -0400
+
+    github-org tools: drop the dead helper_scripts_preflight copies
+
+    The preflight block was copy-pasted into 18 files, byte-identical in
+    every one. In 7 of them it was also DEAD: the script sources
+    github-org-lib.bsh first, and that lib both defines and CALLS
+    helper_scripts_preflight, so the local copy re-defined a function that
+    had already run. 91 lines that could never change behaviour.
+
+    Removed from the 7 that source github-org-lib.bsh before their copy:
+    dm-github-org-metadata-sync, dm-github-org-policy,
+    dm-github-org-security-report, dm-github-personal-policy,
+    github-org-clone, github-org-fork, github-org-push.
+
+    The other 11 copies stay, deliberately:
+
+    - github-org-lib.bsh and github-policy-lib.bsh are each a standalone
+      entry point -- neither sources the other, so each needs its own.
+    - The remaining 9 usr/bin scripts resolve helper-scripts only; 7 of them
+      never reference DEVELOPER_META_FILES_PATH at all. Sourcing a shared
+      preflight from the dmf tree would give them a new dependency on a path
+      they do not know, and failing to find THAT file reintroduces exactly
+      the bare "No such file or directory" the preflight exists to replace.
+      Duplicating 13 lines is the cheaper trade.
+
+    Verified: with HELPER_SCRIPTS_PATH pointed at a nonexistent path, all 7
+    edited scripts still fail with the named "helper-scripts not found at
+    ..." error and exit 1 -- the check still fires, it is just no longer
+    declared twice. bash -n and shellcheck clean on all 7; suite 31 pass,
+    0 fail, 0 skip.
+
+    Generated with assistance from Claude Code.
+
+commit 95f800f21ac2803c9a4ed1a3a21532f9aa6fc649
+Author: claude (dev142 b93fb2c6-e15f-4d45-8566-f3ded893b70e) <noreply@anthropic.com>
+Date:   Fri Jul 31 10:35:40 2026 -0400
+
+    org policy: Dependabot opens no pull requests on SOURCE
+
+    Actions is disabled org-wide on Kicksecure / Whonix by deliberate
+    policy, but Dependabot does not need repo Actions, so it kept opening
+    bump PRs there that no check could ever report on. Encode the decision
+    as policy data instead of leaving it a manual flip.
+
+    - SOURCE keeps Dependabot ALERTS (a notification, no PR, and the
+      canonical repo is where a CVE must be visible) and drops both
+      PR-producing switches.
+    - Security updates: new POLICY_REPO_DEPENDABOT_FIXES_SOURCE_OFF, its
+      own constant so the log line carries the SOURCE reason; same endpoint
+      and 422 steady state as the mirror variant.
+    - Version updates: no REST setter at any scope - .github/dependabot.yml
+      presence IS the switch - so a per-repo skip line naming the file to
+      delete.
+    - Grouped-security-updates UI flip moves from SOURCE to PROJECT: with
+      no security PRs on SOURCE there is nothing to group. Alert-triage and
+      delegated-dismissal flips now fire on SOURCE + PROJECT, the kinds
+      that have alerts.
+    - --audit COMPARES all of it per kind, and counts an unreadable
+      endpoint as a finding: dependabot.yml must be absent on SOURCE, and a
+      probe answering neither 200 nor 404 is NOT VERIFIED rather than
+      "absent"; security updates are compared against the same literal
+      apply enforces; alerts are asserted via audit_expect_enabled (a
+      204/404 endpoint, where only the must-be-ON direction is
+      distinguishable from a permissions wall).
+    - Reconcile agents/github-policy-org-kinds.md, which documented the
+      opposite (Dependabot ON for SOURCE, grouping flip desired there), and
+      record the measured 2026-07-31 inventory, the sequencing, the
+      mirror-fork consequence, and the compared-vs-not-compared list.
+
+    DECLARATIVE: the token is role=member on both SOURCE orgs and
+    SOURCE_ORGS stays commented out of ORGS, so --apply cannot reach them;
+    --dry-run / --audit reach them via ORGS_OVERRIDE only. Docs and --help
+    say so rather than implying enforcement.
+
+    Verified with the mock suites in the sandbox VM: 29 pass, audit suites
+    green, plus a purpose-made SOURCE fixture set exercising clean,
+    drifted and unreadable repos (exit 1, drift named). Two assertions in
+    dist-ai's test_dm_dryrun_source_vs_mirror.sh still encode the old
+    policy and need updating there.
+
+    Co-Authored-By: Claude <noreply@anthropic.com>
+
+commit 2a526eddf50f32893dc4dc31ddb3853ccf6707a8
+Author: claude (dev142 b93fb2c6-e15f-4d45-8566-f3ded893b70e) <noreply@anthropic.com>
+Date:   Fri Jul 31 10:10:26 2026 -0400
+
+    Keep CI-runtime helper checkouts out of the scanned tree
+
+    The helper checkouts (.github/dmf, .github/dist-ai) are other repos'
+    trees staged under the caller's workspace. Whatever a scanner walks
+    there is filed as the CALLER's finding, against code the caller does
+    not host: it cannot be fixed in that repo, and the caller only
+    re-scans its own pushes, so the alert never clears.
+
+    - reusable-codeql: pass an inline 'paths-ignore' config to
+      codeql-action/init excluding both helper checkouts. .github/dmf is
+      required BEFORE init (the config-load and prepare-command steps run
+      out of it), so the post-analyze step ordering used for
+      .github/dist-ai cannot cover it; paths-ignore covers both and any
+      helper checkout added later.
+    - coverity-build-python.sh: add both helper checkouts to
+      --file-exclude-regex. 'coverity capture --project-dir "${PWD}"'
+      walks the whole tree and the existing '\.git/.*' does not match
+      '.github/' (it requires a '/' right after '.git').
+
+    Live symptom: py/empty-except alerts on msgcollector, tb-updater and
+    security-misc pointing at .github/dmf/usr/bin/dm-qemu-screendump-watch,
+    a path none of those repos contains.
+
+    Generated with assistance from Claude Code.
+
+    Co-Authored-By: Claude <noreply@anthropic.com>
+
+commit fa0091cf6f34a937b94afda634c4565a225cb23e
+Author: claude (dev142 b93fb2c6-e15f-4d45-8566-f3ded893b70e) <noreply@anthropic.com>
+Date:   Fri Jul 31 10:02:44 2026 -0400
+
+    Pin comments: name the exact version, not a bare major
+
+    - local-org-policy-live-audit.yml and -live-probe.yml labelled the
+      actions/checkout pin `# v6`. The tag `v6` resolves to
+      d23441a48e516b6c34aea4fa41551a30e30af803, a DIFFERENT commit from the
+      pinned de0fac2e4500dabe0009e67214ff5f5447ce83dd, so the comment named
+      the wrong revision outright.
+    - Both now read `# v6.0.2`, matching the sibling checkout step five lines
+      below and resolving exactly to the pinned sha.
+    - A bare major is also unmaintainable: Dependabot rewrites a trailing pin
+      comment only when it matches the version being replaced, so `# v6`
+      survives a bump untouched and silently mislabels the new sha. Already
+      observed downstream, where a v7.0.1 sha now sits next to `# v6`.
+
+    Swept every SHA pin in .github/: 8 distinct actions, all others already
+    correct (actions/cache v5.0.5, actions/checkout v6.0.2,
+    actions/upload-artifact v7.0.1, claude-code-action v1.0.183,
+    codeql-action v4.36.0, scorecard-action v2.4.3). Annotated tags were
+    dereferenced through the tag object to the commit before comparing.
+
+    Co-Authored-By: Claude <noreply@anthropic.com>
+
+commit c15d304ebaa5f6205d30946cbf24411feb8a4dd9
+Author: claude (dev138 9b889944-0a22-45e7-8fd6-c189113e33b9) <noreply@anthropic.com>
+Date:   Fri Jul 31 09:48:38 2026 -0400
+
+    ci: record the canary's W-008 carve-out
+
+    W-008 (OWNER-GATE) requires every job that runs steps to be gated on the
+    CI-enabled variable. local-ci-enabled-canary.yml is the one job that must
+    not be: it is gated on the owner literal instead, precisely so it still
+    runs -- and fails -- when the variable is missing. Gating the canary on
+    the variable would make it disappear in exactly the situation it exists
+    to detect.
+
+    The reason is recorded in the file rather than hardcoded in the
+    validator, and the validator treats an exemption with an empty reason as
+    a finding of its own.
+
+    Generated with assistance from Claude Code.
+
+commit a363de34f4a02ce076b33881820392af131a2be5
+Author: claude (dev138 9b889944-0a22-45e7-8fd6-c189113e33b9) <noreply@anthropic.com>
+Date:   Fri Jul 31 09:06:06 2026 -0400
+
+    ci: gate every reusable on CI_ENABLED_ORG_AI_ASSISTED; add the switch canary
+
+    Completes the gate across the reusables, which is what actually covers
+    the fleet: the 82 consumer-*.yml wrappers are pure `uses:` lines at
+    @master, so they need no edit and pick this up on merge.
+
+    - The six sharing the fork-PR guard (bandit, codeql, cppcheck,
+      dist-ai-tests, pre-push-static, secrets-audit): gate ANDed in front,
+      fork-PR guard kept.
+    - coverity: gate added as its job-level condition. Independent of the
+      canonical-repos gate further down -- that narrows to the repo
+      registered with scan.coverity.com, this decides whether we run CI in
+      this org at all.
+    - claude-code-review: gate is the OUTERMOST condition, so an @claude
+      mention on a fork or upstream cannot spend the org's subscription even
+      from a roster member.
+    - codex-review: left alone. Its 'if: false' is a deliberate org-wide
+      kill-switch, and it is the one W-008 exemption.
+
+    local-ci-enabled-canary.yml guards the switch itself. Gating everything
+    on one variable buys a zero-cost skip and one failure mode: unset it and
+    every gated job skips while every run still reports green -- a whole
+    org's CI dark behind a healthy-looking checks list. The canary is gated
+    on the OWNER LITERAL instead, so it cannot switch itself off, and fails
+    loudly when the variable is missing.
+
+    Verified: workflow-yaml validator 0 findings across 25 files; every
+    reusable job confirmed gated by parsing the YAML, not by eye.
+
+    Generated with assistance from Claude Code.
+
+commit 0262454ae7bec8d21d0e2a5de1d909e903036d4b
+Merge: 351ff577 683981b7
+Author: claude (dev138 9b889944-0a22-45e7-8fd6-c189113e33b9) <noreply@anthropic.com>
+Date:   Fri Jul 31 08:46:00 2026 -0400
+
+    Merge remote-tracking branch 'org-ai-assisted/ai' into HEAD
+
+commit 351ff577df40d9a4ace39b74c8928e569f09ad82
+Author: claude (dev138 9b889944-0a22-45e7-8fd6-c189113e33b9) <noreply@anthropic.com>
+Date:   Fri Jul 31 08:44:32 2026 -0400
+
+    org policy: compare every enforced setting; fix two audit false verdicts
+
+    Findings from ai-review (coderabbit Major, agy P1/P1/P2) plus two bugs the
+    new tests caught in the comparison itself.
+
+    - audit_expect: render the desired object BEFORE the pipeline and check
+      the comparison's exit status. Inline as a command argument, a malformed
+      POLICY_* literal expanded to empty, jq failed, stderr was discarded and
+      the empty result read as "matches policy" -- a silent pass over an
+      unverified org, at the comparison layer this change exists to remove.
+    - audit_expect: use has()/explicit key lookup instead of '$live[.key] //
+      null'. jq's '//' yields its right-hand side when the left is null OR
+      FALSE, so every policy value of `false` read as absent and reported
+      permanent drift. Bind the entry with 'as $e' too: inside '$live | ...'
+      the bare .key resolved against $live, not the entry.
+    - fork-PR approval and workflow GITHUB_TOKEN permissions are now COMPARED
+      rather than printed. Both have POLICY_* literals; a loosened fork-PR
+      policy or a writable token previously audited green.
+    - Expected Actions scope is chosen by org KIND, as the apply path does. A
+      correctly configured SOURCE org (Actions disabled org-wide) was reported
+      as drift and failed the audit.
+    - The four manually handled endpoints (/members, /installations, /hooks,
+      private repos) now count a non-200 as a finding. A partially scoped
+      token could reach them and still exit green, contradicting the stated
+      guarantee that anything unread fails.
+    - The success line names what was actually compared, rather than claiming
+      the whole live policy matches: 2FA and code-security defaults are
+      reported for a human and have no desired-state literal.
+
+    Tests: 30 pass, 0 fail, 0 skip. Seven drift cases, each a static fixture
+    overlay, plus a control so a tool that always failed could not pass.
+
+    Generated with assistance from Claude Code.
+
+commit 683981b714a50b343c54e034cafb590de094dbd5
+Merge: 9e390526 3dc8beba
+Author: claude (dev137 d9fb559b-0dab-4323-b124-aebf3bf5f7a9) <noreply@anthropic.com>
+Date:   Fri Jul 31 08:27:51 2026 -0400
+
+    Merge remote-tracking branch 'org-ai-assisted/ai' into ai
+
+commit 9e390526a3f78d8b0d2bf2c11e4163c99a78609e
+Merge: 9cc29eae 3bd13945
+Author: claude (dev137 d9fb559b-0dab-4323-b124-aebf3bf5f7a9) <noreply@anthropic.com>
+Date:   Fri Jul 31 08:27:16 2026 -0400
+
+    Merge remote-tracking branch 'org-ai-assisted/ai' into ai
+
+commit 3dc8beba756832018b2e371546fce0a5ae474f37
+Author: claude (dev138 9b889944-0a22-45e7-8fd6-c189113e33b9) <noreply@anthropic.com>
+Date:   Fri Jul 31 08:27:07 2026 -0400
+
+    ci: pilot the CI_ENABLED_ORG_AI_ASSISTED gate on three workflows
+
+    Our workflows run wherever the branch lands: a branch merged upstream
+    burns Kicksecure/Whonix runner quota and posts our AI reviewers into
+    their repos, and every contributor fork runs the whole suite. Only 5 of
+    136 workflow files carried any owner gate.
+
+    Gate: a job-level `vars.CI_ENABLED_ORG_AI_ASSISTED == 'true'`, set once
+    org-wide on org-ai-assisted. Zero runner cost -- a job whose `if:` is
+    false never allocates one -- and a fork that wants a lane opts in by
+    setting the same variable rather than editing our files.
+
+    - reusable-scorecard.yml: in a CALLED reusable the vars context resolves
+      against the CALLER, so this gates both consumers from one place.
+    - local-org-policy-live-{audit,probe}.yml: ANDed with the existing repo
+      pin, which stays -- it is the tighter of the two and is what keeps the
+      secret to this repo.
+
+    Pilot slice only; the remaining reusables and local workflows follow once
+    this is confirmed in the checks list.
+
+    Verified: workflow-yaml validator 0 findings across 24 files. Behaviour
+    confirmed live on the sibling secure-terminal pilot -- with the variable
+    unset, gated jobs report SKIPPED and the run stays green.
+
+    Generated with assistance from Claude Code.
+
+commit 9cc29eaea0cac808adaea6b1caf404b4827b8098
+Author: claude (dev137 d9fb559b-0dab-4323-b124-aebf3bf5f7a9) <noreply@anthropic.com>
+Date:   Fri Jul 31 08:24:47 2026 -0400
+
+    Name the dependency when helper-scripts is missing (R-080 consumers)
+
+    `source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/has.sh` resolves
+    to the ABSOLUTE /usr/libexec/... path when the variable is unset, so an absent
+    helper-scripts dies as:
+
+      <tool>: line 24: /usr/libexec/helper-scripts/has.sh: No such file or directory
+
+    which names neither the package nor the fix. That is exactly how a CI failure
+    presented this session -- it took a two-log xtrace comparison to establish the
+    real cause was a STALE installed tool rather than a missing file.
+
+    A preflight now checks the resolved path first and dies with:
+
+      <tool>: ERROR: helper-scripts not found at '<path>' -- install the
+      helper-scripts package, or set HELPER_SCRIPTS_PATH to a checkout.
+
+    Applied to all 18 consumers under usr/bin and usr/libexec that use the
+    '${HELPER_SCRIPTS_PATH:-}' form, not just the one that broke -- R-080 mandates
+    the idiom repo-wide, so the failure mode was repo-wide too. The
+    `# shellcheck source=` directives stay relative and anchored (gate-enforced).
+
+    Every patched file re-checked with bash -n and shellcheck -x; the guard's
+    message verified against an unset variable with helper-scripts absent.
+
+    Generated with assistance from Claude Code.
+
+commit 3bd13945e3f4391556e85ccaddda780004512db1
+Author: claude (dev138 9b889944-0a22-45e7-8fd6-c189113e33b9) <noreply@anthropic.com>
+Date:   Fri Jul 31 08:17:11 2026 -0400
+
+    org policy: allow the developer-meta-files reusables; make --audit able to fail
+
+    The allowlist shipped as allowed_actions=selected with patterns_allowed=[],
+    which blocks cross-org reusable-workflow calls. Every consumer outside
+    org-ai-assisted failed with startup_failure and zero jobs; 10 of the last
+    15 runs in secure-terminal/secure-terminal. Same-org calls bypass the
+    policy, which is why org-ai-assisted looked healthy.
+
+    - github-policy-data.bsh: allow the dmf reusable workflows and composite
+      actions. The PATH is mandatory -- GitHub's syntax is
+      OWNER/REPOSITORY/PATH/FILENAME@REF, so a bare 'owner/repo@*' matches
+      ACTIONS ONLY. Verified live: the repo-only form left consumers broken;
+      the path form took a previously failing consumer-bandit run green.
+    - dm-github-org-policy: --audit compares live state against the same
+      POLICY_* literals --apply writes, and exits non-zero on drift or on any
+      endpoint it could not read. It previously returned 0 unconditionally
+      and rendered patterns_allowed as a count compared to nothing, so it
+      could not have caught this or anything else.
+    - github-org-lib.bsh: the mock records request bodies (opt-in via
+      GHORG_MOCK_BODY_DIR), so tests can assert what we SEND. Nothing could
+      before -- the mock discarded bodies, so a payload could be wrong while
+      its log label stayed right, which is what happened here.
+
+    Tests (dist-ai, separate commit): 30 pass, 0 fail, 0 skip. The two new
+    assertions fail against this commit's parent.
+
+    Generated with assistance from Claude Code.
+
+commit 0a52b166247c2f193f8347a5ef07321c5c06d4e4
+Merge: 73303313 e72e572c
+Author: assisted-by-ai (Bot Account) (Machine Account) <228987186+assisted-by-ai@users.noreply.github.com>
+Date:   Fri Jul 31 07:32:27 2026 -0400
+
+    Merge pull request #172 from org-ai-assisted/ai
+
+    dm-upload-images DNS host fix; reprepro-freshness pipeline split; writability probe without ':'; dm-reproducible-verify comment trim
+
+commit e72e572c4200dd93124c65ba92c9c98b7bc674aa
+Author: claude (dev137 d9fb559b-0dab-4323-b124-aebf3bf5f7a9) <noreply@anthropic.com>
+Date:   Fri Jul 31 07:29:16 2026 -0400
+
+    dm-reproducible-compare-artifacts: drop the writability-probe comment
+
+    The code says what it does; the rationale does not need restating (R-151).
+
+    Generated with assistance from Claude Code.
+
+commit d7451b990bc7d8320379e937df2d4d44caca71e4
+Author: claude (dev137 d9fb559b-0dab-4323-b124-aebf3bf5f7a9) <noreply@anthropic.com>
+Date:   Fri Jul 31 07:11:14 2026 -0400
+
+    dm-upload-images: resolve the HOST, not the whole rsync target
+
+    BUG: the DNS warm-up looped over '$dist_server_with_upload_location_list' --
+    which holds rsync targets, '<user>@<host>:<path>' -- and handed each whole
+    string to nslookup:
+
+      ** server can't find <user>\@<host>:<path>: NXDOMAIN
+
+    Every lookup failed, and the blanket '|| true' hid it, so the warm-up this
+    block exists for has never once warmed anything. Reported from a real run.
+
+    Now derives the bare host, probes each distinct host once, and WARNS on a
+    failed probe instead of discarding it silently. The derivation lives in its
+    own named function so it is testable without a build environment; covered by
+    dist-ai dm_upload_images_dns_test.sh, which fails 4/5 assertions against the
+    old pass-through behaviour.
+
+    reprepro-freshness.bsh: split the source_line pipeline into steps. One
+    pipeline plus a command substitution plus a blanket '|| true' made every
+    failure indistinguishable -- including grep's rc 2 (real error) and the
+    SIGPIPE rc 141 that 'head' closing the pipe can produce under pipefail, both
+    of which were being read as "not published". 'head -n 1' -> '--lines=1'.
+
+    dm-reproducible-verify: stop naming the comparison backend. The script does
+    not run diffoscope; it calls dm-reproducible-compare-artifacts, so naming
+    that tool's internals here is drift waiting to happen. Also dropped the
+    SOURCE_DATE_EPOCH / build-container claims rather than carry assertions that
+    were not verified.
+
+    Generated with assistance from Claude Code.
+
+commit 733033130562e97febe2125f9edbe39c7d795c82
+Author: Patrick Schleizer <adrelanos@whonix.org>
+Date:   Fri Jul 31 11:10:10 2026 +0000
+
+    bumped changelog version
+
+commit 2f31eaf3d4424b849e1e13ca9b2e22b7fd180fe9
+Author: claude (dev137 d9fb559b-0dab-4323-b124-aebf3bf5f7a9) <noreply@anthropic.com>
+Date:   Fri Jul 31 07:03:11 2026 -0400
+
+    dm-reproducible-compare-artifacts: writability probe without ':'
+
+    ':' is a no-op placeholder (R-130 wants 'true' with a message) and neither
+    ':' nor a bare redirection says what it is doing under xtrace.
+
+    'printf "%s" "" | tee -- "${report}"' truncates the report to EMPTY exactly
+    as ': >' did, and tee's own exit status reports an unwritable path. Verified:
+    a writable path returns 0 and leaves 0 bytes (also when the file already had
+    content); a path in a nonexistent directory and a read-only file both return
+    non-zero.
+
+    Generated with assistance from Claude Code.
+
+commit 404c604b7a36cbaf8189316dc22df1f0e7d584d8
+Merge: f67eaf31 ede06754
+Author: Patrick Schleizer <adrelanos@whonix.org>
+Date:   Fri Jul 31 06:38:09 2026 -0400
+
+    Merge remote-tracking branch 'org-ai-assisted/master'
+
+commit ede0675442b176d903bb9163407f5b58caecd2d1
+Merge: 4c16fd82 5ec8b457
+Author: assisted-by-ai (Bot Account) (Machine Account) <228987186+assisted-by-ai@users.noreply.github.com>
+Date:   Fri Jul 31 05:50:29 2026 -0400
+
+    Merge pull request #171 from org-ai-assisted/ai
+
+    frozen snapshot pin sync; reusable-dist-ai-tests container mount capability
+
+commit 5ec8b45745330c0caff4ddaf789f7b7569ef353a
+Author: claude (dev137 d9fb559b-0dab-4323-b124-aebf3bf5f7a9) <noreply@anthropic.com>
+Date:   Fri Jul 31 04:56:26 2026 -0400
+
+    reusable-dist-ai-tests: give the container mount capability
+
+    The dm-help-steps suite's subject IS mount-handling code (umount_kill.sh,
+    unmount-tree), but the container could neither mount nor create a user
+    namespace, so those assertions never ran. umount_kill.sh's two
+    mount-preservation assertions had been silently skipped in every CI run
+    since they were written -- the probe read the container's denial as "not
+    supported here", printed a note and returned green.
+
+    Both halves of the option are required, neither alone suffices:
+    CAP_SYS_ADMIN carries the privilege, and Docker's default AppArmor
+    profile denies mount(2) regardless of capabilities. Measured on
+    debian:trixie-slim:
+
+      <default>                          unshare --user FAIL   mount FAIL
+      --cap-add=SYS_ADMIN                unshare --user FAIL   mount FAIL
+      --security-opt=apparmor=unconf     unshare --user FAIL   mount FAIL
+      --cap-add=SYS_ADMIN + apparmor     unshare --user OK     mount OK
+      --privileged                       unshare --user OK     mount OK
+
+    Chosen over '--privileged', which additionally grants every other
+    capability and raw device access.
+
+    The fork-PR guard on this job means only same-repo code reaches it, so
+    no untrusted contributor payload runs with the added capability.
+
+    Generated with assistance from Claude Code.
+
+commit 9338c2c8841ee41678411010a31a7de40aea0744
+Author: claude (dev130 fb69d4e9-4716-4e71-ba8c-c9a310d51a5f) <noreply@anthropic.com>
+Date:   Thu Jul 30 14:17:40 2026 -0400
+
+    dm-update-frozen-snapshot: follow the docker sources file into build_sources
+
+    derivative-maker moved the image's pinned sources out of docker/apt/ and beside the
+    approx-proxied file it mirrors, so PIN_FILES tracks it there.
+
+    Without this the tool would silently stop rewriting the image's pin on a bump:
+    entries are optional when absent, which is what makes a stale pin possible rather
+    than loud.
+
+    Generated with assistance from Claude Code.
+
+commit 65ee1e217b55184534711fc32bf3df9612ff55a8
+Author: claude (dev130 fb69d4e9-4716-4e71-ba8c-c9a310d51a5f) <noreply@anthropic.com>
+Date:   Thu Jul 30 11:55:00 2026 -0400
+
+    dm-update-frozen-snapshot: read secondary pins from URIs lines only
+
+    The pin files carry example snapshot URLs in their header prose. A bare grep over
+    the whole file counts those example dates as additional pins, so an untouched,
+    correct file reads as drift and the tool refuses to bump.
+
+    Matches how the authoritative pin is already read: the deb822 URIs field first,
+    the timestamp token inside it second.
+
+    Verified: the fixture now carries example dates in comments, 17 pass / 0 fail.
+
+    Generated with assistance from Claude Code.
+
+commit 68a1211ca73847d1afe083c230a16613aa534dbd
+Author: claude (dev130 fb69d4e9-4716-4e71-ba8c-c9a310d51a5f) <noreply@anthropic.com>
+Date:   Thu Jul 30 11:48:48 2026 -0400
+
+    consumer-claude-code: correct the github.ref documentation
+
+    The comment said comment events fire with github.ref = the default branch. That
+    holds for issue_comment only; pull_request_review_comment fires with the PR merge
+    ref, refs/pull/<number>/merge.
+
+    No behaviour change. The concurrency group is
+    'github.event.pull_request.number || github.event.issue.number || github.ref', and
+    one of those two number fields is populated for every event this workflow accepts,
+    so github.ref is never reached. The comment now says that too, rather than leaving
+    a reader to assume the fallback matters.
+
+    Fixed at the root, in consumer-templates, so re-propagation carries it rather than
+    reverting it. This repo's own consumer copy is updated in the same commit and stays
+    byte-identical to the template.
+
+    Generated with assistance from Claude Code.
+
+commit 446fa59d42a3aab959f496cc0f903c39a69e93d8
+Author: claude (dev130 fb69d4e9-4716-4e71-ba8c-c9a310d51a5f) <noreply@anthropic.com>
+Date:   Thu Jul 30 11:48:14 2026 -0400
+
+    dm-update-frozen-snapshot: keep every pin file in sync, write a cat-able one
+
+    The pin existed only as a URI path segment inside a deb822 file, so every consumer
+    had to parse it back out. It also existed in exactly one file, which stops being
+    true once the docker image ships its own static apt config pinned to the same
+    snapshot.
+
+    - PIN_FILES lists the files carrying the pin as a literal timestamp. The first is
+      authoritative; the rest are optional when absent (a tree with no docker apt
+      config is valid) and strict when present.
+    - build_sources/frozen-snapshot-timestamp holds the bare timestamp, one line, so
+      consumers 'cat' it instead of parsing deb822.
+    - Before writing, every other pin file is grepped and the plain file is cat'd, and
+      all must equal the authoritative pin. Deliberately dumb: anything cleverer is a
+      second place for the pin to be wrong. Disagreement refuses, because the rewrite
+      substitutes the OLD token and would silently skip a file already on another one.
+    - The atomic-rewrite dance (temp beside the target, mode copied, sync, rename) is
+      factored into rewrite_pin_file and applied per file, so no file is left half
+      written and none silently becomes 0600.
+    - The plain file is written LAST: if a rewrite fails under errexit, it still
+      records the old pin, which the drift check then reports rather than the tool
+      claiming a bump it did not finish.
+    - --dry-run lists every file it would touch.
+
+    Verified end to end against a fixture tree with snapshot.debian.org stubbed:
+    17 pass / 0 fail. Covers agreement, drift in the docker file, drift in the plain
+    file, both optional files absent, a real write moving all pins together, mode
+    preservation, no leftover temps, and a re-run being a clean no-op.
+
+    Generated with assistance from Claude Code.
+
+commit 4c16fd82bfdc89e959a61c35fa2c884eaa3f2324
+Merge: 5b94b28e ff27311c
+Author: assisted-by-ai (Bot Account) (Machine Account) <228987186+assisted-by-ai@users.noreply.github.com>
+Date:   Thu Jul 30 11:21:08 2026 -0400
+
+    dm-update-frozen-snapshot: merge both archives so a security-only snapshot is selectable (#170)
+
+    dm-update-frozen-snapshot: merge both archives so a security-only snapshot is selectable
+
+commit ff27311c1c997a773a00a22a718d20820470df38
+Author: claude (dev130 fb69d4e9-4716-4e71-ba8c-c9a310d51a5f) <noreply@anthropic.com>
+Date:   Thu Jul 30 09:56:19 2026 -0400
+
+    dm-update-frozen-snapshot: merge both archives' timestamp listings
+
+    Candidates came only from '/mr/timestamp/?archive=debian', so a snapshot present
+    in debian-security and absent from debian could never be selected -- the
+    both-archives check never got to see it. A security-only push is exactly what a
+    DSA produces, so the tool proposed a pin predating the fix and exited 0.
+
+    DSA-6404-1 (expat, 30 Jul 2026): it proposed 20260730T082136Z, which carries no
+    fixed expat, making the bump a silent no-op. The needed pin was 20260730T083809Z,
+    security-only.
+
+    - Candidates are now the union of the debian and debian-security listings,
+      deduplicated and ordered newest-first. Fixed-width 'YYYYMMDDTHHMMSSZ' means a
+      reverse lexicographic sort is chronological.
+    - Sorted in full, then truncated in bash. 'sort | head' would hand sort a closed
+      pipe and pipefail would turn that SIGPIPE into a spurious failure.
+    - The archive name is passed to jq as '--arg' data, not spliced into the filter:
+      '.result.debian-security' would parse as a subtraction.
+    - An archive returning no timestamps now refuses instead of narrowing the
+      candidate set back to a single archive, which is the failure this removes.
+
+    Merging is sound because the service resolves a pin per archive independently to
+    the newest snapshot at or before it, so a security-only timestamp resolves to
+    itself in debian-security and to the preceding snapshot in debian.
+    snapshot_serves_all still proves every pinned suite is served in BOTH archives
+    before a timestamp can win, so the candidate set widened without weakening the
+    check after it.
+
+    Verified against a stubbed snapshot.debian.org, 8 pass / 0 fail. Canary-tested:
+    run against the pre-fix function the same suite fails 4 assertions and reproduces
+    the exact wrong pick, 20260730T082136Z.
+
+    Generated with assistance from Claude Code.
+
+commit 5b94b28edcc5deaaa6805a4c1682270dc5456e94
+Merge: 4d262baf a8eb1d21
+Author: assisted-by-ai (Bot Account) (Machine Account) <228987186+assisted-by-ai@users.noreply.github.com>
+Date:   Thu Jul 30 09:12:12 2026 -0400
+
+    Workflow comments: follow the private-ai-config rename (#168)
+
+    Workflow comments: follow the private-ai-config rename
+
+commit a8eb1d219934bbd41c02dc5b884ab9119fccfb46
+Author: claude (dev129 671b6b17-fce8-49d3-b38c-4061bf70631f) <noreply@anthropic.com>
+Date:   Thu Jul 30 06:13:15 2026 -0400
+
+    Workflow comments: follow the private-ai-config rename
+
+    - Comment-only; the repo was renamed from dist-ai-config.
+
+commit 4d262baf65932b17e098934cd0f3e4a844810fcf
+Merge: f67eaf31 02c5f5bd
+Author: assisted-by-ai (Bot Account) (Machine Account) <228987186+assisted-by-ai@users.noreply.github.com>
+Date:   Thu Jul 30 05:35:33 2026 -0400
+
+    Merge pull request #165 from org-ai-assisted/ai
+
+    ai: dm-review-branch, dm helper-script refactors, and boot-test driver
+
+    Includes the shared-CI-helper migration to dist-ai's usr/bin/step-summary-emit,
+    and the reusable-dist-ai-tests terminal-poc-corpus checkout + TERMINAL_POC_CORPUS_REPO.
+
+    Merged with 4 red checks, deliberately: all four are the cosmetic 'Emit step
+    summary' step calling the .github/dmf/ci/step-summary-emit.sh that this branch
+    deletes, every one reporting JOB_STATUS: success for the underlying gate. Those
+    checks run master's reusables against the PR ref, so the branch cannot make them
+    green -- they clear once the migrated reusables ARE master.
+
+commit 02c5f5bd94d6dcac8d25108ee28f27269ee8a754
+Author: claude (dev126 4e35481e-095c-4a62-a24d-3828184d77e1) <noreply@anthropic.com>
+Date:   Thu Jul 30 04:25:26 2026 -0400
+
+    dist-ai-tests-all: an unauthorized SKIP is a failure, not a green run
+
+    STANDING POLICY, now encoded in the script rather than relied on: a skipped test must
+    NOT produce a green exit 0 unless the skip was specifically authorized.
+
+    A suite that exits 77 because its target could not be resolved is indistinguishable,
+    in a summary line, from a suite that ran and passed. That is how
+    terminal-poc-corpus-tests reported SKIP in real CI while the gate read as wired and
+    had never executed a single PoC.
+
+    - 77 from an unauthorized suite -> SKIP-UNAUTHORIZED, counted as a failure.
+    - MISSING is never tolerated under the filter: the entrypoint ships from this repo,
+      so its absence is a packaging bug, not an environment fact.
+    - --allow-skip NAME (repeatable) authorizes a named suite; the CI wrapper fills it
+      from the caller's .github/dm-consumer.yml `allow-skip:` list. Authorize only where
+      a human decided the suite may legitimately be absent -- never to turn red green.
+    - Strictness applies when a --component filter is in force, i.e. the per-repo CI
+      entry point, where every selected suite is supposed to have its target provided. A
+      bare developer run selects the whole registry, most of which has no checkout on any
+      one machine, so it stays lenient and the summary says so.
+
+    BLAST RADIUS, deliberately not hidden: ~20 components share this orchestrator. Any
+    whose CI currently relies on a silent 77 will now go red. That is the point, but it
+    means the first red run per repo is a wiring fix or an explicit allow-skip decision,
+    not a regression.
+
+    Verified all four paths: corpus present -> 3 pass exit 0; corpus absent ->
+    SKIP-UNAUTHORIZED, 1 fail, exit 1; --allow-skip -> authorized skip, exit 0;
+    unfiltered run stays lenient.
+
+    Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+
+commit 2099872d07f74c8f9a05c7be67e9c6950f9dc2db
+Author: claude (dev126 4e35481e-095c-4a62-a24d-3828184d77e1) <noreply@anthropic.com>
+Date:   Thu Jul 30 04:11:04 2026 -0400
+
+    reusable-dist-ai-tests: optional terminal-poc-corpus checkout
+
+    terminal-poc-corpus-tests could never resolve a corpus here: only the caller and
+    dist-ai are checked out, so the suite exited 77, which dist-ai-tests-all reports as
+    SKIP and counts toward a green run. The gate read as wired while never having
+    executed a single PoC.
+
+    Check the corpus out when the caller opts in via .github/dm-consumer.yml
+    (dist-ai-tests.terminal-poc-corpus: true), mirroring the existing helper-scripts
+    opt-in, and pass TERMINAL_POC_CORPUS_REPO so wire()'s terminal-poc-corpus case
+    resolves. Opt-in rather than unconditional: the clone is useless to every consumer
+    that has no suite driving it.
+
+    The new terminal_poc_corpus output comes from dist-ai's
+    ci/dist-ai-tests-ci-config.sh (already on dist-ai master), keeping the logic in the
+    committed script rather than inline in the workflow. Sibling checkout dir, matching
+    component/ and dist-ai/.
+
+    Verified: with TERMINAL_POC_CORPUS_REPO set, terminal-poc-corpus-tests goes from
+    SKIP to PASS under --component secure-terminal.
+
+    Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+
+commit af573dce4548ebd6f7f60d65f41e68339f1188e4
+Author: claude (dev122 ee1a166e-9fdb-47c3-8710-35498a053fb7) <noreply@anthropic.com>
+Date:   Wed Jul 29 17:57:39 2026 -0400
+
+    bash-style-guide: add R-190, no substantial interpreter program in a heredoc
+
+    R-100's defect in the other direction. An embedded body bypasses ruff, pyrefly
+    and coverage.py, and cannot be unit tested because it has no importable home.
+    States the ~5-line threshold, the self-relative resolution requirement, and the
+    style-ok waiver. Enforced by R-190 in the pre-push gate.
+
+commit 13c90e61771643a32adb5bb1bc43e8b4956abee6
+Author: claude (dev127 7f58c5c1-92de-4201-b9b3-479cb3ce09c3) <noreply@anthropic.com>
+Date:   Wed Jul 29 17:54:12 2026 -0400
+
+    dm-consumer: install pre-commit-hooks for the style-rule tests
+
+    pre-push-static self-skips its ENTIRE pre-commit-hooks tier when check-yaml is
+    off PATH, emitting neither the "skipped" note nor a failure line. The two
+    double-quote-string-fixer assertions in test_pre_push_static_style_rules then
+    grep for output that was never produced and fail as though the gate were broken,
+    when the real cause is an absent package.
+
+    The dependency is declared only on the .deb, and CI runs the gate straight out
+    of the checkout.
+
+    Co-Authored-By: Claude <noreply@anthropic.com>
+
+commit bc69b68b20adc950cc53dd892e94173f74ebde57
+Author: claude (dev127 7f58c5c1-92de-4201-b9b3-479cb3ce09c3) <noreply@anthropic.com>
+Date:   Wed Jul 29 16:50:08 2026 -0400
+
+    dm-consumer: drop the git-meld-tests skip
+
+    Stale twice over. The stated reason, PR #136, merged on 2026-07-09. More to the
+    point, git-meld moved from this repo to helper-scripts in 33d4b04e, so the suite
+    is no longer owned by this component at all: dist-ai now maps git-meld to
+    helper-scripts and runs it there, and this entry could never match again.
+
+    The suite passes: rc=0 in 41s under a real pty, after fixing the two hangs the
+    skip had been masking (a consent prompt on an inherited controlling terminal,
+    and a missing --no-pager in git-review-driver.sh that spawned less and waited
+    for a keypress).
+
+    Co-Authored-By: Claude <noreply@anthropic.com>
+
+commit b62802e578faebd7ae49e31692aaa3aa73df13bd
+Author: claude (dev122 ee1a166e-9fdb-47c3-8710-35498a053fb7) <noreply@anthropic.com>
+Date:   Wed Jul 29 12:26:58 2026 -0400
+
+    bash-style-guide: R-180, python files carry a shebang and are executable
+
+    Both halves, for every *.py including library modules, so a module can be run
+    directly while debugging rather than having to reconstruct an invocation. A
+    shebang on a non-executable file is a statement the filesystem contradicts.
+
+    Empty files are exempt: a zero-byte __init__.py is a package marker.
+
+    Notes the relative-import caveat -- './mod.py' cannot work for a module that
+    uses them, 'python3 -m package.mod' is the form that does -- and records why
+    the rule is stated as a pair: the two pre-commit hooks each catch one half,
+    and a file with NEITHER slips past both. That gap is what R-180 closes in the
+    pre-push gate (dist-ai 6c5c480).
+
+    Co-Authored-By: Claude <noreply@anthropic.com>
+
+commit ffe593e3a2cb2161e94f36c2cb92a6f7bb607ba2
+Author: claude (dev118 bd22decd-3027-4ab5-9e48-11adfe39b279) <noreply@anthropic.com>
+Date:   Wed Jul 29 09:41:08 2026 -0400
+
+    Consume the shared CI helpers from dist-ai
+
+    - delete ci/step-summary-emit.sh, ci/claude-usage-record.sh; both now
+      ship as binaries in dist-ai
+    - 11 workflows call ./.github/dist-ai/usr/bin/<binary>; each gets a
+      dist-ai checkout ordered AFTER the root checkout, since
+      actions/checkout clears its destination
+    - reusable-codeql: stage dist-ai after 'analyze', so its tree is not
+      walked and reported as the consumer's alerts; if: always() to match
+      the summary step it feeds
+    - reusable-pre-push-static, reusable-dist-ai-tests: drop the dmf
+      checkout, which had no remaining consumer
+    - reusable-pre-push-static: carry the fork-PR guard on the summary
+      step; a bare always() called a binary the guard had skipped fetching
+    - bandit-discover-python.sh: exclude .github/dist-ai/ alongside
+      .github/dmf/
+
+commit 163ea82f7c350b2c303bd5a979b7de9239002347
+Author: claude (dev123 6e221aed-ed60-4b3c-bc14-cda2bb7312ba) <noreply@anthropic.com>
+Date:   Wed Jul 29 09:18:50 2026 -0400
+
+    close the pre-existing defects ai-review surfaced
+
+    dm-upload-images
+    - an empty image path left upload_file_list EMPTY, and rsync given a destination
+      but no sources merely LISTS the remote directory and exits 0 -- a silent no-op
+      the build read as a successful upload. Fail loudly instead.
+    - an empty destination made the rsync target "/${dist_build_version}/", an
+      absolute LOCAL path, so images would be copied into the build host's
+      filesystem root and still exit 0. Rejected up front.
+
+    dm-check-mirrors
+    - the stderr redirection was commented out while the report line survived, so it
+      printed an always-empty value and a broken mirror could not be diagnosed.
+      Capture stderr again and report curl's exit code alongside it.
+
+    reprepro-freshness.bsh
+    - dm_package_source_hash hashed CONTENT of regular files only: 'find -type f'
+      never matches symlinks, and sha256sum ignores modes. Retargeting a symlink or
+      a chmod produced an identical hash, so the rebuild gate skipped a package that
+      really had changed -- the exact failure the function exists to catch. Fold
+      entry type + mode + path and symlink targets into the digest.
+    - dm_reprepro_published_source_version matched a bare 'source:' anywhere in the
+      line and returned the LAST whitespace token. Match the '|source: ' field, take
+      the first line explicitly, and require the expected three fields so an output
+      format change reports "not published" (which errs toward rebuilding) instead
+      of feeding garbage to dpkg --compare-versions.
+
+    dm-reproducible-compare-artifacts
+    - the mount points are created for EVERY target but the EXIT traps were
+      installed only on the qcow2 path, so a killed iso/virtualbox run leaked two
+      mktemp directories. Register the cleanup when they are created and chain it
+      into the later traps, always last so rmdir runs after the unmount.
+    - the qcow2 member enumeration dropped find's exit status, the guard
+      find_artifact already carries. An unreadable subdirectory yields a PARTIAL
+      list, and a partial list holding exactly one member reads as success and
+      mounts the WRONG pair.
+
+    Co-Authored-By: Claude <noreply@anthropic.com>
+
+commit cf40e785b6f86a7d42ec586be1744bc1d1802775
+Author: claude (dev123 6e221aed-ed60-4b3c-bc14-cda2bb7312ba) <noreply@anthropic.com>
+Date:   Wed Jul 29 09:07:32 2026 -0400
+
+    reprepro-freshness: replace awk with pure bash
+
+    - dm_source_hash_lookup and dm_source_hash_record split on the FIRST space and
+      compare the package name with '=', so the match stays exact.
+    - record echoes each surviving line VERBATIM rather than reassembling it from
+      fields, so an entry it does not own is never reformatted.
+    - '|| [ -n "${line}" ]' so a final line with no trailing newline is still read.
+
+    Verified against the awk implementations case by case (plain, absent package,
+    empty manifest, dotted-vs-adjacent names, '+' in a name, missing trailing
+    newline, duplicate keys): identical output for every case, and no spurious
+    non-zero exit when sourced into an errexit/nounset caller.
+
+    Co-Authored-By: Claude <noreply@anthropic.com>
+
+commit cda903c0115da889315baeda0f90b4f932e27dad
+Author: claude (dev118 bd22decd-3027-4ab5-9e48-11adfe39b279) <noreply@anthropic.com>
+Date:   Wed Jul 29 09:03:03 2026 -0400
+
+    usr/bin: one quoting style for path-variable sourcing
+
+    Two spellings of the same construct were in use:
+
+      source "${VAR:-}"/usr/libexec/...     44 occurrences
+      source "${VAR:-}/usr/libexec/..."      4 occurrences
+
+    Both are safe -- an adjacent quoted and unquoted fragment still forms
+    one word -- so this is consistency, not a fix. Normalised the four
+    outliers in dm-check-mirrors and
+    dm-virtualbox-guest-additions-iso-update onto the majority.
+
+    dm-github-org-policy carried no note about what its PATH variables do,
+    unlike dm-check-mirrors which documents the from-source / installed
+    fallback. Added, with the consequence spelled out: unset means the
+    INSTALLED library is sourced, so an edit to a lib in a checkout does
+    nothing until DEVELOPER_META_FILES_PATH points at that checkout.
+
+    Co-Authored-By: Claude <noreply@anthropic.com>
+
+commit dfa81891c4066ab18f03d744116a2cd64e4ecafe
+Author: claude (dev118 bd22decd-3027-4ab5-9e48-11adfe39b279) <noreply@anthropic.com>
+Date:   Wed Jul 29 08:59:18 2026 -0400
+
+    org policy: add a PROJECT kind; MIRROR means mirrors-Kicksecure only
+
+    output-lies was in MIRROR_ORGS, so its repos got mirror policy: issues,
+    wiki and discussions off, Dependabot alerts and security updates
+    deleted, private vulnerability reporting deleted. All three of its repos
+    are fork=false. That policy is right for a fork of Kicksecure, where
+    upstream owns issues and already raises the alerts, and wrong for
+    first-party code: nobody could file a bug, no vulnerability alerts
+    arrived, and a researcher had no private channel to report through.
+
+    MIRROR now means what the name says -- an org mirroring Kicksecure or
+    Whonix -- and holds org-ai-assisted alone. secure-terminal and
+    output-lies become PROJECT: an org holding one self-contained
+    first-party project, not a copy of anything.
+
+    The split that drives the diffs is whether the code has somewhere else
+    to be maintained. MIRROR is the only kind that disables Dependabot.
+    Private vulnerability reporting does NOT follow that same split and is
+    kept separate: SOURCE disables it too, because Kicksecure and Whonix
+    take security reports through their own documented channel, so only
+    PROJECT enables it.
+
+    'project' is the value org_kind() returns, so the doc filename now
+    matches the code's vocabulary: github-policy-canonical-vs-mirror.md ->
+    github-policy-org-kinds.md, with every reference updated except
+    changelog.upstream, which is generated history.
+
+    Live fix applied to output-lies: 29 operations, 0 failures. Verified
+    issues=true on all three repos and vulnerability-alerts back to HTTP 204
+    (it was 404).
+
+    Co-Authored-By: Claude <noreply@anthropic.com>
+
+commit 1bda4e9d9b84bcc24c40dc26e71bad8ac7734527
+Author: claude (dev122 ee1a166e-9fdb-47c3-8710-35498a053fb7) <noreply@anthropic.com>
+Date:   Wed Jul 29 08:45:38 2026 -0400
+
+    bash-style-guide: R-170/R-171, no hardcoded /tmp
+
+    libpam-tmpdir gives every login session a private 0700 temp dir and
+    exports it as TMP/TMPDIR/TEMP/TEMPDIR. A path naming /tmp directly opts
+    out of that for the world-writable root, and the inline ${TMPDIR:-/tmp}
+    fallback restates the default at every use site.
+
+    R-170 sets it once at the top, matching the set-at-source discipline
+    R-021 already applies to every other variable. R-171 is the explicit
+    waiver for the paths that are not redirectable at all -- the X11 socket
+    dir, bwrap namespace construction, administering the /tmp mount.
+
+    Enforced by the pre-push gate (dist-ai usr/bin/pre-push-static), with 20
+    assertions in its test suite.
+
+    Co-Authored-By: Claude <noreply@anthropic.com>
+
+commit dd84c10cd5b9be91cbbbc6b0627e4d917a583fdb
+Author: claude (dev123 6e221aed-ed60-4b3c-bc14-cda2bb7312ba) <noreply@anthropic.com>
+Date:   Wed Jul 29 08:43:23 2026 -0400
+
+    compare-artifacts: do not misreport an excluded difference as "outside the filesystems"
+
+    The mounted route excludes boot/vmlinuz* and boot/initrd*. A regenerated initrd
+    is the most common non-reproducible artifact there is, and when it is the ONLY
+    difference diffoscope finds nothing and exits 0. The report then claimed the
+    difference lived outside the root filesystems, pointing the reader away from the
+    likeliest cause. rc 0 cannot distinguish "identical" from "every difference was
+    excluded", so name both possibilities.
+
+    Co-Authored-By: Claude <noreply@anthropic.com>
+
+commit 4df8385e0bf5ee5a4164b59fcbd8eb47a26666dd
+Author: claude (dev123 6e221aed-ed60-4b3c-bc14-cda2bb7312ba) <noreply@anthropic.com>
+Date:   Wed Jul 29 08:34:26 2026 -0400
+
+    reprepro-freshness: match the source package as a field, not a regex
+
+    - dm_source_hash_record used 'grep -v "^${source_pkg} "', which reads the
+      package name as a basic regular expression. '.' matches any character, so
+      recording a hash for 'foo.bar' silently drops an unrelated 'fooXbar' entry.
+    - dm_source_hash_lookup directly above already does an exact awk field match;
+      use the same idiom so the two agree.
+
+    Co-Authored-By: Claude <noreply@anthropic.com>
+
+commit ee1c1dca507dbcdbaa114bd7f7cb1a329fca4657
+Author: claude (dev123 6e221aed-ed60-4b3c-bc14-cda2bb7312ba) <noreply@anthropic.com>
+Date:   Wed Jul 29 08:21:02 2026 -0400
+
+    brace variable references to clear the stricter static gate (R-020)
+
+    The gate now enables the same optional shellcheck checks ai-review runs, which
+    surfaced 137 SC2250 findings in seven files already on this branch. Applied
+    shellcheck's own autofix; verified each file is code-identical to before once
+    brace syntax is normalised away.
+
+    One hunk of that autofix was NOT taken: it added quotes around
+    rsync_dry_run_maybe in dm-upload-images. That variable is "--dry-run" on the
+    first pass and "" on the second, real pass, so quoting would hand rsync an empty
+    argument instead of nothing and fail the upload. Left unquoted with a targeted
+    SC2248 disable and the reason.
+
+    Co-Authored-By: Claude <noreply@anthropic.com>
+
+commit 463040684d450d2894965bee4d6abc8ea0b635d6
+Author: claude (dev123 6e221aed-ed60-4b3c-bc14-cda2bb7312ba) <noreply@anthropic.com>
+Date:   Wed Jul 29 07:50:01 2026 -0400
+
+    compare-artifacts: make the diffoscope bound reach the privileged child
+
+    The mounted route runs diffoscope as root. Six defects around that, each
+    verified by running it, not by reading it.
+
+    - timeout now runs INSIDE the privilege prefix. An unprivileged timeout
+      parenting a root diffoscope can deliver SIGTERM only through sudo's
+      forwarding; the --kill-after SIGKILL lands on sudo. A diffoscope that does
+      not die on SIGTERM is orphaned to PID 1 still holding both mounts, umount
+      fails EBUSY, the nbd disconnect then pulls the device from under a live
+      mount, and the run leaks a mounted image and an attached device. Later runs
+      find no free device and degrade to the direct route, which OOMs.
+    - TMPDIR is set with env(1) inside the prefix. sudo's env_reset dropped the
+      command-prefix assignment, so the root-side diffoscope spilled to /tmp
+      (tmpfs, charged to RAM) -- defeating the spill-to-disk mitigation on the one
+      route that needs it. sudo ignores a bare TMPDIR=... assignment silently
+      rather than refusing it, so the obvious form looks correct and is not.
+    - teardown retries umount and refuses to disconnect an nbd device whose mount
+      is still held, reporting it instead of swallowing the failure. An unprovable
+      mount counts as still held.
+    - an EMPTY find match set collapsed into one empty match: printf '%s\n' runs
+      its format once and emits a newline even with no arguments, so the
+      "expected exactly one, found N" guard passed, sha256sum ran on "", and
+      errexit exited 1 -- a MISSING artifact reported as "artifacts DIFFER".
+      Sort only a non-empty set so the guard sees the real count.
+    - strip sha256sum's backslash escape marker. With only one side's path
+      escaped, a bit-identical pair could never compare equal.
+    - find -H, so a symlinked --dir-a is descended instead of reporting "found 0".
+    - tar extraction errors go to the report instead of /dev/null, separating a
+      damaged artifact from an unavailable filesystem route.
+
+    Co-Authored-By: Claude <noreply@anthropic.com>
+
+commit 9cbf0dae0bdc88b2e36a0f2e087a7a841100c3f1
+Author: claude (dev116 2f00841a-e951-46b4-ad01-1c1da14e19ce) <noreply@anthropic.com>
+Date:   Wed Jul 29 06:11:14 2026 -0400
+
+    compare-artifacts: brace variable references (R-020)
+
+    Clears 36 SC2250 findings the ai-review static reviewer surfaced. R-020 in the bash style
+    guide already requires braces, so this was real debt rather than reviewer noise; I had
+    braced only my own added lines and left the rest, on the grounds that a parallel session was
+    editing this file. That was overstated -- the other session is working on
+    dm-update-frozen-snapshot, not this file -- so a path-scoped commit here collides with
+    nothing.
+
+    Generated mechanically with shellcheck --format=diff rather than by hand, then checked two
+    ways: normalizing braces back out of both versions yields identical files, and the
+    end-to-end integration test still takes the filesystem route and localizes the planted
+    difference. The second check matters because the first has a blind spot -- it could not
+    distinguish a correct ${foo_bar} from an incorrect ${foo}_bar.
+
+    Generated with assistance from Claude Code.
+
+commit a55bf44c7d9afc526064e7c3aafb002f93f34d7f
+Author: claude (dev118 bd22decd-3027-4ab5-9e48-11adfe39b279) <noreply@anthropic.com>
+Date:   Wed Jul 29 06:05:50 2026 -0400
+
+    dm-update-frozen-snapshot: drop history from comments
+
+    Comments state the current reason, not what the code used to do. The
+    candidate-selection block narrated two superseded approaches and the
+    LATEST_SNAPSHOT note was written as a bug report; both now say why the
+    code is the way it is.
+
+    Also reattaches the HTTPS rationale to SNAPSHOT_BASE, which the
+    strings.bsh source line had separated it from.
+
+    Co-Authored-By: Claude <noreply@anthropic.com>
+
+commit 1c54fb6a7137385528004eeef35c215ec2e0bf9f
+Author: claude (dev118 bd22decd-3027-4ab5-9e48-11adfe39b279) <noreply@anthropic.com>
+Date:   Wed Jul 29 05:33:56 2026 -0400
+
+    dm-update-frozen-snapshot: correct the note on suppressing validator stderr
+
+    The comment justified suppressing strings.bsh's stderr by saying
+    check_is_not_empty_and_only_one_line prints the rejected value raw. That
+    is fixed at the source now -- it reports through stecho -- so the note
+    described a hole that no longer exists.
+
+    The suppression stays, for the two reasons that actually apply: an
+    installed helper-scripts may predate the fix, and one specific message
+    about an api entry beats two generic ones about a variable name.
+
+    Co-Authored-By: Claude <noreply@anthropic.com>
+
+commit c922f72749fdc285eea68b2f7cec167556bdecee
+Author: claude (dev118 bd22decd-3027-4ab5-9e48-11adfe39b279) <noreply@anthropic.com>
+Date:   Wed Jul 29 05:20:34 2026 -0400
+
+    dm-update-frozen-snapshot: validate api entries with strings.bsh as well
+
+    Every server-supplied timestamp now passes two independent gates, because
+    neither subsumes the other:
+
+    - check_is_not_empty_and_only_one_line + check_is_alpha_numeric from
+      helper-scripts' strings.bsh reject the injection classes -- empty,
+      multi-line, path traversal, command substitution, shell metacharacters,
+      ANSI escapes -- but accept anything alphanumeric, so 'not-a-timestamp'
+      sails straight through them.
+    - the exact-shape case rejects that, but it is one hand-written pattern
+      and a mistake in it would previously have been caught by nothing.
+
+    Measured both ways: the generic pair accepts 'not-a-timestamp' and
+    rejects the six hostile shapes; end to end the two together accept only a
+    real timestamp.
+
+    Their stderr is suppressed and the diagnostic re-emitted through
+    sanitize-string. check_is_not_empty_and_only_one_line reports the
+    offending value with a plain printf, which would put server-controlled
+    bytes on the terminal unescaped -- precisely what the sanitising exists
+    to prevent.
+
+    Also corrects the file's own header: it claimed to source no
+    helper-scripts, which stops being true here. strings.bsh, sanitize-string
+    and scurl all ship in helper-scripts, so this adds no new dependency --
+    the earlier reasoning for avoiding it was simply wrong.
+
+    Co-Authored-By: Claude <noreply@anthropic.com>
+
+commit f2bb4a4eea7e2e6e89fc872ad04dcdacf902c442
+Author: claude (dev118 bd22decd-3027-4ab5-9e48-11adfe39b279) <noreply@anthropic.com>
+Date:   Wed Jul 29 01:29:56 2026 -0400
+
+    dm-update-frozen-snapshot: close the three remaining ai-review findings
+
+    Flagged as lower severity last round and left open; that was the wrong
+    call, so here they are.
+
+    Redirects are no longer followed at all. scurl pins the SCHEME to https
+    but not the HOST, so --location let snapshot.debian.org hand the request
+    to any other https server. Nothing needed the body: an existing Release
+    answers 302 (the redirect to the content-addressed copy) and a missing
+    one answers 404, so the status alone decides. Verified against the live
+    service for both cases plus a nonexistent suite. The mr endpoint returns
+    200 with no redirect, so it does not need it either.
+
+    A symlinked sources file was silently bypassed. Shared-checkout layouts
+    do point build_sources/ entries at a common tree, and 'mv' onto a symlink
+    replaces the LINK with a regular file: the real file keeps its old pin,
+    the build keeps reading it, and the diff looks applied. The '-r' test
+    does not catch it because a symlink to a readable file is readable.
+    Resolved with readlink --canonicalize before writing. Verified with a
+    real write through a symlink: the link survives and the target is the
+    file that changes.
+
+    The atomicity claim was overstated. The rename is atomic in the
+    namespace; durability was not, so a crash between write and rename could
+    leave a truncated sources file. Added an fsync of the temp and rewrote
+    the comment to say which half is guaranteed.
+
+    Co-Authored-By: Claude <noreply@anthropic.com>
+
+commit 45c7e6347faea53fe131e71008e1f6d263aa1fbd
+Author: claude (dev118 bd22decd-3027-4ab5-9e48-11adfe39b279) <noreply@anthropic.com>
+Date:   Wed Jul 29 01:28:11 2026 -0400
+
+    compare-artifacts: clear the two static-gate failures on the branch
+
+    CI's gate went red on the branch head. Not from the commit that tripped
+    it -- the gate greps WHOLE changed files against master, so it sees every
+    file the branch touches, while a '--staged' run before an individual
+    commit only sees that commit's own file. Both findings are in
+    dm-reproducible-compare-artifacts and both are inconsistencies with the
+    idiom the same file already uses elsewhere, not deliberate choices:
+
+    - R-120: 'rm --force' on the find-status tempfile, where unpack_cleanup
+      three hundred lines away already uses safe-rm.
+    - R-051: an inline 'trap a; b' body, where the unpack-only trap right
+      below it already traps a bare function name.
+
+    Chained the two cleanups into filesystem_and_unpack_cleanup and trap that
+    instead. It needs an SC2317 waiver because the function is reached only
+    through the trap, which shellcheck does not trace -- unpack_cleanup
+    escapes that only by also being called directly. Same directive-plus-
+    reason shape as dm-github-org-metadata-sync.
+
+    No behaviour change; the whole-branch gate is green again.
+
+    Co-Authored-By: Claude <noreply@anthropic.com>
+
+commit 3d10c4f80600455c91b9f8ed136df7eed3e18801
+Author: claude (dev118 bd22decd-3027-4ab5-9e48-11adfe39b279) <noreply@anthropic.com>
+Date:   Wed Jul 29 01:08:56 2026 -0400
+
+    dm-update-frozen-snapshot: fix six defects found by ai-review
+
+    All verified against the code and reproduced before fixing.
+
+    Folded 'Suites:' silently dropped every suite after the first. grep-dctrl
+    emits a wrapped field body verbatim, and 'read -r -a' stops at the first
+    newline, so 'Suites: trixie\n trixie-updates' probed only trixie and the
+    pin could advance to a snapshot not serving the rest. This is the exact
+    continuation-line trap the stanza counting is written to avoid,
+    reintroduced in the consuming path. Newlines are flattened before
+    splitting, and an empty list now aborts instead of meaning "serves
+    everything". Proven with a folded file whose second suite does not exist:
+    it now fails where it previously would have reported success.
+
+    A security stanza pinned to a different snapshot was left stale. The
+    rewrite substitutes the PRIMARY stanza's token, so it only updates the
+    security URI because both normally carry the same one. Diverged, it would
+    bump the primary, silently leave security on its old snapshot and exit 0
+    -- while the validation had already checked debian-security at the NEW
+    timestamp, reporting success for a combination never written. Now
+    verified rather than assumed.
+
+    Transport failure was indistinguishable from "suite absent". curl's exit
+    status was folded into '|| return 1', so a reset, DNS failure, TLS error
+    or timeout was treated as a 404 and the search fell through to an older
+    snapshot -- the abort branch could never fire for the cases its own
+    comment described. Anyone able to drop packets could hold the pin behind
+    newest. Status captured separately; stderr no longer discarded.
+
+    'exit 2' in snapshot_serves only exited a subshell, because
+    latest_valid_snapshot was called via command substitution. A 429 was
+    reported as "no snapshot serving both suites" with exit 1, blaming the
+    suites for a rate limit. The result now returns via LATEST_SNAPSHOT so
+    the function runs in the current shell and those aborts mean what they
+    say. The stale "in the last two months" wording went with it.
+
+    jq's status was swallowed by a process substitution, so a schema change
+    read as an empty archive. Captured before mapfile.
+
+    '^Suites:' was case-sensitive; deb822 field names are not, and grep-dctrl
+    echoes the name as it appeared. A legal 'suites:' counted 0 stanzas and
+    aborted a valid file. --ignore-case.
+
+    Co-Authored-By: Claude <noreply@anthropic.com>
+
+commit cd674e76ab4907e99f110627abb0e5dd1be213d6
+Author: claude (dev116 2f00841a-e951-46b4-ad01-1c1da14e19ce) <noreply@anthropic.com>
+Date:   Wed Jul 29 01:03:53 2026 -0400
+
+    compare-artifacts: retract a false security claim; fix four correctness bugs
+
+    Second claude review pass. The most important finding is that a comment I wrote was wrong.
+
+    RETRACTED: --format=qcow2 does NOT neutralize backing_file. The previous comment claimed it
+    stopped a qcow2 backing_file making root open an arbitrary host path. It does not.
+    --format pins only the TOP-LEVEL driver; the qcow2 driver still honours the backing_file
+    header and its format extension, and backing names go through bdrv_open, so json:{...} and
+    protocol URLs are accepted. A crafted qcow2 with unallocated clusters and
+    backing_file=/etc/shadow would surface host bytes through the mount into the report, which
+    CI publishes as an artifact. Format pinning still removes raw/qcow2 confusion, which is all
+    it was ever worth.
+
+    Documented the trust model instead of pretending the route is hardened. It hands artifacts
+    to root-privileged parsers at three layers -- qemu-nbd, the host kernel filesystem driver,
+    and diffoscope. nodev,nosuid,noexec bound what the mounted tree can do and nothing about
+    bugs in the parsers. That is acceptable while both artifacts are locally built, which is
+    true for the CI lane and reproducible-build-twice. It is NOT acceptable for the
+    dm-reproducible-verify flow, which downloads one side; extending it there needs libguestfs
+    so the parsing happens in a disposable VM without host root.
+
+    A stale diffoscope_rc made the verdict lie. The variable is only assigned on failure, so a
+    value left from a failed mounted route survived a SUCCESSFUL direct comparison and the
+    report then claimed the diff could not be explained when it just had been. Reset before the
+    direct run, and say so when diffoscope finds nothing despite differing artifacts.
+
+    find failures were invisible. Running inside a process substitution hides the exit status
+    from both errexit and pipefail, so an unreadable subdirectory holding the real artifact
+    would leave a stale sibling as the only match and the script would hash the WRONG image.
+    Capture and check the status.
+
+    A failed tee inverted the identical verdict. On the reproducible path, printf | tee under
+    errexit+pipefail exits non-zero before the exit 0, and the caller reads that as "artifacts
+    differ" for a bit-identical pair. The hashes already decided the verdict; a reporting
+    failure must not change it.
+
+    Generated with assistance from Claude Code.
+
+commit 11386a119669af80652d4bc6bcec25f761ef0577
+Author: claude (dev116 2f00841a-e951-46b4-ad01-1c1da14e19ce) <noreply@anthropic.com>
+Date:   Wed Jul 29 00:57:03 2026 -0400
+
+    compare-artifacts: fix the filesystem route again (claude review pass)
+
+    Findings from the local claude sweep over 3e986e78, verified individually against the code.
+
+    nbd_device_claim handed back PARTITION nodes. /dev/nbd* also matches /dev/nbd0p1, which is
+    a block device, and a partition lives at /sys/block/nbd0/nbd0p1 -- so /sys/block/nbd0p1/pid
+    never exists and a partition of a BUSY device read as free. Reproduced: with nbd0 attached,
+    the glob yields nbd0, nbd0p1, nbd1 ... and nbd0p1 was reported free; the connect then fails
+    and the whole route is abandoned to the fallback, which is the OOM path this route exists
+    to avoid. Restrict to whole-disk devices and require the sysfs node.
+
+    A crashed diffoscope suppressed the fallback -- a regression I introduced in 3e986e78 while
+    fixing the opposite case. Only rc 1 (differences FOUND) is an explanation; rc 0 means the
+    root filesystems match so the difference is outside them, and anything higher is a crash,
+    OOM or timeout. Both non-1 cases must still run the direct comparison.
+
+    qemu-nbd probed the format while running as root. A crafted artifact could be read as a
+    different format, and a qcow2 backing_file would make root open an arbitrary host path
+    whose contents then surface in the report. Pin --format=qcow2.
+
+    The mount lacked nodev,nosuid,noexec. Our own images legitimately contain setuid-root
+    binaries; mounting one exposed them executable to the invoking user for the duration of the
+    diff, which matters wherever sudoers is scoped to specific commands rather than ALL.
+
+    An unwritable --output exited 1, which the caller and the CI workflow read as "artifacts
+    differ" -- a false reproducibility failure. Prove the report is writable before hashing and
+    exit 2, the setup-error code.
+
+    The --exclude patterns carry a directory component; diffoscope matches per path component,
+    so boot/initrd* may never fire. Added the bare initrd*/vmlinuz* forms alongside.
+
+    The header comment claimed the artifact is a bare xz stream while the code treats it as a
+    tar. The code is right -- extracting a real artifact yields the qcow2 plus the libvirt xml
+    and licence files -- so the comment was corrected.
+
+    A fixed sleep hid a real ordering bug. Replacing it with a poll surfaced it: sysfs pid
+    appears almost immediately, partition nodes appear later, so polling only for pid returned
+    before <device>p* existed and the partition loop matched nothing. Caught by the end-to-end
+    test, not by reading. Wait for both.
+
+    Generated with assistance from Claude Code.
+
+commit 3e986e780e0ab0b02959013f09222a3414236fbb
+Author: claude (dev116 2f00841a-e951-46b4-ad01-1c1da14e19ce) <noreply@anthropic.com>
+Date:   Wed Jul 29 00:47:24 2026 -0400
+
+    compare-artifacts: fix the filesystem route (self-review + ai-review)
+
+    Findings from a codex/coderabbit/agy/static review of 6d6b327b plus my own pass over it.
+
+    Destructive on a developer machine (mine, confirmed by agy). The teardown ran BEFORE setup
+    and unconditionally disconnected /dev/nbd0 and /dev/nbd1. This tool is not CI-only --
+    ci/reproducible-build-twice calls it and the docs tell developers to run it locally -- so on
+    a machine where nbd0 already held an unrelated image it ripped that out from under a live
+    mount. Claim only FREE devices (/sys/block/<dev>/pid absent), record which ones this run
+    claimed, and disconnect only those. Also fixes the B-side partition being derived by
+    substring substitution, which only worked because the devices were hardcoded.
+
+    No cleanup handler (mine, confirmed by codex). A failure or signal between --connect and
+    teardown leaked an attached device and a mounted image; the diffoscope run is up to 900s,
+    so the window is wide. Trap on EXIT.
+
+    Recursive delete over mount points (mine). safe-rm --recursive ran unconditionally after
+    teardown, so a failed unmount would send it INTO the mounted image -- survivable only
+    because the mounts are read-only. rmdir instead: it refuses a non-empty directory.
+
+    Root-owned files were unreadable (agy). diffoscope ran unprivileged against a real mount,
+    where the kernel enforces the image ownership, so /etc/shadow, /etc/gshadow and the ssh
+    host keys -- the files whose divergence matters most -- could not be read. Run the mounted
+    comparison under sudo; the artifact route stays unprivileged, its inputs being user-owned.
+
+    Unified builds compared one image and claimed the rest (codex). dm-prepare-release ships
+    several qcow2 members when vm_multiple is true; taking the lexicographically first would
+    miss a mismatch confined to another while still reporting the diff as explained. Require
+    exactly one member per side, else fall back with a note.
+
+    Unpack directories leaked (codex, agy). Cleanup sat inside the both-images-found branch, so
+    a failed extraction or a missing qcow2 left a partially expanded multi-gigabyte image in
+    /var/tmp for the rest of the run and beyond. Register the cleanup when the directories are
+    created.
+
+    A zero result was reported as an explanation (codex, the best finding here). diffoscope
+    exits 0 when it finds nothing; the artifacts demonstrably differ, so identical root
+    filesystems mean the difference is OUTSIDE them -- container metadata, qcow2 header,
+    partition table, bootloader, ESP. That announced an explanation and printed none. Fall
+    through to the direct comparison and say why.
+
+    Verified end to end after the rework: the comparator still takes the filesystem route and
+    localizes the planted difference, and now reads a 0700 root-owned directory it previously
+    could not.
+
+    Generated with assistance from Claude Code.
+
+commit 8f96d2596796363c9bc18a4aba83c6b9421c0a5d
+Author: claude (dev118 bd22decd-3027-4ab5-9e48-11adfe39b279) <noreply@anthropic.com>
+Date:   Wed Jul 29 00:34:21 2026 -0400
+
+    dm-update-frozen-snapshot: harden against a hostile snapshot.debian.org reply
+
+    The JSON parsing itself was already safe -- jq parses structurally, and a
+    timestamp is shape-checked to digits/T/Z before it can reach a URL, so
+    there is no injection path. What was NOT safe was the SEMANTICS of a
+    reply that parses perfectly.
+
+    ROLLBACK GUARD, the real hole. Nothing stopped the pin moving backwards.
+    A listing whose newest entry is an OLD timestamp would have been accepted
+    and written, downgrading the build to an earlier snapshot. Apt cannot
+    notice: an older snapshot is just as validly signed, so the signature
+    check passes while package versions whose vulnerabilities were since
+    fixed are reinstated. Refuse, and say why, rather than pinning it.
+    Verified end to end against a tree pinned to 20991231T235959Z: refused,
+    exit 1, file untouched.
+
+    Terminal-escape defence. The malformed-entry diagnostic printed
+    server-controlled bytes straight to the operator's terminal, where ANSI
+    escapes or a U+202E right-to-left override could spoof what was read. It
+    now goes through sanitize-string with an 80-char cap (verified: ESC, BEL
+    and U+202E all become '_', and the value truncates).
+
+    Payload bound. --max-filesize 8000000 on the listing fetch, against a
+    server streaming unbounded data into a command substitution. 465 KB is
+    today's payload and it grows ~18 bytes per snapshot, so this is centuries
+    of headroom. Honest caveat in the comment: curl enforces it up front from
+    Content-Length and mid-transfer otherwise, so it bounds the damage rather
+    than making it impossible.
+
+    sanitize-string preflighted (R-091) alongside grep-dctrl, scurl and jq.
+
+    Co-Authored-By: Claude <noreply@anthropic.com>
+
+commit 96d37b38eb8c5180e02d6d5e4b9de3f0db7f9298
+Author: claude (dev118 bd22decd-3027-4ab5-9e48-11adfe39b279) <noreply@anthropic.com>
+Date:   Wed Jul 29 00:20:05 2026 -0400
+
+    dm-update-frozen-snapshot: select the pin from the machine-readable api
+
+    Candidates now come from '/mr/timestamp/?archive=debian', a documented
+    JSON endpoint (added Aug 2024), parsed with jq. '?archive=' matters: the
+    unfiltered endpoint ships all eight archives at 1.9 MB where one archive
+    is 465 KB.
+
+    This replaces reading the timestamp out of the 302 that
+    '/archive/debian/<any-timestamp>/' issues. That worked and is documented
+    in prose, but it is a redirect side-effect read from a Location header,
+    and it computes the answer server-side where nothing local can check it.
+    Reading the list and taking the newest entries makes the selection
+    explicit and locally verifiable, which is what a reproducibility pin
+    should be. Both methods independently choose 20260729T022318Z.
+
+    The service's own resolution is still what USES the pin: any timestamp
+    resolves to the newest snapshot at or before it, so an immutable archive
+    means a pinned instant resolves to the same snapshot forever, in each
+    archive independently.
+
+    Safety, all covered by sandbox tests against a stubbed api:
+    - a timestamp is shape-checked before it can reach a URL or the pin; a
+      malformed entry aborts rather than being pasted into a request
+    - an empty list aborts rather than guessing
+    - a fetch failure and a non-JSON body both abort
+    - candidate count is bounded (20) and the loop exits on the first
+      snapshot that serves, so stepping back is a pathological-case cost
+    - jq preflighted (R-091) alongside grep-dctrl and scurl
+
+    Co-Authored-By: Claude <noreply@anthropic.com>
+
+commit a8a6a91038389d7a1fa56aec8beacd09ab5f4311
+Author: claude (dev118 bd22decd-3027-4ab5-9e48-11adfe39b279) <noreply@anthropic.com>
+Date:   Tue Jul 28 23:24:39 2026 -0400
+
+    dm-update-frozen-snapshot: let snapshot.debian.org resolve the timestamp
+
+    snapshot.debian.org accepts ANY timestamp, not only instants a snapshot
+    was actually taken at: it 302s to the newest snapshot at or before the
+    one asked for. Verified live -- GET /archive/debian/20260715T120000Z/
+    answers 'Location: /archive/debian/20260715T082259Z/' -- and stated on
+    its front page ("available timestamp which is before the time you
+    specified").
+
+    So the candidate enumeration existed to solve a problem the service does
+    not have. Gone with it:
+
+    - scraping the '?year=&month=' HTML listing (a page, not an API) and
+      regex-extracting timestamp tokens from it
+    - sort --unique --reverse over those tokens
+    - calendar arithmetic walking this month then last, anchored on the 15th
+      to dodge a month-length rollover bug
+    - the nested months x timestamps loop
+
+    Replaced by one request that asks the service to resolve "now", plus a
+    bounded step-back list (0/1/3/7/30 days) for the one case resolution
+    cannot cover: a snapshot that exists but does not yet serve every pinned
+    suite. If none serves, that is a real event for a human, not something to
+    retry into.
+
+    Reproducibility is unaffected and the reason is worth stating: snapshots
+    are immutable and only ever gain LATER timestamps, so nothing can become
+    a nearer preceding match for a pin already written. A pinned instant
+    resolves to the same snapshot forever.
+
+    canonical_snapshot() is what makes the tool idempotent rather than
+    cosmetic: pinning a raw "now" would write a different timestamp on every
+    run even when the underlying snapshot had not changed, so the
+    already-current check could never fire. Verified: two dry-runs seconds
+    apart both target 20260729T022318Z.
+
+    Net code lines are +8, not fewer -- the win is in kind, not size. Two
+    network dependencies (HTML layout, calendar edge cases) are replaced by
+    one authoritative answer, and the added lines are mostly the strict
+    format validation on the redirect target.
+
+    Co-Authored-By: Claude <noreply@anthropic.com>
+
+commit cee1a56c733c098674ceacf872649c126282ebfd
+Author: claude (dev118 bd22decd-3027-4ab5-9e48-11adfe39b279) <noreply@anthropic.com>
+Date:   Tue Jul 28 23:01:19 2026 -0400
+
+    claude review: record why path_to_bun_executable was rejected
+
+    Evaluated as the way to remove the "cache write denied" warning without
+    widening permissions. It does work: setting it conditions the setup-bun
+    step out entirely, so nothing attempts a cache write.
+
+    Rejected because the action hardcodes 'bun-version: 1.3.14' for its own
+    install and validates a supplied executable not at all. Setting the input
+    means silently owning a version-compatibility contract with the action's
+    internals, renegotiated on every SHA bump, with no mechanism to detect
+    skew -- it would surface as the agent behaving oddly, not as an error.
+    We would also have to fetch and pin bun ourselves, adding supply-chain
+    surface to maintain.
+
+    A recurring maintenance hazard is a bad trade for a cosmetic warning and
+    a second of download.
+
+    Co-Authored-By: Claude <noreply@anthropic.com>
+
+commit 0175f30f01da059ee9bd356ee9c93286a0df30ca
+Author: claude (dev118 bd22decd-3027-4ab5-9e48-11adfe39b279) <noreply@anthropic.com>
+Date:   Tue Jul 28 22:56:37 2026 -0400
+
+    claude review: restore ArrayBolt3 to the roster, now that they hold write
+
+    ArrayBolt3 was dropped because they held only 'read' on all 8 repos
+    carrying the workflow, so the roster gate passed and claude-code-action
+    then hard-failed at the OIDC app-token exchange with a 401 -- a red X and
+    no review, which is strictly worse than not being listed.
+
+    Write granted on all 8 (developer-meta-files, derivative-maker,
+    helper-scripts, genmkfile, kloak, tb-updater, security-misc,
+    whonix-firewall), verified read-back as 'write', so the name goes back.
+    claude-roster-verify now reports every roster member holds write
+    everywhere.
+
+    Point the input's doc at that tool rather than at a raw API call, and
+    say the order that matters: grant write BEFORE adding a name.
+
+    AGENTS.md Tests: realign with the sibling convention (helper-scripts) --
+    restore the "too high-volume for human review / AI-maintained dist-ai"
+    framing and the usr/share/<suite>/ path comments, keep it short, keep the
+    ci-skill pointer for CI wiring.
+
+    Co-Authored-By: Claude <noreply@anthropic.com>
+
+commit 62f0ac55187af928e18741798d2d8c70934e31f6
+Author: claude (dev118 bd22decd-3027-4ab5-9e48-11adfe39b279) <noreply@anthropic.com>
+Date:   Tue Jul 28 22:44:47 2026 -0400
+
+    ci: move the Claude roster check out of a workflow that cannot run
+
+    claude-roster-verify.sh was wired into local-org-policy-live-audit.yml,
+    which authenticates with a GHORG_AUDIT_TOKEN repo secret. That secret
+    does not exist -- not on this repo, not on dist-ai, not org-level -- and
+    the workflow has 0 runs, ever. So the drift guard was inert: it could
+    never have caught the drift it was written for.
+
+    Listing an org's repos and reading collaborator permissions wants an
+    org-scoped token, which no CI job here has. The bot token on the
+    operator host does. The check therefore moves to dist-ai-config as
+    `claude-roster-verify`, where it runs today with no new secret, and
+    reads the roster from the DEPLOYED workflow over the API rather than a
+    local checkout -- so what it verifies is what CI actually runs.
+
+    First live run reports what the inert version never could: ArrayBolt3
+    holds 'read' on all 8 repos carrying the workflow, so every '@claude'
+    from that account 401s at the app-token exchange.
+
+    Co-Authored-By: Claude <noreply@anthropic.com>
+
+commit 1b75b9210a230e6b70c745267ae62bb4dfcf9d94
+Author: claude (dev118 bd22decd-3027-4ab5-9e48-11adfe39b279) <noreply@anthropic.com>
+Date:   Tue Jul 28 22:35:54 2026 -0400
+
+    claude review: record that the cache-write warning must stay
+
+    Every run ends with a yellow annotation, "Cache reservation failed:
+    cache write denied: token has no writable scopes". It comes from the
+    oven-sh/setup-bun step inside claude-code-action trying to save its
+    ~32 MB Bun download; the permissions block grants no 'actions:' scope,
+    so the save is refused. Restore is unaffected -- verified against a run
+    that logged "Cache hit" and "Cache restored successfully" (32 MB).
+
+    The obvious fix, 'actions: write', is the wrong one. Per G-A-007
+    actions/cache extracts archives without integrity checks, so a job
+    holding a cache-writable ACTIONS_RUNTIME_TOKEN can poison entries the
+    default branch then consumes. This is the one workflow that feeds
+    untrusted PR content to an agent with tool access, so it is the last
+    job in the org that should be able to write the cache. The warning is
+    the control working.
+
+    The action exposes no input to skip its bun cache (setup-bun is
+    hardcoded with no-cache defaulting to false), so it cannot be removed
+    without widening permissions or supplying our own bun via
+    path_to_bun_executable. Neither is worth a second of download.
+
+    Co-Authored-By: Claude <noreply@anthropic.com>
+
+commit 6d6b327b03202688584d8af7e11abc3869a7ac6f
+Author: claude (dev116 2f00841a-e951-46b4-ad01-1c1da14e19ce) <noreply@anthropic.com>
+Date:   Tue Jul 28 21:25:17 2026 -0400
+
+    compare-artifacts: diff the mounted filesystems, not the disk images
+
+    diffoscope could not explain a qcow2 mismatch at all. Measured on the real pair from
+    CI run 30398651992:
+
+      ulimit -v 8000000  -> MemoryError, "Out of memory. Diffoscope exiting.", exit 2, 53s
+      no ulimit          -> SIGKILL from the kernel OOM killer, exit 137, 152s
+
+    So the ulimit was not the cause; it is a graceful-failure valve doing its job. Two 100 GB
+    sparse disk images are simply beyond the memory available. trixie-backports does not help
+    either: the lane already installs 306~bpo13+1 (confirmed in the job log) and it died the
+    same way -- the streaming fix does not cover container descent.
+
+    What works, same binary and same ulimit: attach each image read-only over nbd and hand
+    diffoscope the two MOUNT POINTS, so its working set is one file pair at a time instead of
+    the whole container. Measured on the same real images: exit 1 (differs) in 181s, with the
+    differing file named. Verified end to end on synthetic released-shape artifacts: the
+    comparator unpacks the xz, locates the qcow2, finds the rootfs, mounts both and reports
+    the changed file with its content diff.
+
+    Falls back to the previous direct comparison when the filesystem route is unavailable (no
+    nbd, no root, a non-disk target), so a restricted environment is no worse off.
+
+    Generated with assistance from Claude Code.
+
+commit f3c95ad8260b8e0166340c65f3ac594265e2582e
+Author: claude (dev118 bd22decd-3027-4ab5-9e48-11adfe39b279) <noreply@anthropic.com>
+Date:   Tue Jul 28 18:01:37 2026 -0400
+
+    docs: catalogue zizmor unpinned-uses as a known false positive
+
+    ai-review --with static reaches zizmor and actionlint, which nothing in
+    the CI gate runs. actionlint reports the workflows clean; zizmor reports
+    one high finding, unpinned-uses on the '@master' reusable ref in the
+    consumer wrapper.
+
+    It is the PinnedDependenciesID entry already in this file, reached by a
+    different tool -- zizmor's own message says "required by blanket policy",
+    and like Scorecard it cannot tell a third-party Marketplace action from an
+    intra-org reusable under the same admin boundary. Catalogued separately
+    because zizmor is on-demand rather than gated, so the next person to run
+    it meets the finding with no Scorecard context.
+
+    Deliberately not suppressed in-tree: an ignore comment would have to be
+    propagated to every consumer wrapper and would blind the audit to a
+    genuinely unpinned third-party action added on that line later.
+
+    Co-Authored-By: Claude <noreply@anthropic.com>
+
+commit 19c50c58b6ea8d82d7ca93906a3a40cb9898a5cd
+Author: claude (dev118 bd22decd-3027-4ab5-9e48-11adfe39b279) <noreply@anthropic.com>
+Date:   Tue Jul 28 17:23:28 2026 -0400
+
+    claude review: record why both comment triggers are kept
+
+    The skipped-run count invites a wrong conclusion. Measured over 30 days:
+    405 comment-triggered runs, 384 skipped, 95% bot-authored. Reading that
+    alone, dropping pull_request_review_comment looks like free cleanup -- it
+    is the event that attaches its grey check to the PR HEAD, while
+    issue_comment attaches to the default-branch tip where no PR shows it.
+
+    It is kept on purpose: aiming '@claude' at one specific line from inside
+    an inline review thread is worth the cosmetic noise. Recorded here so the
+    next reader does not re-derive the measurement and reach the opposite
+    answer.
+
+    Also note what is NOT possible: GitHub creates the run before evaluating
+    any 'if:', and comment events accept only 'types:' -- no body, author or
+    author_association filter, and no workflow-level 'if:'. The consumer's
+    '@claude' substring gate is already the earliest filter available.
+
+    Co-Authored-By: Claude <noreply@anthropic.com>
+
+commit aec10955980fea8995005cce2c2b83ac15a01c60
+Author: claude (dev116 2f00841a-e951-46b4-ad01-1c1da14e19ce) <noreply@anthropic.com>
+Date:   Tue Jul 28 16:56:58 2026 -0400
+
+    dm-reproducible-compare-artifacts: bound diffoscope so it can explain
+
+    On a 1 GB .qcow2.libvirt.xz expanding to a 100 GB sparse image, diffoscope died
+    with "Out of memory. Diffoscope exiting." (exit 2) despite the ulimit and timeout,
+    so a real reproducibility failure produced the sha256 verdict and no explanation.
+
+    - Bound the per-file diff INPUT and what is retained (--max-diff-input-lines,
+      --max-diff-block-lines-saved), not just the report size, so one large differing
+      member cannot pull the whole diff into memory.
+    - Exclude boot/initrd* and boot/vmlinuz*: large, always differ once anything below
+      them differs, and say nothing about the cause.
+    - TMPDIR=/var/tmp so spill files land on real disk; a tmpfs TMPDIR charges them to
+      RAM, which is the failure being avoided.
+
+    These are the mitigations docs/reproducible-verification.md already prescribes.
+
+    Generated with assistance from Claude Code.
+
+commit 65a2a80c0989c02bac684f33604bbee6790f85e2
+Author: claude (dev118 bd22decd-3027-4ab5-9e48-11adfe39b279) <noreply@anthropic.com>
+Date:   Tue Jul 28 16:54:55 2026 -0400
+
+    dm-update-frozen-snapshot: make both stanza selectors positive on Suites
+
+    Three findings from ai-review on the previous commit, all verified against
+    real grep-dctrl output before fixing.
+
+    - '--invert-match' alone also selected a stanza carrying NO Suites field:
+      an absent field cannot match the pattern, so negating it matches. The
+      primary selector now reads "has a Suites AND it is not a -security one"
+      (--field=Suites --regex --pattern=. --and --not ...). A .sources file
+      with one valid primary stanza and one Suites-less stanza used to abort
+      as ambiguous.
+    - Counting the matched stanzas' 'Types:' VALUE lines miscounted a legally
+      wrapped Types ('Types: deb' + ' deb-src') as two stanzas, aborting on a
+      valid single-stanza file. Count '^Suites:' with field names KEPT instead:
+      a folded body adds indented continuation lines, which do not match, so
+      the count is one per stanza however the value wraps. Both selectors are
+      positive on Suites, so the field is guaranteed present.
+    - Stanzas lacking 'Types:' made the count 0, which slipped past a '-gt 1'
+      check and returned concatenated fields from several stanzas; read -r -a
+      in snapshot_serves_all would then have silently dropped all but the
+      first suite. The check is now '-ne 1'.
+
+    Also stop piping grep-dctrl straight into the counter: under pipefail a
+    pipeline reports the rightmost non-zero status, so grep's exit 1 on a zero
+    count would have masked grep-dctrl's exit 2 on a malformed file.
+
+    Co-Authored-By: Claude <noreply@anthropic.com>
+
+commit e3f3dcc7e62d937e2b1b07a15c18be35f4ccca74
+Author: claude (dev118 bd22decd-3027-4ab5-9e48-11adfe39b279) <noreply@anthropic.com>
+Date:   Tue Jul 28 16:46:21 2026 -0400
+
+    dm-update-frozen-snapshot: let grep-dctrl do all the deb822 work
+
+    The previous fix traded one hand-rolled parse for another: it replaced
+    'sed -n Np' line indexing with a bash paragraph walker. dctrl-tools can
+    select the stanza itself, so no part of deb822 needs re-implementing here.
+
+    - Select by PREDICATE, not position: the security stanza is the one whose
+      Suites name a '-security' suite, the primary stanza is the one that does
+      not (grep-dctrl --field=Suites --regex --pattern=-security, with
+      --invert-match for the primary). '-security' is Debian's own suite-naming
+      convention, so this survives a rename of the local approx repositories,
+      which a URIs predicate would not.
+    - Positional indexing is gone, so the wrapped-field bug it caused cannot
+      come back: a continuation line can no longer answer as the next stanza.
+    - Ambiguity is now caught. Counting the matched stanzas' 'Types:' lines
+      counts STANZAS (every .sources stanza carries exactly one). A third
+      non-security stanza, say a -backports one, aborts instead of silently
+      concatenating two suite lists into the snapshot probe.
+    - --pattern= rather than a positional pattern: the pattern starts with '-'
+      and would otherwise need defending from option parsing by argument order.
+
+    grep-dctrl is now load-bearing with no fallback, so declare it: dctrl-tools
+    added to Depends (it was only ever installed ad hoc by two CI workflows),
+    plus an R-091 preflight so a missing binary is one clear message rather than
+    a failure partway through the network probing.
+
+    Verified against the real build_sources/debian_stable_frozen_clearnet.sources
+    plus wrapped-field, missing-stanza, three-stanza and malformed-file cases.
+
+    Co-Authored-By: Claude <noreply@anthropic.com>
+
+commit 4ee8eabacaef27bdd9336d82da49122ab203afe4
+Author: claude (dev118 bd22decd-3027-4ab5-9e48-11adfe39b279) <noreply@anthropic.com>
+Date:   Tue Jul 28 14:37:07 2026 -0400
+
+    claude review: drop the duplicated persist-credentials key
+
+    The previous commit added persist-credentials: false to a checkout that
+    already had it. yaml.safe_load tolerates a duplicate key (last wins),
+    which is why a hand-rolled parse check passed it; the gate's check-yaml
+    hook rejects it. Gate by the gate.
+
+    Co-Authored-By: Claude <noreply@anthropic.com>
+
+commit 7df8fe982d92aeb7e3c5c466d459ac3e474d25d3
+Author: claude (dev118 bd22decd-3027-4ab5-9e48-11adfe39b279) <noreply@anthropic.com>
+Date:   Tue Jul 28 14:36:08 2026 -0400
+
+    claude review: dogfood the usage recorder's own commit
+
+    The recorder checkout pinned ref: master, so a PR editing
+    ci/claude-usage-record.sh would still have exercised master's copy --
+    the change under review could never fail its own CI. Use the same
+    conditional ref reusable-secrets-audit and reusable-pre-push-static
+    already use: the caller's commit when developer-meta-files IS the
+    caller, master otherwise (another caller's github.sha names a commit in
+    a different repository).
+
+    Also add persist-credentials: false, matching every other checkout here.
+
+    Co-Authored-By: Claude <noreply@anthropic.com>
+
+commit d82cbbdc4b7351434149d5d2835b2b42ce2e56a2
+Author: claude (dev118 bd22decd-3027-4ab5-9e48-11adfe39b279) <noreply@anthropic.com>
+Date:   Tue Jul 28 14:25:41 2026 -0400
+
+    ci: never report a roster verdict from an incomplete scan
+
+    ai-review findings, plus two reviewer comments verified against the
+    code.
+
+    claude-roster-verify.sh treated every non-zero curl exit as "this
+    repo does not carry the workflow". A 403, 429, 5xx or a transport
+    timeout therefore skipped the repo silently, and the audit could
+    report that everyone holds write everywhere having never checked it.
+    The repo-list pagination had the same shape: a failing page inside a
+    mapfile process substitution cannot reach errexit, so an empty batch
+    ended the loop and passed the audit on a partial scan.
+
+    - Replace the --fail-with-body helper with one that returns the HTTP
+      status, so 404 (genuinely absent) is the ONLY status read as
+      absent; everything else aborts. A transport failure reports 000 so
+      it lands in the same case statement.
+    - Parse the repo page outside the process substitution.
+    - A roster member who is not a collaborator is drift, not an error.
+    - Document the token scopes actually exercised: Administration alone
+      does not cover the repo listing or the contents probe.
+
+    dm-update-frozen-snapshot: deb822_field selected a stanza with
+    'sed -n Np' over grep-dctrl output, which counts OUTPUT LINES. With a
+    wrapped URIs field, stanza 2 resolved to stanza 1's continuation
+    line, verified against real grep-dctrl output. Select the stanza
+    first, then let grep-dctrl parse it. Also stop laundering exit 2
+    (parser or file error) into "field absent"; only exit 1 means that.
+
+    dm-reproducible-verify: keep the '[ -v ]' set-at-source idiom, which
+    deliberately respects an explicitly empty value, but reject an empty
+    HOMEVAR, DEBEMAIL or binary_build_folder_dist. An empty build
+    directory reached the comparator as --dir-b '' and compared the
+    published image against nothing, which reads as a PASS.
+
+    reusable-claude-code-review.yml: timeout-minutes is no longer the
+    only cap now that --max-turns exists; document both and which one
+    fails the job.
+
+    Co-Authored-By: Claude <noreply@anthropic.com>
+
+commit ed10708f29f0f0ade1de65a2a9c075aa60d26bba
+Author: claude (dev118 bd22decd-3027-4ab5-9e48-11adfe39b279) <noreply@anthropic.com>
+Date:   Tue Jul 28 13:53:45 2026 -0400
+
+    claude review: bump action pin to v1.0.183, cap turns at 60
+
+    Pin bump 787c5a0c (v1.0.133, 2026-05-23) -> be7b93b1 (v1.0.183).
+    Verified against the upstream diff: action.yml inputs and outputs are
+    identical, mode detection, trigger regex, tag-mode tool allowlist,
+    --permission-mode and the write-permission-before-trigger ordering
+    are byte-identical, and execution_file keeps its "empty when the
+    model did not run" semantics the usage record depends on. Net gain is
+    a prompt-injection fix that filters review bodies and inline review
+    comments to trigger time before they reach the prompt, which is
+    exactly our pull_request_review_comment path.
+
+    Two behaviour changes worth knowing, neither needing a change here:
+    a 401 token exchange whose message says "workflow validation failed"
+    now exits 0 instead of failing, and a result carrying is_error: true
+    under a success subtype now fails the step.
+
+    Turn cap: timeout-minutes bounds wall clock but not what a wedged
+    agent loop spends inside it, and a subscription run reports no
+    remaining quota. 60 is about twice a normal mention-driven review.
+    Exhausting it goes red rather than posting a partial review.
+
+    Co-Authored-By: Claude <noreply@anthropic.com>
+
+commit b2d92742eebaf9bb7a73061b6a43813edbdb4adf
+Author: claude (dev118 bd22decd-3027-4ab5-9e48-11adfe39b279) <noreply@anthropic.com>
+Date:   Tue Jul 28 13:47:40 2026 -0400
+
+    ci: verify the Claude roster against live permissions; fix policy workflow
+
+    The allowed-users gate is a list of account names standing in for
+    "holds write on this repo", because Actions exposes no expression for
+    repository permission. The duplication is unavoidable for a
+    pre-runner gate; leaving it unchecked is not. A demoted roster member
+    still passes the gate, then hard-fails inside claude-code-action at
+    the app-token exchange with a 401 that surfaces as an unexplained red
+    X on somebody's PR.
+
+    - ci/claude-roster-verify.sh: read the roster from the reusable's own
+      default (no second copy), find every repo carrying the consumer
+      workflow, and assert each member holds write. Loud failure on
+      drift, on a reusable whose shape changed, and on a scan that
+      matched no repo and therefore proved nothing.
+    - Wired into local-org-policy-live-audit.yml, which already holds the
+      read-only org PAT.
+    - local-org-policy-live-{audit,probe}.yml invoked 'dm-github-policy';
+      the binary is 'dm-github-org-policy'. Neither workflow had ever
+      been run, so the broken name went unnoticed.
+
+    Co-Authored-By: Claude <noreply@anthropic.com>
+
+commit 7e12ca1c0ef83892886f91acfea8f29a2eab27a4
+Author: claude (dev118 bd22decd-3027-4ab5-9e48-11adfe39b279) <noreply@anthropic.com>
+Date:   Tue Jul 28 13:15:48 2026 -0400
+
+    claude review: mention-only triggers, honest docs, per-run usage record
+
+    The workflow never reviewed a PR. On a pull_request event
+    claude-code-action picks agent mode, whose trigger is a non-empty
+    'prompt' input, which this workflow does not pass:
+
+      Auto-detected mode: agent for event: pull_request
+      Context prompt: NO PROMPT
+      Trigger result: false
+      No trigger found, skipping remaining steps
+
+    So every PR got a green "Claude Code Review" check for a ~5s no-op.
+    Across 1434 runs (2026-05-12 .. 2026-07-28) no run ever reached the
+    model.
+
+    - Triggers: comment events only. pull_request and workflow_dispatch
+      can only no-op without a 'prompt', so they are gone; real
+      auto-review means spending subscription quota on every PR push and
+      is a deliberate opt-in, not a default.
+    - Roster: drop ArrayBolt3, who holds only read on the org repos. The
+      OIDC app-token exchange 401s for a non-write actor AFTER the roster
+      gate, so a mention from a read-only member was a red X and no
+      review, not a skip.
+    - Docs: the calling job's permissions block does NOT bound Claude.
+      The action swaps the runner token for an OIDC-minted claude[bot]
+      app token carrying contents/issues/pull-requests write, and tag
+      mode grants Bash(git add/commit/push). Documented, along with the
+      prompt-injection surface and the write-access requirement.
+    - Pin comment: v1 -> v1.0.133, the tag that SHA actually carries.
+    - ci/claude-usage-record.sh: distil the action's execution file into a
+      numbers-only usage record (tokens, turns, cost, models), emit it to
+      the step summary and upload it as an artifact. The action's own cost
+      report is off by default and would splice model-authored text into
+      the summary. Collected centrally by claude-ci-usage.
+
+    Co-Authored-By: Claude <noreply@anthropic.com>
+
+commit c41d9abb336ff049e607352f7341d694123f06be
+Author: claude (dev118 bd22decd-3027-4ab5-9e48-11adfe39b279) <noreply@anthropic.com>
+Date:   Tue Jul 28 13:15:33 2026 -0400
+
+    usr/bin: clear static-gate debt (R-010 strict block, R-120 safe-rm)
+
+    - dm-qubes-repo-temp, dm-virtualbox-installer-{exe,vc_redist}-verify-windows:
+      add the missing shopt -s shift_verbose (R-010 wants all six).
+    - dm-qubes-repo-temp: rm -> safe-rm, local and inside every qvm-run
+      payload; helper-scripts ships safe-rm on the target qubes.
+
+    Co-Authored-By: Claude <noreply@anthropic.com>
+
+commit de02f5a550082d787dd8ed87f61627930b6ac3e1
+Merge: ff8fb905 f67eaf31
+Author: claude (dev116 2f00841a-e951-46b4-ad01-1c1da14e19ce) <noreply@anthropic.com>
+Date:   Tue Jul 28 11:24:35 2026 -0400
+
+    Merge remote-tracking branch 'org-ai-assisted/master' into HEAD
+
+commit f67eaf31f1595d5b0723776781733f9361b27f6f
+Author: Patrick Schleizer <adrelanos@whonix.org>
+Date:   Tue Jul 28 13:10:05 2026 +0000
+
+    bumped changelog version
+
 commit a10b0657fc36edbc74aac938e8782a6df42d0a8b
 Merge: 6605092d 1d6b20ea
 Author: Patrick Schleizer <adrelanos@whonix.org>
@@ -81,6 +2408,86 @@ Date:   Sun Jul 26 08:00:26 2026 -0400
 
     Merge remote-tracking branch 'refs/remotes/org-ai-assisted/master'
 
+commit ff8fb9051b5ee9f009d9ee073796bd45abd67b96
+Author: claude (dev74 3cdbae8e-30ec-412d-8ce2-ba63d1c9b6af) <noreply@anthropic.com>
+Date:   Sat Jul 25 11:04:15 2026 -0400
+
+    dm-qubes-repo-temp: rename error_ -> fatal_error_no_retry
+
+    Consistency with help-steps/pre: the intentionally-undefined deliberate-error
+    sentinel now has a self-documenting name (draft code below an early exit 1).
+
+    Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+
+commit 4fb40935a9d2e33473c4ea65acb4fcd44b0a15f2
+Author: claude (dev74 3cdbae8e-30ec-412d-8ce2-ba63d1c9b6af) <noreply@anthropic.com>
+Date:   Sat Jul 25 09:56:57 2026 -0400
+
+    dm-upload-images: drop historical framing from the upload-loop comment
+
+    Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+
+commit 0867790c9bfda061e67498b1fd4e73184ab09adb
+Author: claude (dev74 3cdbae8e-30ec-412d-8ce2-ba63d1c9b6af) <noreply@anthropic.com>
+Date:   Sat Jul 25 08:19:43 2026 -0400
+
+    dm-upload-images: upload each image to its own destination (multi --target)
+
+    Iterate the parallel (dist_build_files_to_upload[i], dist_build_upload_locations[i])
+    arrays and upload each image to ITS destination, instead of sending every image
+    to a single first-writer-wins location (which put a qcow2 into .../ova on a
+    multi-target build). show_files now builds the artifact set for one file; the DNS
+    pre-resolve loop uses its own variable so the pair's rsync target is not clobbered.
+    installer-dist repeats the file per server, preserving its two-server upload.
+
+    Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+
+commit 1104844561afb59cfd319bec488d3cefc5165fbd
+Author: claude (dev74 3cdbae8e-30ec-412d-8ce2-ba63d1c9b6af) <noreply@example.com>
+Date:   Sat Jul 25 06:10:03 2026 -0400
+
+    reprepro-freshness: keep the source-hash manifest in a packages-build-status/ subfolder
+
+    Move the per-codename manifest into ${binary_build_folder_dist}/packages-build-status/
+    instead of the build-folder root. It stays per-build-slot (co-located with that
+    slot's local repo), so it is deliberately not shared across --build-slot.
+
+    Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+
+commit 6378c5d8ea071e97db235e619eaa79eeec6ef2e2
+Author: claude (dev74 3cdbae8e-30ec-412d-8ce2-ba63d1c9b6af) <noreply@example.com>
+Date:   Sat Jul 25 06:03:20 2026 -0400
+
+    reprepro-freshness: auto-detect stale packages by source content hash
+
+    dm_package_needs_rebuild previously skipped any package already published at its
+    current debian/changelog version, so a source edit without a changelog bump was
+    silently skipped under --skip-published-packages. Add a content-hash manifest:
+    hash each package's source tree (paths+content, minus .git), store it per codename
+    in the build output folder, and rebuild a same-version package whenever its hash
+    differs from the recorded one. Local debug builds now rebuild exactly the changed
+    packages -- no package names, no changelog bumps.
+
+    Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+
+commit 6b5ed6edca690e3862d79ec24c20ab62cc2aa2ea
+Merge: c735ff14 a946157e
+Author: claude (dev74 3cdbae8e-30ec-412d-8ce2-ba63d1c9b6af) <noreply@example.com>
+Date:   Fri Jul 24 11:40:14 2026 -0400
+
+    Merge remote-tracking branch 'org-ai-assisted/master' into HEAD
+
+commit c735ff145ed0bd121a4450f1afdf35bf5ed38215
+Author: claude (dev74 3cdbae8e-30ec-412d-8ce2-ba63d1c9b6af) <noreply@anthropic.com>
+Date:   Fri Jul 24 07:01:05 2026 -0400
+
+    dm-reproducible-verify: require git (drop the optional-git fallback)
+
+    - git is required for the Source-Commit sanity check; error out cleanly at the
+      preflight if absent instead of carrying a git_available flag and a silent skip
+
+    Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+
 commit a946157e982fd6c19bd31a56d14cd3f13119f593
 Author: assisted-by-ai (Bot Account) (Machine Account) <228987186+assisted-by-ai@users.noreply.github.com>
 Date:   Fri Jul 24 05:22:27 2026 -0400
@@ -91,11 +2498,342 @@ Date:   Fri Jul 24 05:22:27 2026 -0400
 
     AI-Assisted
 
+commit 846462c822006277d4334bb623cac4bda263a2bb
+Author: claude (dev74 3cdbae8e-30ec-412d-8ce2-ba63d1c9b6af) <noreply@anthropic.com>
+Date:   Fri Jul 24 01:24:35 2026 -0400
+
+    dm-reproducible-compare-artifacts: drop exec in bounded diffoscope subshell (R-103)
+
+    Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+
+commit 17137b63a8972da45af56df1576ae9389d9cf349
+Author: claude (dev74 3cdbae8e-30ec-412d-8ce2-ba63d1c9b6af) <noreply@anthropic.com>
+Date:   Fri Jul 24 01:24:10 2026 -0400
+
+    dm-reproducible-compare-artifacts: bound diffoscope so it cannot kill the job
+
+    - on two multi-GB images diffoscope exhausted runner RAM and the whole compare
+      job got OOM/SIGTERM-killed (exit 143) before the sha verdict was reported
+    - cap address space (ulimit -v) + wall-clock (timeout) in a subshell so a
+      failed explanation degrades to the "could not explain" note, and the job
+      exits 1 with the sha256 verdict as designed
+
+    Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+
+commit 7a856d30b61824dda5e19bd8ccfaf8e8a4c6bf38
+Author: claude (dev74 3cdbae8e-30ec-412d-8ce2-ba63d1c9b6af) <noreply@anthropic.com>
+Date:   Fri Jul 24 00:14:25 2026 -0400
+
+    dm-upload-images: fall back to source tree, not $MYDIR (installed copy)
+
+    - runs as the installed '/usr/bin/dm-upload-images', so a '$MYDIR'-relative
+      helper-scripts path resolves to a nonexistent '/usr/bin/../../../helper-scripts'
+    - fall back to '$HOME/derivative-maker/packages/kicksecure/helper-scripts',
+      consistent with the '$HOME/derivative-maker' sources of pre/variables below
+
+    Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+
+commit a988a716e1f6d64fab7ccab78d48e8cc971827e6
+Author: claude (dev74 3cdbae8e-30ec-412d-8ce2-ba63d1c9b6af) <noreply@anthropic.com>
+Date:   Thu Jul 23 23:10:47 2026 -0400
+
+    usr/bin: resolve helper-scripts via HELPER_SCRIPTS_PATH, not hardcoded path
+
+    - dm-upload-images / dm-virtualbox-guest-additions-iso-update / dm-check-mirrors
+      sourced helper-scripts from the installed '/usr/libexec/helper-scripts',
+      absent in a from-source build (CI) -> 'strings.bsh: No such file'
+    - source via '${HELPER_SCRIPTS_PATH:-...}' (set by help-steps/pre)
+    - dm-upload-images sources before 'pre' runs, so fall back to the sibling
+      source submodule ('$MYDIR/../../../helper-scripts')
+
+    Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+
+commit 16460201f9456ee33d30c92965cf2a2cfcc7a901
+Author: claude (dev74 3cdbae8e-30ec-412d-8ce2-ba63d1c9b6af) <noreply@anthropic.com>
+Date:   Thu Jul 23 20:51:21 2026 -0400
+
+    dm-virtualbox-installer-*-verify-windows: source has.sh via HELPER_SCRIPTS_PATH
+
+    Both scripts hardcoded 'source /usr/libexec/helper-scripts/has.sh', which fails in
+    the build (help-steps/pre exports HELPER_SCRIPTS_PATH to the source helper-scripts,
+    not the installed path) -> build-steps.d/1400_local-dependencies aborts with
+    "has.sh: No such file or directory". Use ${HELPER_SCRIPTS_PATH:-}/... like the 7
+    sibling dm-* scripts already do (falls back to the installed path when unset).
+
+    Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+
+commit 5e4cc681e19e297b4df3644c023e9a30cb247f41
+Author: claude (dev74 3cdbae8e-30ec-412d-8ce2-ba63d1c9b6af) <noreply@anthropic.com>
+Date:   Thu Jul 23 18:37:35 2026 -0400
+
+    Revert "dm-reproducible-compare-artifacts: add --allowlist (sha256 comparator superset)"
+
+    This reverts commit 5cf3675874aab5fac017e658f2e22462bb4c9b5d.
+
+commit 5cf3675874aab5fac017e658f2e22462bb4c9b5d
+Author: claude (dev74 3cdbae8e-30ec-412d-8ce2-ba63d1c9b6af) <noreply@anthropic.com>
+Date:   Thu Jul 23 18:24:31 2026 -0400
+
+    dm-reproducible-compare-artifacts: add --allowlist (sha256 comparator superset)
+
+    Makes the strict sha256 comparator a superset of the allowlist-diffoscope path:
+    - --allowlist FILE: expected-to-differ diffoscope --exclude globs (one per
+      non-comment, non-blank line). On a sha256 mismatch, diffoscope EXCLUDING those
+      paths becomes the verdict -- no remaining differences => reproducible modulo the
+      allowlist (PASS, exit 0); anything left => genuine diff (FAIL, exit 1).
+    - without --allowlist, unchanged: sha256 is the verdict, diffoscope explains only.
+
+    So one canonical comparator gives sha256 rigor by default plus the CI lane's
+    expected-to-differ tolerance on demand. Validated: identical->0, differ (no
+    allowlist)->1, differ + allowlist-misses->1; the --exclude verdict path is the
+    diffoscope filesystem-descent semantics (a diff confined to allowlisted paths
+    yields exit 0, proven at the directory level).
+
+    Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+
+commit d3be2890925c690099a7fee28b40bb8fcf2befaf
+Author: claude (dev74 3cdbae8e-30ec-412d-8ce2-ba63d1c9b6af) <noreply@anthropic.com>
+Date:   Thu Jul 23 16:45:15 2026 -0400
+
+    dm-qemu/dm-image-test: move the boot harness out to dist-ai
+
+    - the boot-test harness (dm-qemu, dm-image-test, their arch/firmware wrappers)
+      is test-only tooling; it now lives in dist-ai as the dm-image-boot-tests suite
+    - arch-to-qemu-machine.bsh stays here: the derivative-maker build (help-steps/
+      variables) sources it for the Debian-arch -> qemu machine map; dist-ai keeps
+      its own colocated copy
+
+    Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+
+commit 31fbf9d18806fbbbc451be266aed24d8469ced95
+Author: claude (dev74 3cdbae8e-30ec-412d-8ce2-ba63d1c9b6af) <noreply@anthropic.com>
+Date:   Thu Jul 23 16:26:34 2026 -0400
+
+    dm-qemu: attach a user-mode NIC for faithful boot testing
+
+    - guest eth0 stays DOWN with no network backend; systemcheck --leak-tests,
+      Tor bootstrap and sdwdate all need working networking
+    - '-nic user,model=virtio-net-pci': unprivileged NAT, no inbound port, and
+      disables qemu's implicit default NIC so there is exactly one interface
+    - validated: guest boots with eth0 UP (10.0.2.15/24), leak-tests pass rc=0
+
+    Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+
+commit c8213eccdd967fa763ed7290cc089c870e7c3cda
+Author: claude (dev74 3cdbae8e-30ec-412d-8ce2-ba63d1c9b6af) <noreply@anthropic.com>
+Date:   Thu Jul 23 15:33:21 2026 -0400
+
+    dm-image-test: drive a login-free root serial shell, not the interactive zsh
+
+    The image's default user shell is an interactive zsh whose line editor (ZLE)
+    corrupts programmatically-sent serial input (mangles "$?" with cursor-redraw
+    escapes; swallows a queued 'exec'). Fighting it over the console is unreliable --
+    the established pattern (autopkgtest, buildroot, LAVA) is to drive a DEDICATED
+    non-login shell, never scrape an interactive editing shell.
+
+    dm-qemu --test-console injects, via the existing SMBIOS cmdline channel:
+      systemd.debug_shell=<tty> systemd.mask=serial-getty@<tty>.service loglevel=3
+    This binds a login-free ROOT shell to the serial console (systemd's built-in
+    debug-shell), masks the login getty so it -- not the user zsh -- owns the tty, and
+    quiets the kernel console. Zero image change; works on BIOS/EFI/EFI+Secure-Boot
+    via the same signed-grub SMBIOS reader; composes with --fast and --smbios-append
+    (session boot-role).
+
+    dm-image-test now: probe for that root shell, 'systemctl is-system-running --wait'
+    as a boot barrier, then run each check and read its exit code from a unique
+    sentinel (matched on our own read_nonblocking buffer, not pexpect.expect). Checks
+    run as root by default, or as --login-user via a NON-interactive 'su - <user> -c'
+    -- so systemcheck runs as the user without ever touching the user's zsh.
+
+    Validated end-to-end against a real Kicksecure-CLI image in the sandbox:
+    id-un(as user)=OK rc0, true=OK rc0, false=FAIL rc1 (exact exit-code capture).
+
+    Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+
+commit b8b906d08830fa547f68b1fb8614ceaaf28f24b0
+Author: claude (dev74 3cdbae8e-30ec-412d-8ce2-ba63d1c9b6af) <noreply@anthropic.com>
+Date:   Thu Jul 23 14:55:08 2026 -0400
+
+    dm-image-test: harden the serial login conversation (sandbox-informed)
+
+    Validated against a real Kicksecure-CLI image booted in the temp-claude sandbox
+    (qemu/TCG). Confirmed working: dm-qemu boots the image, the SMBIOS serial-console
+    injection drives output, passwordless 'user' login succeeds, and a live shell is
+    reached. The sandbox exposed two real defects and one hard environment quirk:
+
+    - The old code fired PS1/commands before the shell had initialised (MOTD, home
+      creation), so they were lost. Now wait for a LIVE shell first via a split-token
+      probe (only the shell's real OUTPUT of the joined token matches, not the echo).
+    - pexpect.expect() would not reliably match clean tokens in the noisy stream, so
+      match against our OWN accumulated buffer (read_nonblocking) instead.
+    - The image's login shell is an interactive zsh whose line editor (ZLE) rewrites
+      command INPUT with cursor-redraw escapes -- e.g. "$?" comes back mangled and a
+      rapidly-queued 'exec' never submits. Mitigations: pace input (delaybeforesend),
+      and exec a plain bash (no ZLE) once the shell is live before running commands.
+
+    Command execution + exit-code capture over that zsh ZLE remained flaky under the
+    CPU-saturated TCG sandbox (and the sandbox itself began refusing qrexec under
+    load); it is best validated by the boot-test CI lane on a KVM runner, where the
+    shell/TERM/timing differ. The boot + login path is proven; this commit hardens
+    the command layer as far as the sandbox allowed.
+
+    Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+
+commit a44a7ebd9c8ab86dbdf734c2c79780884e788a1a
+Author: claude (dev102 fff0d398-321d-4baa-9b7e-0df0059b77b8) <noreply@anthropic.com>
+Date:   Thu Jul 23 12:05:02 2026 -0400
+
+    dm-review-branch: run the unicode scans literally, capture rc at call site
+
+    - review_scan_or_prompt hid the scan behind "$@"; replace it with
+      review_prompt_or_die (takes the scan's rc + name) and invoke each scan
+      literally: check-ref-commits-for-unicode "${1}" || scan_rc="$?".
+    - Matches how the rest of dm-review-branch invokes its tools (git log /
+      git-diff-review / git-meld / git-kdiff3), and still keeps the scan's
+      exact exit code for die.
+
+    Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+
+commit e1832a26f0582defd05280ebe9b701b3ab7f2ad9
+Author: claude (dev102 fff0d398-321d-4baa-9b7e-0df0059b77b8) <noreply@anthropic.com>
+Date:   Thu Jul 23 10:48:58 2026 -0400
+
+    dm-review-branch: use the shared prompt_yes_no_tty helper
+
+    - Replace the inline /dev/tty prompt with prompt_yes_no_tty
+      (log_run_die.sh), completing the de-dup; behaviour unchanged
+      (rc 0 continue / 1 declined / 2 no-tty -> fail closed).
+    - Depends on helper-scripts prompt_yes_no_tty (org-ai-assisted PR #72);
+      that must land first.
+
+    Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+
+commit 6fae50a8d30023805f3502bbff35b34b0ce988ba
+Author: claude (dev102 fff0d398-321d-4baa-9b7e-0df0059b77b8) <noreply@anthropic.com>
+Date:   Thu Jul 23 09:52:59 2026 -0400
+
+    dm-review-branch: use the canonical log/die + log question helpers
+
+    - Source log_run_die.sh (as sibling dm-* scripts do, e.g.
+      dm-github-fork-sync) and replace the hand-rolled printf prompt with
+      'log warn' / 'log question' / 'die' -- the same consent idiom as
+      git_review_prompt_continue (git-review-scan.sh), removing the
+      duplicated ad-hoc prompt.
+
+    Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+
+commit 1e3159fe34b0f77fd0eadc883cec45e24b57a615
+Author: claude (dev102 fff0d398-321d-4baa-9b7e-0df0059b77b8) <noreply@anthropic.com>
+Date:   Thu Jul 23 08:41:51 2026 -0400
+
+    dm-review-branch: offer continue-anyway on a unicode-scan failure
+
+    - A unicode-spoofing scan (check-ref-commits-for-unicode /
+      check-ref-names-for-unicode) that exits non-zero no longer hard-aborts
+      the whole review under errexit; with a terminal, prompt the operator to
+      continue, matching the git-diff-review consent style.
+    - No controlling terminal (CI/batch): fail closed (abort non-zero).
+
+    Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+
+commit b44e2c8b4593c2031c52e33875550139aa8d17d1
+Author: claude (dev74 3cdbae8e-30ec-412d-8ce2-ba63d1c9b6af) <noreply@anthropic.com>
+Date:   Thu Jul 23 11:30:09 2026 -0400
+
+    Add dm-image-test: boot + login + functional test driver
+
+    A functional-test layer on top of dm-qemu: dm-qemu owns qemu, firmware, Secure
+    Boot and the SMBIOS kernel-cmdline injection; dm-image-test drives the serial
+    login conversation and runs functional checks (default
+    'systemcheck --cli --verbose --leak-tests'), aggregating their exit codes into
+    one pass/fail signal. It obtains the exact qemu argv from 'dm-qemu --emit-argv'
+    (build-only, no boot) and spawns it under pexpect.
+
+    - Session (user vs sysmaint) selected via dm-qemu --smbios-append with the
+      sysmaint boot-role/systemd.unit cmdline, so no image edit is needed and it
+      works on BIOS, EFI and EFI+Secure Boot alike.
+    - Login is parameterized (--login-user/--login-pass/--run/--expect-rc), so the
+      credentials are inputs, not hardcoded.
+    - Exit codes mirror dm-qemu (0 pass, 5 booted-but-a-check-failed / no login,
+      2 setup error) so CI reads one consistent signal.
+
+    Thin per-firmware wrappers (dm-image-test-amd64-bios/-efi/-efi-secureboot,
+    -arm64-efi) mirror the existing dm-qemu-* delegators.
+
+    Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+
 commit e44001deb122b42fddcc35edbac1c4cb56057c15
 Author: Patrick Schleizer <adrelanos@whonix.org>
 Date:   Thu Jul 23 14:12:35 2026 +0000
 
     bumped changelog version
+
+commit 9a438cf0f8d57e9e61548f462e38dba8a3ccfb2e
+Author: claude (dev74 3cdbae8e-30ec-412d-8ce2-ba63d1c9b6af) <noreply@anthropic.com>
+Date:   Thu Jul 23 10:05:24 2026 -0400
+
+    AGENTS.md: minimize the test-session section, point to the ci skill
+
+    Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+
+commit 6d541cb5a749b28e0ca7c6921f5537255133f037
+Author: claude (dev74 3cdbae8e-30ec-412d-8ce2-ba63d1c9b6af) <noreply@anthropic.com>
+Date:   Thu Jul 23 10:05:24 2026 -0400
+
+    dm-reproducible-compare-artifacts: compare the shipped qcow2 (.qcow2.libvirt.xz)
+
+    dm-prepare-release xz-packs the bare .qcow2 into <image>.qcow2.libvirt.xz and
+    removes the bare file, so the comparator found 0 *.qcow2. Match the actual release
+    artifact; diffoscope descends the xz to localize any inner difference.
+
+    Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+
+commit ca327785d1ccf5f90d6e7c46e15ce4b549eefe73
+Author: claude (dev74 3cdbae8e-30ec-412d-8ce2-ba63d1c9b6af) <noreply@anthropic.com>
+Date:   Thu Jul 23 10:05:23 2026 -0400
+
+    dm-update-frozen-snapshot: grep-dctrl, scurl, array-first loop
+
+    Parse Deb822 fields with grep-dctrl instead of grep/sed; download over scurl (the
+    project secure-curl wrapper) instead of bare curl; and read the snapshot timestamp
+    list into an array (readarray) rather than a process-substitution-fed while loop.
+    Verified byte-identical extraction on the real frozen sources file.
+
+    Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+
+commit a8e13c28ff7ccd268b1c285f73cc1b2d4fea9eeb
+Author: claude (dev74 3cdbae8e-30ec-412d-8ce2-ba63d1c9b6af) <noreply@anthropic.com>
+Date:   Thu Jul 23 10:05:23 2026 -0400
+
+    dm-reproducible-verify: centralize tool preflight, normalize var init
+
+    Move the git/signify/sq command-availability checks into one early preflight
+    (errexit-safe git_available boolean) instead of a lazy inline command -v mid-flow,
+    and normalize nested ${A:-${B:-...}} defaults to the house [ -v VAR ] || VAR=...
+    idiom. Behavior preserved.
+
+    Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+
+commit 9c3de7c3ec8cf45b0de3f181a844665d2a4769f3
+Author: claude (dev74 3cdbae8e-30ec-412d-8ce2-ba63d1c9b6af) <noreply@anthropic.com>
+Date:   Thu Jul 23 10:05:23 2026 -0400
+
+    dm-qemu: boot VM disk images, default to firmware boot, style fixes
+
+    - Add --disk PATH / --disk-format FMT to boot a VM disk image (qcow2/raw/vdi/vmdk)
+      as a virtio-blk disk through firmware; format auto-detected via qemu-img, and
+      -snapshot keeps the built artifact immutable. ISO path unchanged.
+    - Drop the stale --serial-console-enable references (SMBIOS cmdline injection
+      provides the serial console params).
+    - Rename --verbose to --direct-kernel and make it non-default: the default is a
+      firmware boot that injects the verbose + serial-console kernel params via SMBIOS
+      (shared with the --direct-kernel -append so the two cannot drift).
+    - Replace ${2:?...} arg defaults with the explicit arg-count-check + assign idiom.
+    - Rewrite dm-qemu-amd64-bios/-amd64-efi/-arm64-efi as thin delegators to
+      `dm-qemu --disk`, folding disk-boot into the one correct path and fixing
+      dm-qemu-arm64-efi (it ran qemu-system-x86_64 on an arm64 image).
+
+    Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
 
 commit 1ec097168dae28cbb94bafc88eb6d01234bbbb41
 Merge: 7160a29a dc3a61bf

@@ -134,6 +134,15 @@ permissions:
 jobs:
   coverity:
     name: Coverity Scan
+    ## CI runs only where we enabled it. In a CALLED reusable the vars
+    ## context resolves against the CALLER's repository and org, so this
+    ## one condition gates every consumer -- upstream and forks skip with
+    ## no runner allocated and the run stays green.
+    ##
+    ## Independent of the canonical-repos gate further down: that one
+    ## narrows to the repo registered with scan.coverity.com, this one
+    ## decides whether we run CI in this org at all.
+    if: vars.CI_ENABLED_ORG_AI_ASSISTED == 'true'
     ## Pinned to ubuntu-24.04 so the apt-packaged yq (kislyuk's
     ## python-yq jq wrapper) remains stable across runner-image
     ## transitions; the config-load step's syntax depends on that
@@ -141,10 +150,20 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
 
+    env:
+      DIST_AI_REF: ${{ github.repository == 'org-ai-assisted/dist-ai' && github.sha || 'master' }}
     steps:
       - name: Checkout consumer repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
+          persist-credentials: false
+
+      - name: Checkout dist-ai (shared CI helper binaries)
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          repository: org-ai-assisted/dist-ai
+          ref: ${{ env.DIST_AI_REF }}
+          path: .github/dist-ai
           persist-credentials: false
 
       - name: Checkout developer-meta-files (orchestration scripts)
@@ -268,7 +287,7 @@ jobs:
           CANONICAL: ${{ steps.gate.outputs.allowed || 'false' }}
           PROJECT_NAME: ${{ steps.cfg.outputs.project_name || 'unknown' }}
         run: |
-          .github/dmf/ci/step-summary-emit.sh \
+          ./.github/dist-ai/usr/bin/step-summary-emit \
             --tool 'Coverity Scan' \
             --column-header field \
             --row "outcome=${JOB_STATUS}" \

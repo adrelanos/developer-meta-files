@@ -293,20 +293,54 @@ ghorg_parse_rate_limit_wait() {
 ##
 ##   GET /orgs/Kicksecure/repos          -> GET_orgs_Kicksecure_repos
 ##   POST /orgs/Whonix/forks             -> POST_orgs_Whonix_forks
+##   GET /repos/o/r/contents/.github/dependabot.yml
+##                                       -> GET_repos_o_r_contents__github_dependabot_yml
 ##
-## Slashes become underscores. Query strings are stripped. The fixture
-## contents must end with an HTTP_STATUS:NNN line.
+## Slashes AND dots become underscores. Query strings are stripped. The
+## fixture contents must end with an HTTP_STATUS:NNN line.
+##
+## Dots are flattened so a fixture never inherits a media-type extension
+## from the URL path it encodes. A fixture is an HTTP response - a body
+## plus a status line - and is never the type its path suggests, so a
+## name ending in '.yml' invites every extension-driven linter to parse
+## it as YAML and fail.
 ##
 ## Missing fixture maps to "HTTP 599 mock not configured" so tests fail
 ## loudly rather than appearing to succeed against unset state.
 ghorg_mock_dispatch() {
-  local method path key clean_path fixture
+  local method path body key clean_path fixture
 
   method="$1"
   path="$2"
+  body="${3:-}"
   clean_path="${path%%\?*}"
   key="${method}${clean_path//\//_}"
+  key="${key//./_}"
   fixture="${GHORG_MOCK_DIR}/${key}"
+
+  ## Record the REQUEST BODY so a test can assert what we actually send,
+  ## not merely that we logged a label. Without this no test in the suite
+  ## could assert any policy payload -- which is how an empty
+  ## patterns_allowed shipped with a green suite. Opt-in: unset
+  ## GHORG_MOCK_BODY_DIR leaves the mock byte-for-byte as before.
+  ##
+  ## A FAILED capture must fail the call. Verified before this guard
+  ## existed: with GHORG_MOCK_BODY_DIR pointing at an unwritable path,
+  ## `--apply` printed 28 lines of mkdir/permission errors, captured zero
+  ## bodies, and still exited 0. A capture mechanism whose whole purpose
+  ## is to stop silent-green must not itself fail silently.
+  if [ -n "${GHORG_MOCK_BODY_DIR:-}" ] && [ -n "${body}" ]; then
+    if ! mkdir --parents -- "${GHORG_MOCK_BODY_DIR}"; then
+      printf '%s\n' \
+        "ghorg_mock_dispatch: cannot create GHORG_MOCK_BODY_DIR '${GHORG_MOCK_BODY_DIR}'" >&2
+      return 1
+    fi
+    if ! printf '%s\n' "${body}" > "${GHORG_MOCK_BODY_DIR}/${key}"; then
+      printf '%s\n' \
+        "ghorg_mock_dispatch: cannot write request body '${GHORG_MOCK_BODY_DIR}/${key}'" >&2
+      return 1
+    fi
+  fi
 
   if [ -f "${fixture}" ] && [ -r "${fixture}" ]; then
     cat -- "${fixture}"
@@ -354,8 +388,14 @@ ghorg_api() {
   trap ghorg_api_cleanup RETURN
 
   if [ "${GHORG_MOCK:-false}" = 'true' ]; then
-    ghorg_mock_dispatch "${method}" "${path}"
-    return 0
+    ## Preserve the dispatcher's status instead of the old flat
+    ## `return 0`: a request-body capture that could not be written is a
+    ## failed call, and swallowing it here would hand the caller a
+    ## mocked response alongside a capture that never happened.
+    local mock_rc
+    mock_rc=0
+    ghorg_mock_dispatch "${method}" "${path}" "${body}" || mock_rc="$?"
+    return "${mock_rc}"
   fi
 
   is_whole_number "${GHORG_MAX_RETRIES}" || {

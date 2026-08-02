@@ -155,6 +155,20 @@ when the array has never been assigned. The first `arr+=(item)`
 auto-creates, but that does not help paths where no items are
 appended (e.g., a parser that sees no positional args).
 
+**R-026: No obsolete empty-array guard `${arr[@]+"${arr[@]}"}`.**
+Expand a `arr=()`-initialized array plainly: `"${arr[@]}"`.
+GATE-ENFORCED.
+
+Why: the `+alternate` operator applied directly to `[@]` only
+existed to work around bash BEFORE 4.4, where `"${arr[@]}"` on an
+empty array under `nounset` raised `unbound variable`. Bash 4.4+
+treats an unset/empty array reference as zero words, not an error,
+so the guard is dead weight -- and R-025 already requires the
+`arr=()` init that makes the plain form safe on every path. Only
+`${name[@]+...}` is flagged; `${#arr[@]}` (length), a plain
+`${arr[@]}`, and the `${arr[@]:-default}` / `${arr[@]:+word}`
+conditional-substitution forms are legitimate and spared.
+
 
 ## printf
 
@@ -807,3 +821,128 @@ selected, the exit status is 0 even if an error occurred." Silencing
 errors is not acceptable. To silence grep's *output* (but not exit
 code), append `>/dev/null 2>&1` to the end of the grep command. To
 prevent grep from looking for more than one match, use `--max-count=1`.
+
+
+## Temporary files
+
+**R-170: Never hardcode `/tmp`. Initialise `TMP` once, then use
+`"${TMP}/..."`.**
+
+`libpam-tmpdir` gives every login session a private, mode-0700 temp
+directory (`/tmp/user/<uid>`) and exports it as all four of `TMP`,
+`TMPDIR`, `TEMP` and `TEMPDIR`. A path that names `/tmp` directly opts
+out of that and writes into the world-writable root instead.
+
+Set it at the top, with the other variable initialisations:
+
+    [ -v TMP ] || TMP=/tmp
+
+Then at every use site:
+
+    work_dir="$(mktemp --directory -- "${TMP}/myscript.XXXXXX")"
+    log_file="${TMP}/myscript.log"
+
+Bad -- the fallback repeated inline at each use site:
+
+    work_dir="$(mktemp --directory -- "${TMPDIR:-/tmp}/myscript.XXXXXX")"
+
+Why: one initialisation is one place to audit and one place to change;
+the inline form restates the `/tmp` default at every call, so a script
+with six temp paths has six chances to disagree with itself. It is also
+the same set-at-source discipline R-021 applies to every other variable,
+rather than a `${var:-default}` guard per reference.
+
+`mktemp` already honours `TMPDIR`, so keep using it -- it needs no
+`/tmp` of its own.
+
+**The four temp-dir variable initialisations are the only place the
+literal belongs.** All of these are correct and are not violations:
+
+    [ -v TMP ] || TMP=/tmp
+    export TMPDIR=/tmp
+    readonly TEMP="/tmp"
+    bw+=(--setenv TMPDIR /tmp)          # bwrap namespace construction
+
+**R-171: To use `/tmp` for anything else, waive the rule explicitly.**
+Put `## style-ok: no-tmp-hardcode` anywhere in the script; the pre-push
+gate then skips R-170 for that file (same mechanism as R-120's
+`## style-ok: no-safe-rm`).
+
+Reserve it for paths that are not redirectable temp paths at all:
+
+- `/tmp/.X11-unix` and `/tmp/.X<n>-lock` -- fixed by the X11 protocol;
+  libX11 looks there and nowhere else, so it cannot follow `TMPDIR`.
+- Namespace construction (`bwrap --tmpfs /tmp`): the private tmpfs has
+  no per-user subdirectory, so `/tmp` is the only path that exists
+  inside it.
+- Administering the `/tmp` mount itself (`mount -o remount ... /tmp`) --
+  that is the backing filesystem, not a path a variable could point
+  elsewhere.
+
+Not waiver material: a temp file that simply predates the rule.
+
+Enforcement: the pre-push gate flags `/tmp` as an absolute path on a
+non-comment line of a changed shell file. A path that merely ends in
+`/tmp` (`debian/tmp`, `/var/tmp`, `./tmp`), one rooted in an expansion
+or in HOME (`${build_dir}/tmp`, `$(pwd)/tmp`, `~/tmp`), or a longer name
+starting with it (`/tmpfs`, `/tmp.bak`) is not matched. Comment lines
+are excluded -- prose about `/tmp` is not a path.
+
+
+**R-190: A substantial interpreter program does not belong in a
+shell heredoc.** If the embedded body is more than ~5 lines, put it
+in its own file with a shebang and call it.
+
+    ## Bad -- invisible to every tool that would check it:
+    summary="$(python3 - "${report}" <<'PY'
+    ...40 lines of parsing...
+    PY
+    )"
+
+    ## Good:
+    summary="$("${helper_dir}/report-summary.py" "${report}")"
+
+Why: this is R-100's defect in the other direction. ruff and pyrefly
+only see real `*.py` files; coverage.py cannot measure a heredoc at
+all; and no unit test can import a function that has no importable
+home, so the body can only be exercised through the whole shell tool.
+A 40-line parser embedded this way is typically the part that decides
+what the tool concludes, and it is the part with no tests.
+
+Resolve the helper RELATIVE to the calling script (prefer an in-tree
+copy, fall back to the installed path) so editing the repo takes
+effect without installing, and fail loudly when neither exists. A
+silent fallback to a stale installed copy is worse than no fallback.
+
+Short glue stays inline: a one-line `python3 -c` is not a program.
+
+Waiver: `## style-ok: allow-inline-interpreter` anywhere in the file.
+
+## Python files
+
+**R-180: A Python file carries a shebang and is executable.**
+
+    #!/usr/bin/python3 -Bsu
+
+Both halves, for every `*.py` -- library modules included, not just the
+entry points in `usr/bin/`.
+
+Why: so a module can be run directly while debugging, instead of
+having to reconstruct an invocation for it. The mode is what makes the
+shebang mean anything; a shebang on a non-executable file is a
+statement the filesystem contradicts.
+
+Exempt: an EMPTY file. A zero-byte `__init__.py` is a package marker,
+not code, and has nothing to interpret.
+
+Caveat: a module using RELATIVE imports still cannot be run as a plain
+script -- `./mod.py` reports "attempted relative import with no known
+parent package", because a script has no package context. Use
+`python3 -m package.mod` for those. The shebang and mode are still
+required: they document the interpreter and keep the file uniform.
+
+Enforcement is split across three checks, which is why the rule is
+stated as a pair. `check-shebang-scripts-are-executable` fails a
+shebang without the mode; `check-executables-have-shebangs` fails the
+mode without a shebang; R-180 in the pre-push gate fails a file with
+NEITHER, which would otherwise slip past both.

@@ -1,0 +1,98 @@
+#!/bin/bash
+
+## Copyright (C) 2026 - 2026 ENCRYPTED SUPPORT LLC <adrelanos@whonix.org>
+## See the file COPYING for copying conditions.
+
+## AI-Assisted
+
+## style-ok: no-strict -- a SOURCED fragment, so 'set -o errexit' and friends
+## would mutate the CALLER's shell options rather than this file's. The callers
+## set their own preamble; matches the sibling *.bsh libraries here.
+
+## Resolve the derivative-maker source tree for a tool that may run either from
+## inside the checkout or as the INSTALLED '/usr/bin' copy.
+##
+## The installed copy has nothing tying it to a checkout, so tools hardcoded
+## "$HOME/derivative-maker". Any build whose tree lives elsewhere then ran to
+## completion and died in the RELEASE phase on bash's bare "No such file or
+## directory" from 'source' -- the worst possible moment for an unexplained
+## error. Resolving it in ONE place keeps every tool honest about the same
+## question.
+##
+## Usage -- source this BEFORE any 'cd', see the capture below:
+##   source .../source-tree-lib.bsh
+##   derivative_maker_source_tree_resolve "${MYDIR}" || exit 1
+##   ## sets: derivative_maker_source_code_dir
+
+## The invocation directory, captured at SOURCE time. Reading ${PWD} inside the
+## function instead would break for any caller that has already 'cd'-ed: the cwd
+## branch would then see the caller's own directory (e.g. /usr/bin) rather than
+## the tree, and never fire. Callers must therefore source this BEFORE their own
+## cd; the dist-ai suite asserts that ordering per caller.
+[ -n "${derivative_maker_invocation_pwd:-}" ] || derivative_maker_invocation_pwd="${PWD}"
+
+## SELECTS one source, most authoritative first -- it is deliberately NOT a
+## fallback chain that retries the others:
+##   1. an in-tree copy locates the tree by its own path, and that is final. It
+##      must operate on the tree it is PART OF; silently falling back to another
+##      one would let dm-prepare-release sign artifacts from a tree other than
+##      the code doing the signing. $source_code_folder_dist is ignored here on
+##      purpose, and the diagnostic below says so rather than suggesting it.
+##   2. otherwise $source_code_folder_dist -- help-steps/variables exports it and
+##      the build preserves it across its sudo boundary, so it is right wherever
+##      the tree is. An explicit instruction is honoured, not second-guessed.
+##   3. otherwise the INVOCATION directory, but only when it actually contains
+##      help-steps/pre -- callers such as dm-build-official-one run with the tree
+##      as cwd; checked, never assumed.
+##   4. otherwise the ~/derivative-maker convention.
+## Returns 1, after a NAMED diagnostic, when the SELECTED source does not hold a
+## tree.
+derivative_maker_source_tree_resolve() {
+   local caller_dir="$1"
+   local derivative_maker_in_tree_candidate
+
+   if [ ! "${caller_dir}" = "/usr/bin" ]; then
+      ## Five levels up is the derivative-maker root ONLY for the submodule layout
+      ## '<dm>/packages/<team>/developer-meta-files/usr/bin'. A STANDALONE
+      ## developer-meta-files checkout has the same '<repo>/usr/bin' shape but no
+      ## tree above it, so the same arithmetic lands on an unrelated directory.
+      ## Verify before committing to it; an unverified answer here was final and
+      ## made source_code_folder_dist unreachable from such a checkout.
+      derivative_maker_in_tree_candidate="$( cd -- "${caller_dir}" && cd -- "../../../../../" && pwd )"
+      if [ -r "${derivative_maker_in_tree_candidate}/help-steps/pre" ]; then
+         derivative_maker_source_code_dir="${derivative_maker_in_tree_candidate}"
+         return 0
+      fi
+   fi
+
+   ## Reached when this copy is NOT inside a derivative-maker tree. Falling
+   ## through is correct here and does NOT weaken the rule above: a copy that IS
+   ## in a tree still binds to that tree and never looks further, so
+   ## dm-prepare-release cannot sign artifacts from some other checkout.
+   if [ -n "${source_code_folder_dist:-}" ]; then
+      derivative_maker_source_code_dir="${source_code_folder_dist}"
+   elif [ -r "${derivative_maker_invocation_pwd}/help-steps/pre" ]; then
+      derivative_maker_source_code_dir="${derivative_maker_invocation_pwd}"
+   else
+      derivative_maker_source_code_dir="${HOME}/derivative-maker"
+   fi
+
+   if [ -r "${derivative_maker_source_code_dir}/help-steps/pre" ]; then
+      return 0
+   fi
+
+   printf '%s\n' \
+      "${0##*/}: no derivative-maker source tree at '${derivative_maker_source_code_dir}'." \
+      "  (looked for '${derivative_maker_source_code_dir}/help-steps/pre')" >&2
+   if [ "${derivative_maker_source_code_dir}" = "${derivative_maker_in_tree_candidate:-}" ]; then
+      ## Bound to the tree this copy lives in, so naming source_code_folder_dist
+      ## would send the operator after a variable that path does not consult.
+      printf '%s\n' \
+         "  (derived from this script's own location: '${caller_dir}')" \
+         "This is the in-tree copy, so it uses the tree it belongs to and nothing else." >&2
+   else
+      printf '%s\n' \
+         "Set 'source_code_folder_dist' to the checkout, or run this from one." >&2
+   fi
+   return 1
+}
