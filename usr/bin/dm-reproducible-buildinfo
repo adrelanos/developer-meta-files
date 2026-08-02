@@ -235,10 +235,18 @@ fi
 ##
 ## Emitted only when normalization actually happened, so an ordinary record is
 ## byte-unchanged and existing comparisons keep working.
+## Record BOTH versions: the normalized one is what the image carries, the
+## unnormalized one is what an official build of this commit would have carried.
+## Keeping only the first would make a normalized image untraceable back to the
+## release artifact it corresponds to without the repo in hand.
 version_normalized_field=""
 if [ "${dist_build_version_reproducible:-}" = "true" ]; then
    version_normalized_field="
 Version-Normalized: true"
+   if [ -n "${dist_build_version_unnormalized:-}" ]; then
+      version_normalized_field="${version_normalized_field}
+Source-Version-Unnormalized: ${dist_build_version_unnormalized}"
+   fi
 fi
 
 ## Deb822 (RFC822-style): greppable, signable, and the shop's idiom. The trailing
