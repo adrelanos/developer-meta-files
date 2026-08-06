@@ -31,6 +31,8 @@ cd -- "${MYDIR}"
 ## 'helper-scripts' resolves via HELPER_SCRIPTS_PATH (set by help-steps/pre for a
 ## from-source build); this source runs BEFORE 'pre' below, so fall back to the
 ## resolved tree when the variable is not in the environment.
+##
+## TODO: Can't we just import strings.bsh after importing help-steps/pre?
 # shellcheck source=../../../helper-scripts/usr/libexec/helper-scripts/strings.bsh
 source "${HELPER_SCRIPTS_PATH:-${derivative_maker_source_code_dir}/packages/kicksecure/helper-scripts}/usr/libexec/helper-scripts/strings.bsh"
 source "${derivative_maker_source_code_dir}/help-steps/pre"

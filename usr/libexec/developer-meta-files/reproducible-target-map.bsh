@@ -19,12 +19,14 @@
 ## non-determinism the xz step introduces). The extension is therefore matched
 ## with its full compound suffix.
 ##
-## Both functions take the caller's OUTPUT variable name as $1 (a literal, trusted
-## internal name at every call site, so no check_variable_name guard) and the
-## build target as $2, and return 1 on an unknown target.
+## Both functions take the caller's OUTPUT variable name as $1 and the build
+## target as $2, and return 1 on an unknown target. We check $1 with
+## check_variable_name despite the fact that currently all calls to it provide
+## a trusted variable name, so that future development doesn't introduce a
+## security hole.
 
 # shellcheck source=../../../../helper-scripts/usr/libexec/helper-scripts/strings.bsh
-source /usr/libexec/helper-scripts/strings.bsh
+source "${HELPER_SCRIPTS_PATH}"/usr/libexec/helper-scripts/strings.bsh
 
 ## Set $1 to the released-image filename extension for target $2.
 dm_reproducible_target_ext() {
@@ -45,6 +47,7 @@ dm_reproducible_target_ext() {
          ext_ref="qcow2.libvirt.xz"
          ;;
       utm)
+         ## FIXME: The extension we use is .utm.tar.gz, not just .utm.
          ext_ref="utm"
          ;;
       *)

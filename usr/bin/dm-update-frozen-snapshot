@@ -28,7 +28,8 @@
 ## time as the new timestamp, double-check that it has the repos we want (it
 ## almost certainly will), error out of it doesn't, use it if it does?
 
-## TODO: This still needs reviewed.
+## WARNING: This has not yet been human-reviewed. Review will occur after the
+## above FIXME is dealt with.
 
 set -o errexit
 set -o nounset

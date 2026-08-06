@@ -57,6 +57,10 @@ MYDIR="$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" && pwd )"
 ## <derivative-maker>/packages/kicksecure/developer-meta-files, so five levels up
 ## from usr/bin (same walk dm-prepare-release uses). Needed to run the rebuild
 ## and read the source git state.
+##
+## FIXME: An earlier comment says that this script runs outside of a build
+## tree, but then this comment and the line of code benath it assume that it
+## runs within a build tree.
 dm_source_root="$( cd -- "${MYDIR}/../../../../.." 2>/dev/null && pwd || true )"
 
 ## Reuse dm-prepare-release's exact sign/verify code -- no hand-rolled sq/signify.
@@ -68,15 +72,9 @@ image_file=""
 ## help-steps/variables. For a real release, provide the maintainer OpenPGP cert
 ## to sq and point --signify-pubkey at the maintainer signify public key.
 [ -v HOMEVAR ] || HOMEVAR="${HOME}"
-[ -v signify_public_key ] || signify_public_key="${HOMEVAR}/.signify/keyname.pub"
+default_signify_public_key="${HOMEVAR}/.signify/keyname.pub"
+[ -v signify_public_key ] || signify_public_key="${default_signify_public_key}"
 [ -v DEBEMAIL ] || DEBEMAIL="derivative-distribution@local-signing.key"
-## '[ -v ]' defaults only a genuinely UNSET name, so a caller exporting an
-## empty value keeps it -- that is the point of the idiom. None of these three
-## has a meaningful empty value though, and an empty one would silently
-## verify against the wrong trust anchor, so reject it here instead of
-## letting ':-' quietly overwrite a caller's intent.
-[ -n "${HOMEVAR}" ] || error "HOMEVAR is set but empty; unset it to default to \$HOME."
-[ -n "${DEBEMAIL}" ] || error "DEBEMAIL is set but empty; unset it for the default signing identity."
 output_file=""
 skip_build="false"
 
@@ -113,6 +111,9 @@ while [ "$#" -gt 0 ]; do
    esac
 done
 
+[ -n "${HOMEVAR}" ] || error "HOMEVAR is set but empty; unset it to default to \$HOME."
+[ -n "${signify_public_key}" ] || error "signify_public_key is set but empty; unset it to default to '${default_signify_public_key}'."
+[ -n "${DEBEMAIL}" ] || error "DEBEMAIL is set but empty; unset it for the default signing identity."
 [ -n "${image_file}" ] || error "a local image file is required: dm-reproducible-verify IMAGE_FILE"
 [ -f "${image_file}" ] || error "image file does not exist: '${image_file}'"
 

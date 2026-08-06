@@ -20,20 +20,17 @@ true "INFO: Currently running script: ${BASH_SOURCE[0]} $*"
 MYDIR="$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" && pwd )"
 
 ## variables (sourced below) reassigns MYDIR; capture the dirs we need first.
-dm_prepare_release_dir="${MYDIR}"
-signing_lib_dir="${MYDIR}/../libexec/developer-meta-files"
+dmf_libexec_dir="${MYDIR}/../libexec/developer-meta-files"
 
-## One shared resolver, so every tool that can run installed answers this the
-## same way. See source-tree-lib.bsh for the order and why.
 # shellcheck source=../libexec/developer-meta-files/source-tree-lib.bsh
-source "${signing_lib_dir}/source-tree-lib.bsh"
+source "${dmf_libexec_dir}/source-tree-lib.bsh"
 derivative_maker_source_tree_resolve "${MYDIR}" || exit 1
 
 source "${derivative_maker_source_code_dir}/help-steps/pre"
 source "${derivative_maker_source_code_dir}/help-steps/variables"
 
 # shellcheck source=../libexec/developer-meta-files/signing-lib.bsh
-source "${signing_lib_dir}/signing-lib.bsh"
+source "${dmf_libexec_dir}/signing-lib.bsh"
 
 cd -- "${dist_binary_build_folder}"
 
@@ -494,14 +491,6 @@ Please donate! [C]
 
    ## '--preserve-env' carries the variables exported above through cowbuilder
    ## into the chroot script's environment; no env file is passed.
-   ##
-   ## '$UNSHARE_PID_NS' (see derivative-maker 'help-steps/pre', sourced
-   ## above) runs cowbuilder as the init of a private PID namespace so
-   ## nothing started inside the chroot session can outlive this step; the
-   ## chroot script separately unlinks stale VirtualBox IPC files
-   ## ('vbox_stale_ipc_cleanup' in derivative-maker
-   ## 'help-steps/vbox-chroot-shared'). Mirrors
-   ## 'build-steps.d/4600_create-vbox-vm'.
    ${SUDO_TO_ROOT} \
       --preserve-env \
          ${COWBUILDER_PREFIX:-} \
@@ -643,11 +632,10 @@ signatures_create() {
 
       ## Reproducibility buildinfo: record the parameters needed to rebuild this
       ## image, published next to it and signed by the SAME sign_and_verify.
-      ## Only for reproducible image targets (skip installer/windows/source).
       local dm_target_item
       dm_target_item="${target_names[i]}"
       if [ -n "${dm_target_item}" ]; then
-         "${dm_prepare_release_dir}/dm-reproducible-buildinfo" --target "${dm_target_item}" --image "${file_item}"
+         "${MYDIR}/dm-reproducible-buildinfo" --target "${dm_target_item}" --image "${file_item}"
          sign_and_verify "${file_item}.dm-buildinfo"
       fi
    done

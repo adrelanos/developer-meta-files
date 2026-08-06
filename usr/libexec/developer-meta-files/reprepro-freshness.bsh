@@ -7,6 +7,15 @@
 
 # shellcheck shell=bash
 
+## FIXME: This script's name is no longer accurate, as it also manages a
+## manifest of custom-built package hashes. "package-build-freshness.bsh"
+## might be preferable.
+
+## TODO: Consider removing all reprepro functionality from this script and
+## just operate based on repo content hashes. The latter is guaranteed to be
+## accurate while the former is not, and it seems wasteful to implement both
+## alongside each other.
+
 ## style-ok: no-strict -- sourced library; a strict-mode preamble would leak
 ## errexit/nounset into the caller's shell.
 
@@ -24,7 +33,7 @@
 ## inside the command substitution's subshell so it does not leak to the caller.
 dm_reprepro_published_source_version() {
    local apt_codename source_pkg repository_name query_output source_line
-   local source_matches source_grep_rc
+   local source_match_list_str source_grep_rc
    local -a fields
    apt_codename="$1"
    source_pkg="$2"
@@ -48,14 +57,14 @@ dm_reprepro_published_source_version() {
    ## "no match" (rc 1) from a real error (rc >1), which must not be silently
    ## treated as "not published".
    source_grep_rc=0
-   source_matches="$(printf '%s\n' "${query_output}" | grep --fixed-strings -- "|source: ")" \
+   source_match_list_str="$(printf '%s\n' "${query_output}" | grep --fixed-strings -- "|source: ")" \
       || source_grep_rc="$?"
    if [ "${source_grep_rc}" -gt 1 ]; then
       printf '%s\n' "${FUNCNAME[0]}: ERROR: reprepro output could not be searched (grep exit ${source_grep_rc})." >&2
       return 1
    fi
-   [ -n "${source_matches}" ] || return 0
-   source_line="$(printf '%s\n' "${source_matches}" | head --lines=1)"
+   [ -n "${source_match_list_str}" ] || return 0
+   source_line="$(printf '%s\n' "${source_match_list_str}" | head --lines=1)"
    [ -n "${source_line}" ] || return 0
    read -r -a fields <<< "${source_line}"
    ## Expect exactly '<codename>|<component>|source:' '<pkg>' '<version>'. Taking the LAST
@@ -116,6 +125,9 @@ dm_source_hash_lookup() {
       manifest_pkg="${line%% *}"
       if [ "${manifest_pkg}" = "${source_pkg}" ]; then
          manifest_hash="${line#* }"
+         ## FIXME: The comment above explained the strict formatting above,
+         ## but this line is trying to cope with malformed formatting (content
+         ## after a hash). Fix either the comment or the following line.
          printf '%s\n' "${manifest_hash%% *}"
          return 0
       fi

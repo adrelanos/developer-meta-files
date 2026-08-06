@@ -21,6 +21,7 @@
 ## signed (small) '.sha512sums'. 'file_size_mb' is set by sign_and_verify /
 ## verify_and_check before the per-scheme helpers run.
 
+## TODO: This is a library, should it really have the strict header?
 set -o errexit
 set -o nounset
 set -o pipefail
@@ -63,6 +64,7 @@ verify_cmd_openpgp() {
    sq verify --signer-email "$DEBEMAIL" --signature-file="$2" -- "$1"
 }
 
+## FIXME: "signinfy" is misspelled, should be "signify"
 verify_cmd_signinfy() {
    if [ "$file_size_mb" -ge "1000" ]; then
       return 0

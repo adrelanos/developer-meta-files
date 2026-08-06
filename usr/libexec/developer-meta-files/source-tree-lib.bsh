@@ -47,6 +47,13 @@
 ##   4. otherwise the ~/derivative-maker convention.
 ## Returns 1, after a NAMED diagnostic, when the SELECTED source does not hold a
 ## tree.
+##
+## FIXME: The logic in point 1 above is violated by this function; if the
+## caller is in-tree and derivative-maker can't be found, it falls back to
+## checking source_code_folder_dist and checking other potential paths. This
+## is because the check for whether we're in a standalone developer-meta-files
+## repo or in a derivative-maker source tree falls through on failure. Fix
+## either the comment or the code.
 derivative_maker_source_tree_resolve() {
    local caller_dir="$1"
    local derivative_maker_in_tree_candidate
