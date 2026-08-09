@@ -20,24 +20,17 @@ true "INFO: Currently running script: ${BASH_SOURCE[0]} $*"
 MYDIR="$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" && pwd )"
 
 ## variables (sourced below) reassigns MYDIR; capture the dirs we need first.
-dm_prepare_release_dir="${MYDIR}"
-signing_lib_dir="${MYDIR}/../libexec/developer-meta-files"
+dmf_libexec_dir="${MYDIR}/../libexec/developer-meta-files"
 
-if [ "$MYDIR" = "/usr/bin" ]; then
-   true "INFO: Run from: /usr/bin"
-   ## XXX: hardcoded path
-   derivative_maker_source_code_dir="$HOME/derivative-maker"
-else
-   true "INFO: Run from: source code folder"
-   derivative_maker_source_code_dir="$(cd -- "$MYDIR" && cd -- "../../../../../" && pwd)"
-fi
+# shellcheck source=../libexec/developer-meta-files/source-tree-lib.bsh
+source "${dmf_libexec_dir}/source-tree-lib.bsh"
+derivative_maker_source_tree_resolve "${MYDIR}" || exit 1
 
-source "$derivative_maker_source_code_dir/help-steps/pre"
-source "$derivative_maker_source_code_dir/help-steps/variables"
+source "${derivative_maker_source_code_dir}/help-steps/pre"
+source "${derivative_maker_source_code_dir}/help-steps/variables"
 
-## Release signing + verification helpers (shared with dm-reproducible-verify).
 # shellcheck source=../libexec/developer-meta-files/signing-lib.bsh
-source "${signing_lib_dir}/signing-lib.bsh"
+source "${dmf_libexec_dir}/signing-lib.bsh"
 
 cd -- "${dist_binary_build_folder}"
 
@@ -88,8 +81,8 @@ windows_installer() {
       error "$0: binary_image_ova_file ${binary_image_ova_file} does not exist!"
    fi
 
-   test -d "$binary_build_folder_dist/virtualbox-windows-installer-binary"
-   pushd -- "$binary_build_folder_dist/virtualbox-windows-installer-binary" >/dev/null
+   test -d "${binary_build_folder_dist}/virtualbox-windows-installer-binary"
+   pushd -- "${binary_build_folder_dist}/virtualbox-windows-installer-binary" >/dev/null
 
    local counter
    counter=0
@@ -119,7 +112,7 @@ windows_installer() {
    "${dist_developer_meta_files_folder}/usr/bin/dm-virtualbox-installer-exe-verify-windows"
 
    FILE_VCREDIST_INST_EXE=$(realpath "vc_redist.x64.exe")
-   test -r "$FILE_VCREDIST_INST_EXE"
+   test -r "${FILE_VCREDIST_INST_EXE}"
 
    "${dist_developer_meta_files_folder}/usr/bin/dm-virtualbox-installer-vc_redist-verify-windows"
 
@@ -205,7 +198,7 @@ libvirt_compress() {
       true "INFO: Checking if all files to be added to source_archive_xz_file ${source_archive_xz_file} exist..."
    fi
 
-   true "dist_build_type_short: $dist_build_type_short"
+   true "dist_build_type_short: ${dist_build_type_short}"
    if [ "${dist_build_type_short}" = "kicksecure" ]; then
       test -f "${dist_binary_build_folder}/KICKSECURE_BINARY_LICENSE_AGREEMENT"
       test -f "${dist_binary_build_folder}/KICKSECURE_DISCLAIMER"
@@ -217,12 +210,12 @@ libvirt_compress() {
       true "dist_build_source_archive..."
    fi
 
-   true "vm_multiple: $vm_multiple"
+   true "vm_multiple: ${vm_multiple}"
    if [ "${dist_build_source_archive:-}" = "true" ]; then
       true "dist_build_source_archive..."
    elif [ "${vm_multiple}" = "false" ]; then
       true "vm_multiple: no"
-      true "SHORT_VMNAME: $SHORT_VMNAME"
+      true "SHORT_VMNAME: ${SHORT_VMNAME}"
       test -f "${dist_binary_build_folder}/${SHORT_VMNAME}.xml"
       if [ "${dist_build_raw:-}" = "true" ]; then
          test -f "${binary_image_raw_file}"
@@ -283,7 +276,7 @@ libvirt_compress() {
       file_list_compress_full_path+=("${dist_binary_build_folder}/WHONIX_DISCLAIMER")
    fi
 
-   true "vm_multiple: $vm_multiple"
+   true "vm_multiple: ${vm_multiple}"
    if [ "${dist_build_source_archive:-}" = "true" ]; then
       true "dist_build_source_archive..."
    elif [ "${vm_multiple}" = "false" ]; then
@@ -338,7 +331,7 @@ libvirt_compress() {
    local test_operator
    if [ "${dist_build_source_archive:-}" = "true" ]; then
       test_operator="-d"
-      $SUDO_TO_ROOT safe-rm --force --recursive -- "${dist_binary_build_folder}/derivative-maker"
+      ${SUDO_TO_ROOT} safe-rm --force --recursive -- "${dist_binary_build_folder}/derivative-maker"
       cp --archive --no-dereference --preserve=all -- "${source_code_folder_dist}" "${dist_binary_build_folder}"
    else
       test_operator="-f"
@@ -352,7 +345,7 @@ libvirt_compress() {
    for file_name_item_full_path in "${file_list_compress_full_path[@]}" ; do
       test "${test_operator}" "${file_name_item_full_path}"
       base_name_file_item_full_path="$(basename -- "${file_name_item_full_path}")"
-      filelist_base_name+=("$base_name_file_item_full_path")
+      filelist_base_name+=("${base_name_file_item_full_path}")
    done
 
    local file_name_item_base_name
@@ -448,8 +441,8 @@ Please donate! [C]
    ## $dist_build_multiarch_package_item.
    set_cowbuilder_folders
 
-   if [ ! -d "$base_folder" ]; then
-      error "base_folder '$base_folder' does not exist. Did the amd64 cowbuilder chroot (build-steps.d/*_create-vbox-vm) fail to build?"
+   if [ ! -d "${base_folder}" ]; then
+      error "base_folder '${base_folder}' does not exist. Did the amd64 cowbuilder chroot (build-steps.d/*_create-vbox-vm) fail to build?"
    fi
 
    ## Hand the chroot script its variables through the environment via the
@@ -460,20 +453,20 @@ Please donate! [C]
    ## export-specific presentation strings computed above. Re-using the
    ## allowlist means there is no parallel hardcoded list to drift.
    local env_vars_var_keep_item export_env_var_item
-   for env_vars_var_keep_item in $env_vars_keep_list; do
+   for env_vars_var_keep_item in ${env_vars_keep_list}; do
       ## Skip variables unset in this run; an unset allowlist entry is not an
       ## error.
-      [ -v "$env_vars_var_keep_item" ] || continue
+      [ -v "${env_vars_var_keep_item}" ] || continue
       # shellcheck disable=SC2163  # dynamic export of the allowlisted name is intended
-      export "$env_vars_var_keep_item"
+      export "${env_vars_var_keep_item}"
    done
    for export_env_var_item in producturl vendor vendorurl description eulafile_user vm_multiple project_clearnet; do
       # shellcheck disable=SC2163
-      export "$export_env_var_item"
+      export "${export_env_var_item}"
    done
 
    local chroot_exec_script
-   chroot_exec_script="$dist_source_help_steps_folder/pbuilder-chroot-script-export-vbox-vm"
+   chroot_exec_script="${dist_source_help_steps_folder}/pbuilder-chroot-script-export-vbox-vm"
 
    local bindmounts
    ## Keep host and chroot absolute paths identical so $binary_image_ova_file
@@ -490,50 +483,42 @@ Please donate! [C]
    ## the VirtualBox registry references by absolute path; see
    ## 'binary_image_vdi_dir' in 'help-steps/variables'. The bind source must
    ## exist before cowbuilder mounts it.
-   mkdir --parents -- "$binary_image_vdi_dir"
-   bindmounts="$binary_build_folder_dist $source_code_folder_dist $binary_image_vdi_dir"
+   mkdir --parents -- "${binary_image_vdi_dir}"
+   bindmounts="${binary_build_folder_dist} ${source_code_folder_dist} ${binary_image_vdi_dir}"
 
    local cowbuilder_exit_code
    cowbuilder_exit_code=0
 
    ## '--preserve-env' carries the variables exported above through cowbuilder
    ## into the chroot script's environment; no env file is passed.
-   ##
-   ## '$UNSHARE_PID_NS' (see derivative-maker 'help-steps/pre', sourced
-   ## above) runs cowbuilder as the init of a private PID namespace so
-   ## nothing started inside the chroot session can outlive this step; the
-   ## chroot script separately unlinks stale VirtualBox IPC files
-   ## ('vbox_stale_ipc_cleanup' in derivative-maker
-   ## 'help-steps/vbox-chroot-shared'). Mirrors
-   ## 'build-steps.d/4600_create-vbox-vm'.
-   $SUDO_TO_ROOT \
+   ${SUDO_TO_ROOT} \
       --preserve-env \
          ${COWBUILDER_PREFIX:-} \
             ${UNSHARE_PID_NS:-} \
             cowbuilder \
-               --host-arch "$host_architecture" \
-               --architecture "$dist_build_multiarch_package_item" \
-               --configfile "$dist_build_pbuilder_config_file" \
+               --host-arch "${host_architecture}" \
+               --architecture "${dist_build_multiarch_package_item}" \
+               --configfile "${dist_build_pbuilder_config_file}" \
                --execute \
-               --basepath "$base_folder" \
-               --buildplace "$cow_folder" \
+               --basepath "${base_folder}" \
+               --buildplace "${cow_folder}" \
                --save-after-login \
-               --bindmounts "$bindmounts" \
+               --bindmounts "${bindmounts}" \
                -- \
-               "$chroot_exec_script" \
+               "${chroot_exec_script}" \
                || { cowbuilder_exit_code="$?" ; true; };
 
-   if [ -d "$base_folder" ]; then
-      $SUDO_TO_ROOT "$dist_source_help_steps_folder/umount_kill.sh" "$base_folder"
+   if [ -d "${base_folder}" ]; then
+      ${SUDO_TO_ROOT} "${dist_source_help_steps_folder}/umount_kill.sh" "${base_folder}"
    fi
 
    if [ ! "${cowbuilder_exit_code:-}" = "0" ]; then
-      error "cowbuilder --execute pbuilder-chroot-script-export-vbox-vm failed with exit code '$cowbuilder_exit_code'."
+      error "cowbuilder --execute pbuilder-chroot-script-export-vbox-vm failed with exit code '${cowbuilder_exit_code}'."
    fi
 
    ## The chroot wrote '$binary_image_ova_file' (root-owned, world-readable)
    ## onto the bind-mount. Restore normal-user ownership on the host.
-   $SUDO_TO_ROOT chown -- "$user_name:$user_name" "${binary_image_ova_file}"
+   ${SUDO_TO_ROOT} chown -- "${user_name}:${user_name}" "${binary_image_ova_file}"
 
    ## Sanity test.
    test -r "${binary_image_ova_file}"
@@ -647,11 +632,10 @@ signatures_create() {
 
       ## Reproducibility buildinfo: record the parameters needed to rebuild this
       ## image, published next to it and signed by the SAME sign_and_verify.
-      ## Only for reproducible image targets (skip installer/windows/source).
       local dm_target_item
       dm_target_item="${target_names[i]}"
       if [ -n "${dm_target_item}" ]; then
-         "${dm_prepare_release_dir}/dm-reproducible-buildinfo" --target "${dm_target_item}" --image "${file_item}"
+         "${MYDIR}/dm-reproducible-buildinfo" --target "${dm_target_item}" --image "${file_item}"
          sign_and_verify "${file_item}.dm-buildinfo"
       fi
    done

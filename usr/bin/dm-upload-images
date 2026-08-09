@@ -14,18 +14,29 @@ shopt -s shift_verbose
 true "INFO: Currently running script: ${BASH_SOURCE[0]} $*"
 
 MYDIR="$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" && pwd )"
+
+## BEFORE the 'cd' below: the resolver's cwd branch is captured when this library
+## is sourced, and cd-ing first would offer it /usr/bin instead of the tree.
+##
+## This script may run as the installed '/usr/bin' copy, where a '$MYDIR'-relative
+## path cannot locate the tree, so resolve it explicitly. Hardcoding
+## "$HOME/derivative-maker" made any build outside that path die HERE -- in the
+## release phase, after the whole build, on bash's bare "No such file or directory".
+# shellcheck source=../libexec/developer-meta-files/source-tree-lib.bsh
+source "${MYDIR}/../libexec/developer-meta-files/source-tree-lib.bsh"
+derivative_maker_source_tree_resolve "${MYDIR}" || exit 1
+
 cd -- "${MYDIR}"
 
-## 'helper-scripts' resolves via HELPER_SCRIPTS_PATH (set by help-steps/pre
-## for a from-source build); this source runs BEFORE 'pre' below, so fall back
-## to the source tree this script already requires (see the '$HOME/derivative-maker'
-## sources of 'pre' and 'variables' below) when the variable is not in the
-## environment. This script may run as the installed '/usr/bin' copy, so a
-## '$MYDIR'-relative path cannot locate 'helper-scripts'.
+## 'helper-scripts' resolves via HELPER_SCRIPTS_PATH (set by help-steps/pre for a
+## from-source build); this source runs BEFORE 'pre' below, so fall back to the
+## resolved tree when the variable is not in the environment.
+##
+## TODO: Can't we just import strings.bsh after importing help-steps/pre?
 # shellcheck source=../../../helper-scripts/usr/libexec/helper-scripts/strings.bsh
-source "${HELPER_SCRIPTS_PATH:-${HOME}/derivative-maker/packages/kicksecure/helper-scripts}/usr/libexec/helper-scripts/strings.bsh"
-source "${HOME}/derivative-maker/help-steps/pre"
-source "${HOME}/derivative-maker/help-steps/variables"
+source "${HELPER_SCRIPTS_PATH:-${derivative_maker_source_code_dir}/packages/kicksecure/helper-scripts}/usr/libexec/helper-scripts/strings.bsh"
+source "${derivative_maker_source_code_dir}/help-steps/pre"
+source "${derivative_maker_source_code_dir}/help-steps/variables"
 
 ## Build upload_file_list (reset) for ONE image file: the image plus its
 ## signatures, torrent and checksums. Called once per (file, location) pair from
@@ -132,7 +143,7 @@ upload_files() {
          if [ -z "${dns_probe_host}" ]; then
             continue
          fi
-         if printf '%s\n' "${dns_probed_host_list[@]+"${dns_probed_host_list[@]}"}" \
+         if printf '%s\n' "${dns_probed_host_list[@]}" \
             | grep --line-regexp --fixed-strings -- "${dns_probe_host}" >/dev/null 2>&1; then
             continue
          fi

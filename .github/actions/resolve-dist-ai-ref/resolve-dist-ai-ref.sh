@@ -90,7 +90,7 @@ esac
 
 ## ls-remote rather than the REST API: no token, no rate limit, and it
 ## answers the exact question (does this ref exist) without a checkout.
-if git ls-remote --exit-code --heads -- \
+if git ls-remote --exit-code --branches -- \
       "${DIST_AI_REMOTE_URL}" "refs/heads/${BRANCH_NAME}" \
       > /dev/null 2>&1
 then

@@ -8,8 +8,6 @@ set -o errtrace
 shopt -s inherit_errexit
 shopt -s shift_verbose
 
-## 'helper-scripts' resolves via HELPER_SCRIPTS_PATH for a from-source build;
-## empty falls back to the installed system path.
 # shellcheck source=../../../helper-scripts/usr/libexec/helper-scripts/strings.bsh
 source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/strings.bsh
 
@@ -54,9 +52,6 @@ for mirror_item in ${mirror_list} ; do
 
    curl_exit_code=0
 
-   ## Capture stderr too. It is the only place curl explains WHY a mirror failed
-   ## (DNS, TLS, timeout), and the report below printed an always-empty value while
-   ## the redirection sat commented out -- so a broken mirror could not be diagnosed.
    scurl \
       ${curl_built_in_args} \
       --write-out "%{speed_download}" \

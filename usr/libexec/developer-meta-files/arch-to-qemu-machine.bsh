@@ -1,6 +1,6 @@
 #!/bin/bash
 
-## Copyright (C) 2012 - 2025 ENCRYPTED SUPPORT LLC <adrelanos@whonix.org>
+## Copyright (C) 2026 - 2026 ENCRYPTED SUPPORT LLC <adrelanos@whonix.org>
 ## See the file COPYING for copying conditions.
 
 ## Single source of truth for the Debian-architecture -> qemu machine-name map.
@@ -58,6 +58,9 @@ dist_build_arch_to_qemu_machine() {
          ;;
    esac
 }
+
+## TODO: Are either of the following two functions used outside of dist-ai? If
+## not, this code should move into dist-ai.
 
 ## Translate a Debian architecture to the qemu '-machine' board TYPE dm-qemu boots it on.
 ## Board choice is a qemu specific (not a uname/binfmt concern), kept next to the machine-name

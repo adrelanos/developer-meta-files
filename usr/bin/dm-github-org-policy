@@ -17,10 +17,6 @@ set -o errtrace
 shopt -s inherit_errexit
 shopt -s shift_verbose
 
-## Both libraries resolve via their PATH variable for a from-source build; empty falls back
-## to the installed system path. Consequence worth knowing when testing a change to a lib
-## from a checkout: with the variable unset this runs the INSTALLED copy, so an edit here
-## has no effect until DEVELOPER_META_FILES_PATH points at the checkout.
 # shellcheck source=../libexec/developer-meta-files/github-org-lib.bsh
 source "${DEVELOPER_META_FILES_PATH:-}"/usr/libexec/developer-meta-files/github-org-lib.bsh
 # shellcheck source=../libexec/developer-meta-files/github-policy-lib.bsh
@@ -57,9 +53,6 @@ die_if_not_has github-org-fork
 ## Vocabulary aligns with dm-github-fork-sync.
 readonly SOURCE_ORGS=( 'Kicksecure' 'Whonix' )
 readonly MIRROR_ORGS=( 'org-ai-assisted' )
-## PROJECT = an org holding one self-contained first-party project, not a copy of anything
-## upstream. Issues and private vulnerability reporting belong HERE, because there is no
-## canonical repo elsewhere to carry them.
 readonly PROJECT_ORGS=( 'secure-terminal' 'output-lies' )
 
 ## SOURCE_ORGS currently commented out pending an admin token scoped
@@ -118,6 +111,11 @@ mode_set=0
 positional=()
 
 show_help() {
+   ## FIXME: Agent docs suggest private vulnerability reporting is actively
+   ## disabled everywhere, but the help string here disagrees
+   ##
+   ## FIXME: Remove details about policy contents from help, they don't belong
+   ## here.
    cat <<'EOF'
 Apply project-wide GitHub security/policy settings to the source
 organizations (Kicksecure, Whonix) and the mirror org
@@ -126,14 +124,6 @@ OFF the settings the policy wants off (Dependabot everywhere except
 the mirror org, private vulnerability reporting everywhere except the
 project orgs).
 
-Dependabot runs on the mirror org only - that is where GitHub Actions
-runs, so it is the only place a bump pull request can carry a CI
-verdict.
-
-The source orgs are commented out of the ORGS array pending an admin
-token, so their policy is DECLARATIVE: --audit measures it under
-ORGS_OVERRIDE, --apply cannot reach it.
-
 Usage (one mode flag is required - no implicit default):
   dm-github-org-policy --apply         apply policy
   dm-github-org-policy --dry-run       report planned changes only
@@ -141,6 +131,10 @@ Usage (one mode flag is required - no implicit default):
   dm-github-org-policy --policy-dump   print the active policy table
                                        (cats github-policy-data.bsh)
   dm-github-org-policy --help
+
+The source orgs are commented out of the ORGS array pending an admin
+token, so their policy is DECLARATIVE: --audit measures it under
+ORGS_OVERRIDE, --apply cannot reach it.
 
 Run 'dm-github-org-policy --policy-dump' for the full table of what
 gets applied (bodies, endpoints, methods, labels, SOURCE vs MIRROR
@@ -255,6 +249,9 @@ apply_org_policy() {
 
    policy_apply_org "${org}" WORKFLOW_PERMS
 
+   ## FIXME: The comment below includes "output-lies" in a partial list of
+   ## MIRROR repos, when it is a PROJECT.
+   ##
    ## Actions / CI scope pivots on org kind:
    ##   SOURCE (Kicksecure / Whonix): disable Actions entirely,
    ##     org-wide (enabled_repositories=none). The canonical SOURCE

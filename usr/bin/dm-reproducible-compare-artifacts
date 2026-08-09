@@ -88,16 +88,6 @@ case "${target}" in
       artifact_glob="*.ova"
       ;;
    qcow2)
-      ## The qcow2 target ships the image COMPRESSED: dm-prepare-release packs the
-      ## '.qcow2' into '<image>.qcow2.libvirt.xz' -- a 'tar --xz' archive holding the
-      ## image alongside the libvirt xml and licence files, NOT a bare xz stream
-      ## (verified by extracting a real artifact; the filesystem route below depends
-      ## on it being a tar) -- and removes the bare
-      ## file, so only the '.xz' is present in the release artifact (unlike iso's
-      ## bare '.iso' and virtualbox's bare '.ova'). Compare that shipped artifact;
-      ## diffoscope descends into the xz to localize any inner qcow2/filesystem
-      ## difference. The '.qcow2.libvirt.xz.{asc,sig,sha512sums,torrent,dm-buildinfo}'
-      ## siblings do not end in '.xz', so this glob still matches exactly one file.
       artifact_glob="*.qcow2.libvirt.xz"
       ;;
    *)
@@ -115,7 +105,7 @@ esac
 found_artifact=""
 find_artifact() {
    local dir="$1"
-   local -a matches=()
+   local -a match_list=()
    ## A directory whose name starts with '-' would be read by find(1) as an option
    ## or expression; prefix './' so it is unambiguously a path operand.
    [ "${dir#-}" = "${dir}" ] || dir="./${dir}"
@@ -132,9 +122,11 @@ find_artifact() {
    ## is itself of type 'l', find does not descend it, and the run dies with "found 0" on a
    ## directory that plainly holds the artifact. '-H' does NOT follow symlinks encountered
    ## inside the tree, so it cannot wander out of the build directory.
-   mapfile -t matches < <(
-      find -H "${dir}" -type f -name "${artifact_glob}"
-      printf '%s\n' "$?" > "${find_status_file}"
+   mapfile -t match_list < <(
+      find_exit_status=0
+      find -H "${dir}" -type f -name "${artifact_glob}" \
+         || find_exit_status="$?"
+      printf '%s\n' "${find_exit_status}" > "${find_status_file}"
    )
    find_status="$(cat -- "${find_status_file}")"
    safe-rm --force -- "${find_status_file}"
@@ -149,14 +141,16 @@ find_artifact() {
    ## it, and errexit exited 1 -- the code the caller and the CI workflow read as "artifacts
    ## DIFFER". A missing or unmatched artifact is a setup error (2), never a reproducibility
    ## failure.
-   if [ "${#matches[@]}" -gt 0 ]; then
-      mapfile -t matches < <(printf '%s\n' "${matches[@]}" | LC_ALL=C sort)
+   ##
+   ## TODO: Why can't we just do this sort when we first run `find`? We do later on.
+   if [ "${#match_list[@]}" -gt 0 ]; then
+      mapfile -t match_list < <(printf '%s\n' "${match_list[@]}" | LC_ALL=C sort)
    fi
-   if [ "${#matches[@]}" -ne 1 ]; then
-      printf '%s\n' "${0##*/}: expected exactly one ${artifact_glob} under ${dir}, found ${#matches[@]}" >&2
+   if [ "${#match_list[@]}" -ne 1 ]; then
+      printf '%s\n' "${0##*/}: expected exactly one ${artifact_glob} under ${dir}, found ${#match_list[@]}" >&2
       exit 2
    fi
-   found_artifact="${matches[0]}"
+   found_artifact="${match_list[0]}"
 }
 
 find_artifact "${dir_a}"
@@ -219,13 +213,20 @@ if [ "${sha_a}" = "${sha_b}" ]; then
    ## stdout) exits non-zero BEFORE the 'exit 0' below, and the caller reads that as
    ## "artifacts differ" for a bit-identical pair. Append and echo separately, and let
    ## neither failure change the verdict -- the hashes already decided it.
+   ##
+   ## FIXME: We can still use tee here, just use || true at the end of the
+   ## pipeline. Also, if anything exiting 1 under errexit results in a faulty
+   ## artifact differing message, perhaps we should use a different exit
+   ## status for "artifacts differ", and we should write the code such that
+   ## errexit never does anything meaningful other than catching bad error
+   ## handling.
    printf '%s\n' "RESULT: identical (reproducible)" >> "${report}" || true
    printf '%s\n' "RESULT: identical (reproducible)" || true
    exit 0
 fi
 
 {
-   printf '%s\n' "RESULT: artifacts DIFFER (not bit-reproducible)"
+   printf '%s\n' "RESULT: artifacts DIFFER"
    printf '%s\n' "diffoscope explanation follows (best-effort; may be truncated or skipped):"
 } | tee --append -- "${report}"
 
@@ -371,7 +372,7 @@ nbd_device_settle() {
    ## later, by the kernel's partition scan. Waiting only for 'pid' returns before
    ## '<device>p*' exists, the caller's partition loop then matches nothing, and the route is
    ## silently abandoned -- which is exactly what a fixed 'sleep 2' had been hiding.
-   for attempt in $(seq 1 50); do
+   for attempt in {1..50}; do
       if [ -e "/sys/block/${name}/pid" ]; then
          break
       fi
@@ -380,7 +381,7 @@ nbd_device_settle() {
    [ -e "/sys/block/${name}/pid" ] || return 1
    ## Then wait for at least one partition node. Not fatal if none ever appear: an image
    ## whose filesystem sits on the whole device has none, and the caller fails cleanly.
-   for attempt in $(seq 1 50); do
+   for attempt in {1..50}; do
       for partition in "${device}"p* ; do
          if [ -b "${partition}" ]; then
             return 0
@@ -393,9 +394,57 @@ nbd_device_settle() {
 
 ## Mount both images read-only so the filesystems can be diffed. Non-zero means the caller
 ## should fall back to comparing the artifacts directly.
+##
+## FIXME: Rename this so that it's clear this is needed only when comparing
+## qcow2 files. (Also think through other file comparison cases; ISO files we
+## can probably just diffoscope, but OVA files might not work with diffoscope
+## so well since they will expand to 100GB sparse images as well. Perhaps we
+## need to adapt this to work with OVAs also, by creating something that
+## unpacks each OVA, converts the contained vmdk2 images to qcow2s, and then
+## passes them to this?
 filesystem_mounts_setup() {
-   local image_a="$1" image_b="$2" partition partition_b
-   sudo --non-interactive modprobe nbd max_part=16 || return 1
+   local image_a="$1" image_b="$2" partition partition_b modprobe_failed
+   ## Loading the module is a MEANS; a usable '/dev/nbd*' is the requirement. This
+   ## tool runs inside the derivative-maker container, which ships no kmod, so
+   ## 'modprobe' is "command not found" there -- while the module is already loaded
+   ## on the host and the nodes are visible through the container's
+   ## '--volume /dev:/dev'. Failing on the modprobe therefore abandoned the whole
+   ## descent and reported "diffoscope could not explain the diff" on a host that
+   ## could have explained it perfectly well.
+   ##
+   ## Only the absence of a usable device is fatal, and it says which of the two
+   ## reasons applies rather than leaving the caller to guess.
+   modprobe_failed=false
+   if ! sudo --non-interactive modprobe nbd max_part=16 2>/dev/null; then
+      modprobe_failed=true
+   fi
+
+   ## The device probe is UNCONDITIONAL, not nested in the modprobe failure: a
+   ## modprobe that SUCCEEDS does not guarantee a node appeared (nbds_max=0, or
+   ## udev has not published the nodes yet), and this function's requirement is
+   ## the device, not the module.
+   ##
+   ## It asks nbd_device_claim rather than testing '/dev/nbd0' directly, so the
+   ## preflight cannot disagree with the claim made below: a host whose nbd0 is
+   ## busy but whose nbd1 is free is usable, and testing '-b /dev/nbd0' both
+   ## rejected that host and accepted a stale-but-busy nbd0. The function is a
+   ## pure lookup -- it prints a name and reserves nothing -- so calling it here
+   ## costs nothing and changes no state. The real claim still happens below and
+   ## is still checked, because a device can go busy in between.
+   ##
+   ## FIXME: A device being busy should not make `[ -b ... ]` fail. Correct the
+   ## explanation above.
+   if ! nbd_device_claim >/dev/null; then
+      if [ "${modprobe_failed}" = "true" ]; then
+         printf '%s\n' "${0##*/}: nbd unavailable: 'modprobe nbd' failed and no usable /dev/nbd* block device exists. Load 'nbd' on the HOST (the container has no kmod); note 'max_part' only takes effect at load time." >&2
+      else
+         printf '%s\n' "${0##*/}: nbd unavailable: 'modprobe nbd' succeeded but no usable /dev/nbd* block device is present (nbds_max=0, or the nodes are all busy)." >&2
+      fi
+      return 1
+   fi
+   if [ "${modprobe_failed}" = "true" ]; then
+      printf '%s\n' "${0##*/}: 'modprobe nbd' unavailable here; using an already-present /dev/nbd* device." >&2
+   fi
    sudo --non-interactive mkdir --parents -- "${mount_a}" "${mount_b}" || return 1
    ## '--format' is pinned rather than probed, which removes raw/qcow2 format CONFUSION on a
    ## crafted artifact. It does NOT make this route safe against a hostile image, and an
@@ -430,6 +479,8 @@ filesystem_mounts_setup() {
    return 1
 }
 
+## TODO ARRAYBOLT3: PICK UP HERE
+
 ## Unmount, retrying briefly. Even with 'timeout' now on the privileged side, the SIGKILL
 ## that frees the mount goes to diffoscope's process GROUP while 'timeout' waits only for its
 ## direct child, so a helper diffoscope shelled out to can still hold the mount for a moment
@@ -451,7 +502,7 @@ mount_point_release() {
       printf '%s\n' "${0##*/}: cannot determine whether ${mount_point} is mounted (mountpoint exit ${status})" >&2
       return 1
    fi
-   for attempt in $(seq 1 25); do
+   for attempt in {1..25}; do
       if sudo --non-interactive umount -- "${mount_point}" 2>/dev/null; then
          return 0
       fi
@@ -547,6 +598,8 @@ if [ "${target}" = "qcow2" ]; then
       ## hold exactly one qcow2 reads as success and mounts the WRONG pair. Sorting inside
       ## the substitution keeps an empty result an empty array.
       qcow2_status_file="$(mktemp)"
+      ## FIXME: For both this and the next find command, errexit will kill the
+      ## subshell before the status is saved if 'find' exits non-zero.
       mapfile -t qcow2_members_a < <(
          find "${unpack_a}" -type f -name '*.qcow2' | LC_ALL=C sort
          printf '%s\n' "${PIPESTATUS[0]}" > "${qcow2_status_file}"
@@ -568,6 +621,9 @@ if [ "${target}" = "qcow2" ]; then
          inner_a="${qcow2_members_a[0]}"
          inner_b="${qcow2_members_b[0]}"
       else
+         ## TODO: What happens if qcow2_members_a and qcow2_members_b contain different
+         ## numbers of qcow2 files? If a contains one archive and b contains two, this
+         ## error message is confusing.
          printf '%s\n' "(archive holds ${#qcow2_members_a[@]} qcow2 member(s); the filesystem route handles exactly one, comparing the artifacts directly instead)" >> "${report}"
       fi
    fi
@@ -594,11 +650,14 @@ if [ -n "${inner_a}" ] && [ -n "${inner_b}" ]; then
       ## metadata, the qcow2 header, the partition table, the bootloader sectors, the ESP.
       ## That is not an explanation; fall through to the direct comparison instead of
       ## announcing one and printing nothing.
+      ##
       ## Only rc 1 -- diffoscope FOUND differences -- is an explanation. rc 0 means the root
       ## filesystems are identical, so the difference lives outside them. Anything higher is a
       ## crash, an OOM or a timeout. In both non-1 cases the direct comparison must still run:
       ## treating a crash as "explained" would suppress the documented fallback and leave the
       ## report saying only that it could not explain.
+      ##
+      ## FIXME: Deduplicate the above two comments.
       if [ "${diffoscope_rc}" = "1" ]; then
          explained="yes"
       elif [ "${diffoscope_rc}" = "0" ]; then
@@ -607,6 +666,10 @@ if [ -n "${inner_a}" ] && [ -n "${inner_b}" ]; then
          ## non-reproducible artifact there is. rc 0 cannot tell "identical" from "every
          ## difference was excluded", so name both possibilities instead of misdirecting the
          ## reader away from the likeliest cause.
+         ##
+         ## TODO: Maybe go ahead and compare kernels/initrds if nothing else is different?
+         ## Then fall back to direct image comparison if even those were identical? In such
+         ## a scenario differences in those files would be valuable to show.
          printf '%s\n' "(the mounted root filesystems showed no difference outside the excluded kernel and initrd paths, so the difference is either IN those excluded files (boot/vmlinuz*, boot/initrd*) or outside the filesystems entirely -- container metadata, qcow2 header, partition table or bootloader; comparing the artifacts directly)" >> "${report}"
       else
          printf '%s\n' "(the mounted comparison failed with exit ${diffoscope_rc}; comparing the artifacts directly instead)" >> "${report}"
@@ -624,6 +687,11 @@ if [ "${explained}" = "no" ]; then
    diffoscope_bounded "${artifact_a}" "${artifact_b}" >> "${report}" 2>&1 || diffoscope_rc="$?"
    ## diffoscope exits 0 when it finds nothing. Reaching here means the artifacts differ, so
    ## say why that is not a contradiction rather than leaving a diff-less report unexplained.
+   ##
+   ## FIXME: An exit code of 0 is a contradiction here though. Diffoscope believes the
+   ## artifacts are identical, yet a sha256 hash earlier found them to be different. Excluded
+   ## paths don't matter here since we're comparing the higher-level images and diffoscope
+   ## should show *something* about the differences there. This would be a diffoscope bug.
    if [ "${diffoscope_rc}" = "0" ]; then
       printf '%s\n' "(diffoscope reported no differences; the mismatch is in bytes it does not descend into, or in a path excluded above)" >> "${report}"
    fi

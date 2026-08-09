@@ -5,38 +5,6 @@
 
 ## AI-Assisted
 
-## Emit a reproducibility buildinfo for a built image -- the image-level analogue
-## of a Debian '.buildinfo'. It records the PARAMETERS needed to reproduce the
-## image so a verifier needs no flags: given the image URL it fetches the sibling
-## '<image>.dm-buildinfo' (+ signatures), and rebuilds from the recorded
-## parameters. See 'dm-reproducible-verify'.
-##
-## No standardized image-level buildinfo format exists (Debian '.buildinfo' is
-## package-only; Tails, Guix, mkosi, osbuild each rolled their own), so this is a
-## small signed Deb822 file modeled on Debian '.buildinfo' conventions and the
-## live-build 'summary.txt' that 'live-build/test/rebuild.sh' already emits.
-##
-## Extension is '.dm-buildinfo', deliberately NOT '.buildinfo': it must not
-## shadow Debian's package '.buildinfo' (nor collide with an image-level
-## '.buildinfo' should Debian standardize one later). 'dm-' namespaces it to
-## derivative-maker, and '*.buildinfo' globs do not match '*.dm-buildinfo'.
-##
-## Intentionally records NO checksum: 'dm-prepare-release' already writes and
-## signs '<image>.sha512sums' in the same folder -- the buildinfo must not
-## duplicate it. This script also does NOT sign: the buildinfo is added to
-## 'dm-prepare-release's signature set so it is signed and verified by the SAME
-## 'sign_and_verify' function as every other release artifact (both OpenPGP
-## '.asc' and signify '.sig'); no 'sq'/'signify' is invoked here.
-##
-## The build metadata is read from the environment the build already exports
-## (dist_build_flavor, dist_build_target_arch, ...), so wiring this into the
-## build is a single call per built image.
-##
-## Usage:
-##   dm-reproducible-buildinfo --target TARGET --image IMAGE_PATH [--output FILE]
-##
-## Exit codes: 0 written; 2 usage/environment error.
-
 set -o errexit
 set -o nounset
 set -o pipefail
@@ -44,14 +12,35 @@ set -o errtrace
 shopt -s inherit_errexit
 shopt -s shift_verbose
 
+# shellcheck source=../../../helper-scripts/usr/libexec/helper-scripts/strings.bsh
+source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/strings.bsh
+
 error() {
    printf '%s\n' "ERROR: $*" >&2
    exit 2
 }
 
+print_usage() {
+  cat <<EOF
+Emit a reproducibility buildinfo file for a built image. This is a small,
+signed Deb822 file modeled on Debian '.buildinfo' conventions. It records the
+parameters needed to reproduce the image so a verifier can rebuild it
+trivially. The build metadata placed in the file is read from the environment.
+
+This script intentionally does not record checksums or sign files;
+'dm-prepare-release' does both already.
+
+Usage:
+  dm-reproducible-buildinfo --target TARGET --image IMAGE_PATH [--output FILE]
+
+Exit codes: 0 for success, 2 for a usage/environment error.
+EOF
+}
+
 target=""
 image=""
 output=""
+do_force="false"
 
 while [ "$#" -gt 0 ]; do
    case "${1:-}" in
@@ -70,8 +59,12 @@ while [ "$#" -gt 0 ]; do
          output="$2"
          shift 2
          ;;
+      --force)
+         do_force='true'
+         shift
+         ;;
       -h|--help)
-         grep '^##' -- "${BASH_SOURCE[0]}" | sed 's/^## \{0,1\}//'
+         print_usage
          exit 0
          ;;
       *)
@@ -82,28 +75,141 @@ done
 
 [ -n "${target}" ] || error "--target is required."
 [ -n "${image}" ]  || error "--image is required."
-[ -f "${image}" ]  || error "image does not exist: '${image}'"
+if [ "${do_force}" = 'true' ]; then
+   [ -f "${image}" ] || printf '%s\n' "INFO: --force: '${image}' does not exist, but emitting the record anyway." >&2
+else
+   [ -f "${image}" ] || error "image does not exist: '${image}'"
+fi
 [ -n "${output}" ] || output="${image}.dm-buildinfo"
 
-## Read a build-exported variable; 'unknown' when unset so the record is always
-## well-formed (the verifier validates the ones it needs to rebuild).
-val() { local v="${!1:-}"; printf '%s' "${v:-unknown}"; }
+val() {
+   if ! check_variable_name "${1:-}"; then
+      printf '%s' "unknown"
+      return 0
+   fi
 
-## Deb822 (RFC822-style): greppable, signable, and the shop's idiom. The trailing
-## blank line is the Deb822 record terminator. Fields follow Debian '.buildinfo'
-## + live-build 'summary.txt' + the Tails apt-snapshot-pinning discipline.
-##  - Source-Commit + Source-Version pin the derivative-maker tree.
-##  - Debian-Suite + APT-Snapshot pin the package world (determinism).
-##  - Source-Date-Epoch is derived from debian/changelog, so a rebuild from the
-##    same Source-Commit reproduces it automatically.
-##  - Flavor/Target/Build-Type/Architecture/Freedom are the build selectors a
-##    rebuild replays; NO checksum (see header).
+   local v="${!1}"
+   printf '%s' "${v:-unknown}"
+}
+
+## The source state recorded by help-steps/sign-and-tag BEFORE it amended
+## anything. It has to come from there: sign-tag-head rewrites the parent's HEAD
+## and every submodule's HEAD, and those commits exist only inside that build, so
+## reading them here would publish a signed record pointing at commits nobody can
+## fetch. It also carries the submodule SHAs the build actually used, which CI's
+## fork-branch checkout resolves from moving branch tips and records nowhere else.
+##
+## TODO: See if we can get rid of dm-source-state/source_state_file. It should
+## only be useful for builds where sign-and-tag runs, and sign-and-tag should
+## only ever run in exceptional cases. There is no need for CI-built images to
+## be reproducible other than to test reproducibility itself in CI, in which
+## case we can probably build from the same sign-and-tag'd repo twice to
+## verify that we get the same result and thus still not need dm-source-state.
+source_state_file="${dm_source_state_file:-}"
+if [ -z "${source_state_file}" ] && [ -n "${binary_build_folder_dist:-}" ]; then
+   source_state_file="${binary_build_folder_dist}/dm-source-state"
+fi
+
+state_unrecorded() {
+   printf '%s\n' "Source-Commit: unrecorded ($1)" "Submodule-State: unrecorded"
+}
+
+source_state_block=""
+if [ -z "${source_state_file}" ]; then
+   source_state_block="$(state_unrecorded "neither dm_source_state_file nor binary_build_folder_dist is set")"
+elif [ ! -f "${source_state_file}" ] || [ ! -r "${source_state_file}" ]; then
+   source_state_block="$(state_unrecorded "help-steps/sign-and-tag did not run, or did not write '${source_state_file}'")"
+else
+   source_state_candidate="$(cat -- "${source_state_file}")"
+   state_reject=""
+   case "${source_state_candidate}" in
+      "")
+         state_reject="${source_state_file} is empty"
+         ;;
+      *$'\n\n'*)
+         ## TODO: Should we reject a single newline at the start of the file
+         ## too?
+         state_reject="${source_state_file} contains a blank line, which would terminate this Deb822 record"
+         ;;
+   esac
+   if [ -z "${state_reject}" ]; then
+      case "${source_state_candidate}" in
+         "Source-Commit: "*)
+            true
+            ;;
+         *)
+            state_reject="${source_state_file} does not start with a Source-Commit field"
+            ;;
+      esac
+   fi
+   if [ -z "${state_reject}" ]; then
+      case "${source_state_candidate}" in
+         *"Submodule-State:"*)
+            ## FIXME: This can be fooled if 'Submodule-State:' occurs anywhere
+            ## in a key's value.
+            true
+            ;;
+         *)
+            state_reject="${source_state_file} carries no Submodule-State field"
+            ;;
+      esac
+   fi
+   if [ -n "${state_reject}" ]; then
+      source_state_block="$(state_unrecorded "${state_reject}")"
+   else
+      source_state_block="${source_state_candidate}"
+   fi
+fi
+
+## Source-Version and Source-Commit name DIFFERENT commits by design. Do not
+## assert they agree.
+##
+## A previous version of this file required them to be equal, and that check
+## fails every signed build:
+##   - sign-and-tag records Source-Commit from 'git rev-parse HEAD' BEFORE it
+##     signs, deliberately -- see its own comment. It then runs sign-tag-head,
+##     which rewrites the parent's HEAD via 'commit --amend -S'.
+##   - 'dist_build_version' is derived by 'git describe' AFTER that amend, so its
+##     '-g<sha>' suffix names the amended commit.
+## The pre-sign commit is the one a rebuilder can actually fetch; the amended one
+## exists only inside that build. Recording the fetchable commit while the
+## version describes the ephemeral one is the intended behaviour, so equality is
+## the wrong invariant -- it blocked CI on a correct record.
+##
+## The underlying hazard is real and NOT covered here: 'dist_build_version' is
+## auto-detected only when UNSET, so a value inherited from a reused workspace
+## silently wins over the actual tree (observed: Source-Commit 02096cd4... beside
+## Source-Version ...-ge65ff458...). Catching that needs a comparison against the
+## tree's CURRENT HEAD, which this script cannot obtain reliably -- it runs both
+## in-tree during a build and from an installed /usr/bin path, and guessing a
+## repository from the working directory is how the last false positive happened.
+## Belongs where dist_build_version is set (help-steps/variables), not here.
+##
+## TODO: Since we're going to try to get rid of sign-and-tag in the context of
+## standard reproducible builds, and we're going to try to avoid needing to
+## record repo information before a sign-and-tag run, maybe we can go back to
+## asserting Source-Version and Source-Commit agree.
+
+## An image built with --reproducible-dist-build-version carries a version with
+## the describe suffix stripped, so it is not the artifact a normal build
+## of this commit would produce. Note this in the record so no one confuses
+## a commit-built image with a release image.
+version_normalized_field=""
+if [ "${dist_build_version_reproducible:-}" = "true" ]; then
+   version_normalized_field="
+Version-Normalized: true"
+   if [ -n "${dist_build_version_unnormalized:-}" ]; then
+      version_normalized_field="${version_normalized_field}
+Source-Version-Unnormalized: ${dist_build_version_unnormalized}"
+   fi
+fi
+
 printf '%s\n' "\
 Format: 1.0
 Buildinfo-Type: derivative-image
 Source-Repo: $(val project_clearnet)
-Source-Commit: $(val dist_build_current_git_head)
-Source-Version: $(val dist_build_version)
+${source_state_block}
+Source-Version: $(val dist_build_version)${version_normalized_field}
 Flavor: $(val dist_build_flavor)
 Target: ${target}
 Build-Type: $(val dist_build_type)

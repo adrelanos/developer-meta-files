@@ -24,6 +24,13 @@
 ##   --source-root DIR        derivative-maker source tree holding build_sources/ (default ~/derivative-maker).
 ##   --dry-run                Show what would change; write nothing.
 
+## FIXME: Does this need to be this complicated? Can't we just use the current
+## time as the new timestamp, double-check that it has the repos we want (it
+## almost certainly will), error out of it doesn't, use it if it does?
+
+## WARNING: This has not yet been human-reviewed. Review will occur after the
+## above FIXME is dealt with.
+
 set -o errexit
 set -o nounset
 set -o pipefail
@@ -35,7 +42,7 @@ shopt -s shift_verbose
 ## not the derivative-maker help-steps stack, so 'has' is not available here.
 ## style-ok: no-safe-rm -- the only removal is the mktemp'd rewrite temp on the EXIT
 ## cleanup path (a fixed '.XXXXXX' path beside the sources file, never user input);
-## safe-rm is not sourced by this standalone tool.
+## safe-rm is not needed by this standalone tool.
 
 ## Generic string validators, used ALONGSIDE this tool's own exact-shape checks. Resolves via
 ## HELPER_SCRIPTS_PATH for a from-source build, else the installed path. Available wherever
@@ -75,7 +82,6 @@ PIN_TIMESTAMP_FILE='build_sources/frozen-snapshot-timestamp'
 ## checks in reproducible builds). A successful 'mv' clears the global first, so
 ## the trap then removes nothing.
 frozen_tmp_file=''
-
 frozen_snapshot_cleanup() {
    [ -z "${frozen_tmp_file}" ] || rm --force -- "${frozen_tmp_file}"
 }
