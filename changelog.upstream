@@ -1,9 +1,503 @@
+commit a1b6055acb6fc15b45935441709ace90687e6964
+Merge: 69862539 04161ebf
+Author: Patrick Schleizer <adrelanos@whonix.org>
+Date:   Sun Aug 9 02:25:33 2026 -0400
+
+    Merge remote-tracking branch 'ArrayBolt3/arraybolt3/trixie'
+
+commit 04161ebf9655a3a03649f726d0e4c46ff9f1484e
+Merge: 9b4e008d 69862539
+Author: Aaron Rainbolt <arraybolt3@gmail.com>
+Date:   Thu Aug 6 22:39:48 2026 -0400
+
+    Merge branch 'master' into arraybolt3/trixie
+
+commit 9b4e008d6d0f15a286678caee068d3e37bb1224f
+Author: Aaron Rainbolt <arraybolt3@gmail.com>
+Date:   Thu Aug 6 01:35:25 2026 -0400
+
+    Lots of tweaks, mostly to add FIXME/TODO comments
+
+commit 1fc1755209f657983e9c7f86e8f74b863230a715
+Merge: aa45322d b8f4bc28
+Author: Aaron Rainbolt <arraybolt3@gmail.com>
+Date:   Sun Aug 2 19:07:35 2026 -0400
+
+    Merge branch 'ai' into arraybolt3/trixie
+
+commit aa45322d83b221c7912bfa6488d60dc6f95d66d2
+Author: Aaron Rainbolt <arraybolt3@gmail.com>
+Date:   Sun Aug 2 18:20:35 2026 -0400
+
+    Make VirtualBox Guest Additions dependencies arch-specific
+
+commit 42ec9d3b4961324c2b8cbc6bcd35e2a9b91966a8
+Author: Aaron Rainbolt <arraybolt3@gmail.com>
+Date:   Sun Aug 2 18:08:32 2026 -0400
+
+    Tweaks, FIXMEs, TODOs
+
+commit b8f4bc2815c52c3ec73ee52abadb1608232a538d
+Author: claude (dev141 763ccfe0-7bd8-4e8c-afd0-c39aceb48d72) <noreply@anthropic.com>
+Date:   Sun Aug 2 08:29:36 2026 -0400
+
+    dm-reproducible-buildinfo: drop a false Source-Version/Source-Commit check
+
+    The guard required the 'git describe' suffix in Source-Version to equal
+    Source-Commit. That invariant is false for every signed build, and it failed the
+    derivative-maker dry-run lane on a perfectly correct record:
+
+      Source-Version: 18.2.2.0-225-g25114e02...  (describes 25114e02)
+      Source-Commit:  b67ca377...
+
+    Both are right. sign-and-tag records Source-Commit from HEAD BEFORE signing --
+    deliberately, per its own comment -- then sign-tag-head rewrites HEAD with
+    'commit --amend -S'. dist_build_version is derived by 'git describe' AFTER that
+    amend. The pre-sign commit is the one a rebuilder can fetch; the amended commit
+    exists only inside that build. So the two fields naming different commits is the
+    intended design, stated three lines above the check that forbade it.
+
+    The hazard that motivated the check is real and is NOT re-implemented here:
+    dist_build_version is auto-detected only when unset, so a stale value from a
+    reused workspace wins over the tree. Detecting that needs a comparison against
+    the tree's CURRENT HEAD, which this generator cannot obtain reliably -- it runs
+    both in-tree and from an installed /usr/bin path, and inferring a repository
+    from the working directory is how the false positive arose in the first place.
+    It belongs where dist_build_version is set. Said plainly in the comment rather
+    than left as a check that looks like coverage but blocks correct builds.
+
+    Co-Authored-By: Claude <noreply@anthropic.com>
+
+commit f906971f281a63b09c08e9fb9e534890cf5caf2d
+Author: claude (dev141 763ccfe0-7bd8-4e8c-afd0-c39aceb48d72) <noreply@anthropic.com>
+Date:   Sun Aug 2 04:52:45 2026 -0400
+
+    buildinfo: record the unnormalized version alongside the normalized one
+
+    Normalizing overwrote dist_build_version, so the record showed THAT a build was
+    normalized but not what it was normalized FROM. A normalized image could not be
+    tied back to the release artifact it corresponds to without the repo in hand --
+    and correlating the two is the whole reason to normalize.
+
+    Now both are present when the flag is used:
+      Source-Version: 18.2.2.0                        <- what the image carries
+      Version-Normalized: true
+      Source-Version-Unnormalized: 18.2.2.0-219-g...  <- what an official build would
+
+    Ordinary records are byte-unchanged: neither field appears unless normalization
+    happened.
+
+    Co-Authored-By: Claude <noreply@anthropic.com>
+
+commit 0e5ced864bb166872da5cc163d40d37f1bba6c72
+Author: claude (dev141 763ccfe0-7bd8-4e8c-afd0-c39aceb48d72) <noreply@anthropic.com>
+Date:   Sun Aug 2 04:42:44 2026 -0400
+
+    buildinfo: mark a build whose version was normalized
+
+    --reproducible-dist-build-version (derivative-maker) strips the git describe
+    suffix so a local rebuild can be byte-compared against a CI image whose
+    Source-Commit cannot match. The resulting image is therefore NOT what an official
+    build of that commit produces.
+
+    Record that in the record. Without it such an image is indistinguishable from a
+    release artifact, and comparing the two would read the version difference as a
+    reproducibility failure -- the exact confusion the flag exists to remove.
+
+    Emitted ONLY when normalization happened, so an ordinary record stays
+    byte-unchanged and existing comparisons keep working.
+
+    Co-Authored-By: Claude <noreply@anthropic.com>
+
+commit bd24c6d6beb73294d1e8628639369d127525f0fe
+Merge: 96ddff7f 1da1aa40
+Author: claude (dev141 763ccfe0-7bd8-4e8c-afd0-c39aceb48d72) <noreply@anthropic.com>
+Date:   Sat Aug 1 16:49:42 2026 -0400
+
+    Merge remote-tracking branch 'org-ai-assisted/ai' into ai
+
+commit 96ddff7f62d764a2e453cfa0895253fb5531953a
+Author: claude (dev141 763ccfe0-7bd8-4e8c-afd0-c39aceb48d72) <noreply@anthropic.com>
+Date:   Sat Aug 1 16:48:46 2026 -0400
+
+    dm-reproducible-buildinfo: add --dry-run so the record can be iterated on
+
+    Observing a change to this file cost a full build (~60 min) or ci/dry-run
+    (~36 min, measured 17:32Z-18:08Z) -- because a single '[ -f "${image}" ]' check
+    forced it to the very end. Every other field comes from the environment and the
+    pre-sign dm-source-state file, both of which exist seconds into a build, so the
+    whole record is derivable long before the artifact is.
+
+    --dry-run skips ONLY that existence check. Same code, same fields, same path:
+    verified byte-identical to a real run, including with no image file present.
+    12 ms instead of 36-60 minutes.
+
+    --image stays required: Image-File comes from it, and a record naming no
+    artifact would be a different record. Without --dry-run a missing image is still
+    refused, so the fast path is opt-in and cannot mask a real build error.
+
+    Three of this file's four commits have been provenance-correctness fixes, each
+    previously needing a build to observe. This is the tooling that makes the next
+    one cheap.
+
+    Co-Authored-By: Claude <noreply@anthropic.com>
+
+commit 1da1aa40e4b536e3b7bd908686cbd5e412309967
+Author: claude (dev155 96781afa-c179-4390-9455-dc0ca5de7625) <noreply@anthropic.com>
+Date:   Sat Aug 1 16:47:13 2026 -0400
+
+    bash-style-guide: add R-026 obsolete empty-array guard rule
+
+    Document the rule the static gate now enforces (dist-ai
+    pre-push-static): the pre-bash-4.4 nounset workaround
+    ${arr[@]+"${arr[@]}"} is dead weight on bash 4.4+, where an
+    unset/empty array reference expands to zero words rather than raising
+    'unbound variable'. R-025 already mandates the arr=() init that makes
+    a plain "${arr[@]}" safe on every path.
+
+    Placed as R-026, the sibling of R-025 (arrays under nounset). Notes the
+    legitimate forms it must not flag: ${#arr[@]} length, a plain
+    ${arr[@]}, and the ${arr[@]:-default} / ${arr[@]:+word} conditional
+    substitutions.
+
+    Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+
+commit 0d35d42721aa0acbac3274da8e136ee6b9a4eaa3
+Author: claude (dev141 763ccfe0-7bd8-4e8c-afd0-c39aceb48d72) <noreply@anthropic.com>
+Date:   Sat Aug 1 15:56:54 2026 -0400
+
+    dm-reproducible-buildinfo: refuse a record whose source fields disagree
+
+    Source-Commit is recorded PRE-SIGN by help-steps/sign-and-tag into
+    dm-source-state, while dist_build_version is auto-detected by
+    help-steps/variables ONLY when unset -- so a value inherited from the
+    environment silently wins over the actual tree.
+
+    An observed record carried Source-Commit 02096cd4... beside Source-Version
+    18.2.2.0-217-ge65ff458...: two different commits in one provenance record, from
+    a reused workspace holding a stale dist_build_version. A rebuild keyed on either
+    field reproduces the wrong tree, which is what this record exists to prevent,
+    and nothing else checked it.
+
+    git describe ends in '-g<sha>' and that sha IS the described commit, so when the
+    suffix is present it must equal Source-Commit. A clean tag build, a non-hex '-g'
+    in a tag, an unset version, and an 'unrecorded' state block are all unconstrained.
+
+    Verified against a REAL CI artifact (run 30695272567, commit bfc0635548f0): its
+    buildinfo records Source-Commit bfc0635548f0... and Source-Version
+    18.2.2.0-205-gbfc0635548f0..., which AGREE -- so this does not fire in CI.
+
+    Test: dist-ai usr/share/developer-meta-files-tests/test_buildinfo_source_fields_agree.sh
+    (2 refusal + 5 legitimate cases; both refusals fail against the unfixed generator).
+
+    Co-Authored-By: Claude <noreply@anthropic.com>
+
+commit 4850cb293a9129e653a8f7cb13d9ba2b318b5a39
+Author: claude (dev141 763ccfe0-7bd8-4e8c-afd0-c39aceb48d72) <noreply@anthropic.com>
+Date:   Sat Aug 1 07:33:07 2026 -0400
+
+    dm-upload-images: drop the empty-array guard
+
+    - bash 4.4+ expands "${arr[@]}" to zero words under nounset without erroring,
+      so the alternate-value form only obscures the expansion
+    - verified byte-identical output for empty and non-empty arrays
+    - dm-check-unicode carries the same idiom; touching it surfaces ~35 pre-existing
+      SC2250 findings that belong in their own change
+
+commit 249d75a6f1c9d056bc300929d12c2f9b9bb7f52f
+Author: claude (dev141 763ccfe0-7bd8-4e8c-afd0-c39aceb48d72) <noreply@anthropic.com>
+Date:   Sat Aug 1 05:58:20 2026 -0400
+
+    verify: treat 'unrecorded' provenance as its own state, not a commit mismatch
+
+    From PR #176 review (coderabbit, minor -- but the consequence is not minor).
+
+    dm-reproducible-buildinfo emits 'Source-Commit: unrecorded (<reason>)' when the
+    build recorded no provenance. dm-reproducible-verify's comparison skipped only
+    the matching commit, 'unknown' and empty, so 'unrecorded (...)' fell through to
+    the mismatch arm and was reported as "local HEAD != buildinfo Source-Commit" --
+    blaming the verifier's checkout for something the BUILD never wrote.
+
+    Silently skipping it would be worse: a rebuild would then claim a match it cannot
+    have earned. It is now reported as UNVERIFIABLE, stating that a matching rebuild
+    shows only that this tree reproduces the image, not that it is the tree the image
+    came from.
+
+    Exercised every branch of the comparison: matching commit, 'unknown', empty,
+    'unrecorded (...)' and a differing sha each produce the intended outcome.
+
+    Also corrects a stale comment in source-tree-lib.bsh: it described
+    dm-upload-images as cd-ing before sourcing, which it no longer does, and stated
+    it as history rather than as the current rule.
+
+commit 2a833f22d131812fdcf724583f1287e5e6e98e38
+Author: claude (dev141 763ccfe0-7bd8-4e8c-afd0-c39aceb48d72) <noreply@anthropic.com>
+Date:   Sat Aug 1 05:54:28 2026 -0400
+
+    source-tree-lib: verify the in-tree path before binding to it
+
+    From PR #176 review (coderabbit, major). Correct, and it partly reverses an
+    earlier decline of mine.
+
+    Five levels up from '<caller>/usr/bin' is the derivative-maker root only for the
+    SUBMODULE layout '<dm>/packages/<team>/developer-meta-files/usr/bin'. A
+    STANDALONE developer-meta-files checkout has the same '<repo>/usr/bin' shape with
+    no tree above it, so the same arithmetic landed on an unrelated directory -- and
+    because that branch was FINAL, source_code_folder_dist was then unreachable. An
+    operator who set it correctly was still refused.
+
+    The branch now verifies the candidate holds 'help-steps/pre' before binding, and
+    falls through when it does not.
+
+    This does NOT weaken the property I defended earlier: a copy that IS inside a
+    tree still binds to that tree and never looks further, so dm-prepare-release
+    cannot sign artifacts from a different checkout than the code doing the signing.
+    What changed is that "inside a tree" is now VERIFIED rather than inferred from
+    the path shape. The header comment and the failure diagnostic are corrected to
+    match -- the diagnostic keyed on 'caller_dir != /usr/bin', which after this fix
+    would have named the wrong cause.
+
+    Regression test pins BOTH halves: an in-tree copy ignores source_code_folder_dist,
+    a standalone copy falls through to it. The second fails against the prior library.
+
+commit 69862539432fa06fa09a5d4f9bdc06a9cb917c4e
+Author: Patrick Schleizer <adrelanos@whonix.org>
+Date:   Sat Aug 1 08:39:23 2026 +0000
+
+    bumped changelog version
+
 commit 9b6cb45a64cc6202edfa584443a1def0b1e22f8f
 Merge: 2ea05533 9be0e836
 Author: Patrick Schleizer <adrelanos@whonix.org>
 Date:   Sat Aug 1 04:22:55 2026 -0400
 
     Merge remote-tracking branch 'refs/remotes/org-ai-assisted/master'
+
+commit a639a99c7cae534242fd37f1fefcf312e14a2bb3
+Author: claude (dev141 763ccfe0-7bd8-4e8c-afd0-c39aceb48d72) <noreply@anthropic.com>
+Date:   Sat Aug 1 03:54:49 2026 -0400
+
+    reusable-dist-ai-tests: check out component submodules when the repo asks
+
+    - Gated on dm-consumer.yml 'submodules: true' (dist-ai 57554dd emits the flag).
+      A suite whose subject lives in a submodule could not resolve it and exited 77;
+      an unauthorized skip fails the run, so the coverage was simply unreachable.
+    - Runs AFTER the config step, which is what reads the opt-in.
+    - Runs the component's own ci/configure-fork-mirror when it ships one: a
+      component may pin submodule commits that exist only in this org's forks while
+      .gitmodules still points upstream, so a plain init cannot find them. Same
+      mechanism its build lane already uses.
+    - Not --recursive.
+
+commit c67fb1873629fa4a7aa4173f7f4c3c19701172a8
+Author: claude (dev141 763ccfe0-7bd8-4e8c-afd0-c39aceb48d72) <noreply@anthropic.com>
+Date:   Sat Aug 1 03:21:52 2026 -0400
+
+    source-tree-lib: document that it SELECTS, and stop misdirecting the in-tree case
+
+    From ai-review (coderabbit, major). The observation is correct: the chain picks
+    one candidate and never retries the others, so an in-tree caller ignores
+    $source_code_folder_dist entirely.
+
+    The behaviour is kept, deliberately. An in-tree copy must operate on the tree it
+    is PART OF -- falling back would let dm-prepare-release sign artifacts from a
+    tree other than the code doing the signing. The proposed fix would have made
+    that possible.
+
+    What was actually wrong:
+
+    - The header said "when none of them yields a tree", which reads as a fallback
+      chain that tries all four. It selects one. Reworded to say so, with the reason
+      the in-tree branch is final.
+    - The diagnostic told every caller to "Set 'source_code_folder_dist'", including
+      the in-tree branch, which does not consult it -- sending the operator after a
+      variable that cannot help. It is now branch-aware: the in-tree case names the
+      path derived from the script's own location and says this copy uses its own
+      tree only.
+
+    Regression test pins the no-fallback semantics and the branch-specific message,
+    because it reads like a bug and 'fixing' it would be a silent correctness
+    regression.
+
+commit 1ac813cbf33702469f11498744eb9b93ec756f5c
+Author: claude (dev141 763ccfe0-7bd8-4e8c-afd0-c39aceb48d72) <noreply@anthropic.com>
+Date:   Sat Aug 1 00:38:07 2026 -0400
+
+    source-tree-lib: capture the invocation directory at source time
+
+    - The cwd branch read ${PWD} inside the function, so any caller that had already
+      cd'd offered it the wrong directory. dm-upload-images does exactly that
+      ('cd -- "${MYDIR}"' before sourcing), so the branch saw /usr/bin, every branch
+      missed, and Phase 4 reported an unresolvable tree even though cwd WAS the
+      checkout.
+    - The library now captures ${PWD} when SOURCED, and dm-upload-images sources it
+      before its own cd.
+    - Library is a sourced fragment: 'style-ok: no-strict' with the reason (a strict
+      preamble here would mutate the CALLER's shell options), executable + shebang to
+      match the sibling *.bsh libraries.
+
+    Regression test: dist-ai asserts, per build-path tool, that the resolver is
+    sourced BEFORE any cd -- so this ordering cannot silently regress -- plus a
+    behavioural check that the cwd branch resolves a checkout. The ordering
+    assertion fails against e5c218fe.
+
+commit e5c218fe871e8f156d7beecaf624321658ef039c
+Author: claude (dev141 763ccfe0-7bd8-4e8c-afd0-c39aceb48d72) <noreply@anthropic.com>
+Date:   Sat Aug 1 00:02:16 2026 -0400
+
+    source-tree-lib: one resolver for tools that can run as the installed copy
+
+    - dm-upload-images hardcoded "$HOME/derivative-maker" for help-steps/pre,
+      help-steps/variables AND helper-scripts, so a build whose tree lives elsewhere
+      reached Phase 4 and died there on bash's bare "No such file or directory" --
+      the same defect just fixed in dm-prepare-release, in the next tool along.
+    - Rather than a second copy of the fix, the resolution moves into
+      usr/libexec/developer-meta-files/source-tree-lib.bsh and both tools call it.
+      dm-prepare-release's inline block is replaced by that call.
+    - Order: in-tree copy by its own path; else $source_code_folder_dist; else $PWD
+      when it actually contains help-steps/pre; else the ~/derivative-maker
+      convention. Unresolvable fails with a named error saying what to set.
+
+    KNOWN, NOT FIXED: 34 other usr/bin tools carry the same assumption
+    (dm-upload-canary, dm-timesanitycheck-update, dm-tbb-update, dm-resign-canary
+    and so on). They are operator/maintenance tools, not on the build path, and are
+    not exercised here -- converting them blind would be untested churn. The library
+    is in place for them.
+
+    Regression test with canaries: dist-ai; 4 assertions fail against 61b4faf5^.
+
+commit 61b4faf5905b4ad3d3f166fbe21fd4cd91d28929
+Author: claude (dev141 763ccfe0-7bd8-4e8c-afd0-c39aceb48d72) <noreply@anthropic.com>
+Date:   Fri Jul 31 23:25:24 2026 -0400
+
+    prepare-release: locate the source tree instead of hardcoding ~/derivative-maker
+
+    - Run from /usr/bin -- a bare 'dm-prepare-release' on PATH, which is what
+      dm-build-official-one's Phase 4 invokes -- it assumed the checkout was at
+      "$HOME/derivative-maker" (the source said so: "XXX: hardcoded path"). A build
+      whose tree lives elsewhere ran to completion and then died in the RELEASE
+      phase on bash's bare "No such file or directory" from 'source', after the
+      entire build. Observed with the tree at /workspace in the container.
+    - Ordered resolution now: in-tree copy by its own path; else
+      $source_code_folder_dist (help-steps/variables exports it and the build
+      preserves it across the sudo boundary); else $PWD when it actually contains
+      help-steps/pre (Phase 4 runs with the tree as cwd) -- checked, not assumed;
+      else the ~/derivative-maker convention, which is kept as a fallback.
+    - An unresolvable tree now fails with a named error saying what to set, at the
+      top of the script, rather than as a sourcing failure at the end of a build.
+
+    Regression test with canaries: dist-ai 39f74a4
+    (test_prepare_release_tree_location.sh); 5 assertions fail on the pre-fix file.
+
+commit e8ee8c3ac67561fc88b77248f11b38e4331eaf50
+Author: claude (dev141 763ccfe0-7bd8-4e8c-afd0-c39aceb48d72) <noreply@anthropic.com>
+Date:   Fri Jul 31 22:30:05 2026 -0400
+
+    buildinfo: validate the source-state block; nbd: probe the device, not the module
+
+    Both found by ai-review (coderabbit + agy agreeing on each).
+
+    dm-reproducible-buildinfo:
+
+    - The source-state block was accepted on '[ -r ]' alone. A blank line is the
+      Deb822 record TERMINATOR, so an EMPTY state file did not merely lose
+      provenance -- it interpolated a blank line mid-record and detached
+      Source-Version, Flavor, Target, Architecture and everything after it into a
+      second, invalid paragraph.
+    - A PARTIAL file (Source-Commit but no Submodule-State) published incomplete
+      provenance as if it were complete.
+    - Content is now validated: non-empty, no blank line, starts with
+      Source-Commit, carries Submodule-State. Anything else is reported as
+      unrecorded WITH the reason.
+    - The path no longer falls back to "${binary_build_folder_dist:-}/dm-source-state",
+      which is the absolute '/dm-source-state' when that variable is unset, i.e. it
+      read the root directory.
+
+    dm-reproducible-compare-artifacts:
+
+    - The device probe was nested inside the modprobe-failure branch, so a modprobe
+      that SUCCEEDED without producing a node (nbds_max=0, all nodes busy) skipped
+      the check and the route failed later with no diagnostic. It is now
+      unconditional: loading the module is a means, the device is the requirement.
+    - It asks nbd_device_claim instead of testing '/dev/nbd0', so the preflight
+      cannot disagree with the claim made below. Hardcoding nbd0 both rejected a
+      host whose nbd0 is busy but nbd1 free, and accepted a stale-but-busy nbd0.
+      nbd_device_claim is a pure lookup and reserves nothing.
+    - The two failure messages now distinguish which reason applies.
+
+    Regression tests with canaries: dist-ai (test_buildinfo_source_state.sh,
+    test_nbd_probe.sh). Both fail on the pre-fix code -- 6 and 4 assertions.
+
+commit 8796a0481c9fbf5cdc6e1cb4f5407f3a21b3b6ad
+Author: claude (dev141 763ccfe0-7bd8-4e8c-afd0-c39aceb48d72) <noreply@anthropic.com>
+Date:   Fri Jul 31 21:27:58 2026 -0400
+
+    buildinfo: record the source state, not a commit that does not exist
+
+    'Source-Commit' shipped as the literal string 'unknown' in every released
+    artifact, and the variable behind it could not have helped: by release time
+    dist_build_current_git_head is the POST-amend HEAD that sign-tag-head just
+    created, a commit existing only inside that build. Verified against repro-lane
+    run 30618137118 -- both its amended HEADs 404 from the API. Exporting the
+    variable would have replaced 'unknown' with something that merely LOOKS
+    authoritative.
+
+    So read the state help-steps/sign-and-tag records before it amends anything
+    (org-ai-assisted/derivative-maker, branch ai): the parent's pre-sign, fetchable
+    commit, plus 'git submodule status --recursive'. The submodule half is what makes
+    a CI result re-derivable at all -- ci/checkout-fork-submodule-branches resolves
+    submodules from moving branch TIPS, three of which were deleted outright during
+    this work once merged, and nothing recorded what they had been.
+
+    A missing state file says 'unrecorded' WITH the reason rather than falling back
+    to 'unknown'. An image built by a path that did not record its provenance should
+    say so; 'unknown' reads like a value that was looked up and found absent.
+
+    Overridable via dm_source_state_file for callers that stage it elsewhere.
+
+    Verified end to end with no build: with the state present the record carries the
+    fetchable commit and a Deb822 submodule block; without it, the 'unrecorded'
+    form with the path named.
+
+    Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+
+commit c0c520718c322bff1d2e52861f68f47328bd26aa
+Author: claude (dev141 763ccfe0-7bd8-4e8c-afd0-c39aceb48d72) <noreply@anthropic.com>
+Date:   Fri Jul 31 20:13:14 2026 -0400
+
+    compare-artifacts: a usable /dev/nbd0 is the requirement, not a modprobe
+
+    filesystem_mounts_setup opened with
+
+      sudo --non-interactive modprobe nbd max_part=16 || return 1
+
+    and this tool runs INSIDE the derivative-maker container, which ships no kmod.
+    So modprobe is "command not found" there, the function returns 1, and the caller
+    falls back to comparing the packed artifacts directly -- on a host where the nbd
+    module was already loaded and /dev/nbd0 visible through the container's
+    '--volume /dev:/dev'.
+
+    The damage is not a hard failure but a silent DEGRADATION, which is worse: the
+    mounted route exists specifically to avoid the OOM the direct route hits on a
+    multi-gigabyte artifact, so the run ends with "diffoscope could not explain the
+    diff" and no hint that a missing package caused it. The diagnostic that exists to
+    explain a reproducibility failure is unavailable exactly when one occurs, hours
+    into an investigation.
+
+    Loading the module is a MEANS; a usable /dev/nbd* is the requirement. Only its
+    absence is fatal now, and the message says which of the two reasons applies and
+    where to fix it -- the module must be loaded on the HOST, and 'max_part' only
+    takes effect at load time.
+
+    VERIFIED on two real 505 MB images (CI repro-lane run 30618137118's published
+    artifact vs a local build of the same commit): before, "diffoscope could not
+    explain the diff (exit 2)"; after, the comparator mounts both and emits a full
+    351 KB file-level report that attributes the difference to one package.
+
+    Regression test in dist-ai (developer-meta-files-tests test_nbd_probe.sh),
+    canaried: 3 assertions fail against the pre-fix text, all pass after.
+
+    Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
 
 commit 9be0e83680b61ee5b0c803feb79ac71d7b10ee35
 Merge: 2ea05533 66489ed7
