@@ -382,7 +382,7 @@ Description: All systems, physical hardware, server packages
  Provides packages for server installations.
 
 Package: dist-baremetal-gui-all
-Architecture: all
+Architecture: any
 Pre-Depends: legacy-dist
 Depends: virtualbox-guest-additions-iso [amd64 arm64] | virtualbox-7.2 [amd64] | virtualbox-7.3 [amd64] | virtualbox-7.4 [amd64] | virtualbox-8.0 [amd64] | virtualbox-8.1 [amd64] | virtualbox-8.2 [amd64] | virtualbox-8.3 [amd64] | virtualbox-8.4 [amd64],
  ${misc:Depends}
@@ -432,7 +432,7 @@ Description: All systems, VMs, server packages
  Provides packages for server installations.
 
 Package: dist-vm-gui-all
-Architecture: all
+Architecture: any
 Pre-Depends: legacy-dist
 Depends: virtualbox-guest-additions-iso [amd64 arm64] | virtualbox-7.2 [amd64] | virtualbox-7.3 [amd64] | virtualbox-7.4 [amd64] | virtualbox-8.0 [amd64] | virtualbox-8.1 [amd64] | virtualbox-8.2 [amd64] | virtualbox-8.3 [amd64] | virtualbox-8.4 [amd64],
  ${misc:Depends}
