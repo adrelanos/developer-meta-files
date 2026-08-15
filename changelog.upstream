@@ -1,3 +1,28 @@
+commit 72ca199efbc60bfb99e5cb4f5bb7a6159fad70d6
+Merge: a3454ac2 50177838
+Author: Patrick Schleizer <adrelanos@whonix.org>
+Date:   Sat Aug 15 10:24:38 2026 -0400
+
+    Merge remote-tracking branch 'refs/remotes/ArrayBolt3/arraybolt3/trixie'
+
+commit 50177838f4be0bd94e507d0dfeb3c24213e0fd1e
+Author: Aaron Rainbolt <arraybolt3@gmail.com>
+Date:   Wed Aug 12 21:52:37 2026 -0400
+
+    Make packages with Guest Additions dependencies into arch-any packages
+
+commit a3454ac2dbec0d7419dc49042b7f9b212ce376f7
+Author: Patrick Schleizer <adrelanos@whonix.org>
+Date:   Mon Aug 10 17:05:22 2026 +0000
+
+    bumped changelog version
+
+commit bbcbc25281efa25cf2c67b8f7d3f0ef744f1cf67
+Author: Aaron Rainbolt <arraybolt3@gmail.com>
+Date:   Sun Aug 9 10:09:24 2026 -0400
+
+    .
+
 commit a1b6055acb6fc15b45935441709ace90687e6964
 Merge: 69862539 04161ebf
 Author: Patrick Schleizer <adrelanos@whonix.org>
