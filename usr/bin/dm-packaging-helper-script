@@ -1520,8 +1520,12 @@ pkg_git_diff_and_merge_branch_arraybolt3() {
    pkg_git_diff_and_merge_branch "ArrayBolt3/arraybolt3/trixie"
 }
 
-pkg_git_diff_and_merge_branch_bot() {
+pkg_git_diff_and_merge_branch_bot_master() {
    pkg_git_diff_and_merge_branch "${DM_GITHUB_MIRROR}/master"
+}
+
+pkg_git_diff_and_merge_branch_bot_ai() {
+   pkg_git_diff_and_merge_branch "${DM_GITHUB_MIRROR}/ai"
 }
 
 ### }}}
