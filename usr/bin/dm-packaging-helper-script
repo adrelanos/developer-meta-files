@@ -47,6 +47,7 @@ canonical_dependabot_yml="${derivative_maker_source_code_dir}/packages/kicksecur
 [ -v DM_GITLAB_DEV ] || DM_GITLAB_DEV='gitlab-adrelanos'
 ## TODO
 #[ -v DM_GITHUB_MIRROR ] || DM_GITHUB_MIRROR='org-ai-assisted'
+DM_GITHUB_MIRROR=''
 
 ## ArrayBolt3 (fetch-only) is intentionally excluded.
 [ -v DM_PUSH_REMOTES_UNIVERSE ] || DM_PUSH_REMOTES_UNIVERSE=( github-kicksecure github-whonix "${DM_GITHUB_MIRROR}" "${DM_GITHUB_DEV}" "${DM_GITLAB_DEV}")
