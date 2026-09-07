@@ -36,7 +36,7 @@ For consumer-wrapper repos: after the centralization in
 in consumer wrappers are `uses: org-ai-assisted/developer-meta-
 files/.github/workflows/reusable-<name>.yml@master` references.
 The actual SHA-pinned `actions/checkout`,
-`anthropics/claude-code-action`, etc. live in the reusable
+`github/codeql-action`, etc. live in the reusable
 workflows in this repo. One
 `developer-meta-files/.github/dependabot.yml` updates them all;
 consumer repos pick up the bumped SHAs automatically through
@@ -245,16 +245,15 @@ trust-boundary recognition) yet exists for Signed-Releases -
 ask but has no resolution.
 
 
-## actions/untrusted-checkout/medium (CodeQL Actions) on dmf-checkout steps
+## actions/untrusted-checkout/medium (CodeQL Actions) on helper-checkout steps
 
 **Affects**: every reusable workflow that checks
-`developer-meta-files` into `.github/dmf/` for downstream
-`ci/`-helper scripts -
-[`reusable-pre-push-static.yml`](../.github/workflows/reusable-pre-push-static.yml),
+`org-ai-assisted/dist-ai` into `.github/dist-ai/` for the shared
+CI helper scripts + step-summary binary -
 [`reusable-bandit.yml`](../.github/workflows/reusable-bandit.yml),
+[`reusable-coverity.yml`](../.github/workflows/reusable-coverity.yml),
 [`reusable-cppcheck.yml`](../.github/workflows/reusable-cppcheck.yml),
 [`reusable-codeql.yml`](../.github/workflows/reusable-codeql.yml),
-[`reusable-secrets-audit.yml`](../.github/workflows/reusable-secrets-audit.yml),
 [`reusable-scorecard.yml`](../.github/workflows/reusable-scorecard.yml).
 
 **Why CodeQL reports it**: the rule fires on static properties
@@ -315,7 +314,7 @@ boundary.
 
 ## zizmor `unpinned-uses` on the same `@master` reusable refs
 
-**Affects**: `consumer-claude-code.yml:66` and every other consumer
+**Affects**: `consumer-bandit.yml` and every other consumer
 wrapper line of the same shape. Reported at severity **high**,
 confidence **high**, as `error[unpinned-uses]: action is not pinned
 to a hash (required by blanket policy)`.

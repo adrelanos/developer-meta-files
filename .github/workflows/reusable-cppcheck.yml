@@ -93,13 +93,6 @@ jobs:
 
     env:
       DIST_AI_REF: ${{ github.repository == 'org-ai-assisted/dist-ai' && github.sha || 'master' }}
-      ## Dogfood ref: caller's commit when developer-meta-files is its
-      ## own caller (so a PR that modifies the script under test gets
-      ## exercised); 'master' for every other caller. Routed through
-      ## env for the org-wide env-routing convention (same shape as
-      ## JOB_STATUS). The job-level fork-PR guard above is the actual
-      ## mitigation for actions/untrusted-checkout.
-      DMF_REF: ${{ github.repository == 'org-ai-assisted/developer-meta-files' && github.sha || 'master' }}
 
     steps:
       - name: Checkout repository
@@ -115,15 +108,6 @@ jobs:
           path: .github/dist-ai
           persist-credentials: false
 
-      - name: Checkout developer-meta-files (ci/ helpers + step-summary)
-        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
-        with:
-          repository: org-ai-assisted/developer-meta-files
-          ref: ${{ env.DMF_REF }}
-          path: .github/dmf
-          persist-credentials: false
-
       - name: Install cppcheck + yq
         ## Ubuntu 24.04 ships kislyuk's python-yq jq wrapper, which
         ## ci/dm-consumer-load.sh expects.
@@ -135,7 +119,7 @@ jobs:
       - name: Load per-repo config from .github/dm-consumer.yml
         id: cfg
         ## See ci/dm-consumer-load.sh for schema rules.
-        run: .github/dmf/ci/dm-consumer-load.sh
+        run: .github/dist-ai/ci/dm-consumer-load.sh
           cppcheck
           paths
           prepare-command

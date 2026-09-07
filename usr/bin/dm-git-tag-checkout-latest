@@ -3,12 +3,18 @@
 ## Copyright (C) 2012 - 2025 ENCRYPTED SUPPORT LLC <adrelanos@whonix.org>
 ## See the file COPYING for copying conditions.
 
+## style-ok: allow-errexit-toggle -- 'set +e' is a deliberate global mode
+## switch paired with the 'build_all_error_handler' ERR trap, so the handler
+## can report and exit rather than errexit killing the script mid-flow.
+
 set -x
 set -o errexit
 set -o nounset
 set -o pipefail
 set -o errtrace
 shopt -s inherit_errexit
+shopt -s shift_verbose
+export LC_ALL=C
 
 true "INFO: Currently running script: ${BASH_SOURCE[0]} $*"
 
@@ -17,14 +23,14 @@ MYDIR="$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" && pwd )"
 #cd -- "$MYDIR"
 
 ## XXX: hardcoded path
-derivative_maker_source_code_dir="$HOME/derivative-maker"
-cd -- "$derivative_maker_source_code_dir"
+derivative_maker_source_code_dir="${HOME}/derivative-maker"
+cd -- "${derivative_maker_source_code_dir}"
 
-source "$derivative_maker_source_code_dir/help-steps/pre"
+source "${derivative_maker_source_code_dir}/help-steps/pre"
 
 build_all_error_handler() {
    : printf '%s\n' "
-${red}${bold}BASH_COMMAND${reset}: $BASH_COMMAND
+${red}${bold}BASH_COMMAND${reset}: ${BASH_COMMAND}
 ${red}${bold}ERROR ${BASH_SOURCE[0]}: | caller: $(caller)${reset}
 "
    exit 1

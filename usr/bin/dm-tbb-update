@@ -10,15 +10,16 @@ set -o pipefail
 set -o errtrace
 shopt -s inherit_errexit
 shopt -s shift_verbose
+export LC_ALL=C
 
 true "INFO: Currently running script: ${BASH_SOURCE[0]} $*"
 
 source /usr/libexec/helper-scripts/git.sh
 
 ## XXX: hardcoded path
-derivative_maker_source_code_dir="$HOME/derivative-maker"
+derivative_maker_source_code_dir="${HOME}/derivative-maker"
 
-source "$derivative_maker_source_code_dir/help-steps/pre"
+source "${derivative_maker_source_code_dir}/help-steps/pre"
 
 package-installed-check tb-updater
 

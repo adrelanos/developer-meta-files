@@ -13,6 +13,8 @@ set -o nounset
 set -o pipefail
 set -o errtrace
 shopt -s inherit_errexit
+shopt -s shift_verbose
+export LC_ALL=C
 
 true "$0: ERROR: Please verify and edit this SHARED script!"
 exit 1
@@ -20,5 +22,5 @@ exit 1
 original_disk=/dev/nvme0n1
 backup_disk=/dev/sdb
 
-test -e "$original_disk"
-test -e "$backup_disk"
+test -e "${original_disk}"
+test -e "${backup_disk}"

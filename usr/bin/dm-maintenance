@@ -10,24 +10,25 @@ set -o pipefail
 set -o errtrace
 shopt -s inherit_errexit
 shopt -s shift_verbose
+export LC_ALL=C
 
 true "INFO: Currently running script: ${BASH_SOURCE[0]} $*"
 
 ## XXX: hardcoded path
 
 ## XXX: Automatically commit. Probably needs no update more than once per major release.
-"$HOME/derivative-maker/packages/kicksecure/helper-scripts/usr/share/helper-scripts/localectl-static-list-update"
+"${HOME}/derivative-maker/packages/kicksecure/helper-scripts/usr/share/helper-scripts/localectl-static-list-update"
 
-"$HOME/derivative-maker/packages/kicksecure/developer-meta-files/usr/bin/dm-virtualbox-update-local-and-wiki-links"
+"${HOME}/derivative-maker/packages/kicksecure/developer-meta-files/usr/bin/dm-virtualbox-update-local-and-wiki-links"
 
-"$HOME/derivative-maker/packages/kicksecure/developer-meta-files/usr/bin/dm-virtualbox-guest-additions-iso-update"
+"${HOME}/derivative-maker/packages/kicksecure/developer-meta-files/usr/bin/dm-virtualbox-guest-additions-iso-update"
 
-"$HOME/derivative-maker/packages/kicksecure/developer-meta-files/usr/bin/dm-tbb-update"
+"${HOME}/derivative-maker/packages/kicksecure/developer-meta-files/usr/bin/dm-tbb-update"
 
-"$HOME/derivative-maker/packages/kicksecure/developer-meta-files/usr/bin/dm-tor-update-repository"
+"${HOME}/derivative-maker/packages/kicksecure/developer-meta-files/usr/bin/dm-tor-update-repository"
 
-"$HOME/derivative-maker/packages/kicksecure/developer-meta-files/usr/bin/dm-timesanitycheck-update"
+"${HOME}/derivative-maker/packages/kicksecure/developer-meta-files/usr/bin/dm-timesanitycheck-update"
 
-"$HOME/derivative-maker/packages/kicksecure/developer-meta-files/usr/bin/dm-update-frozen-snapshot"
+"${HOME}/derivative-maker/packages/kicksecure/developer-meta-files/usr/bin/dm-update-frozen-snapshot"
 
 true "$0: OK."

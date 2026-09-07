@@ -102,7 +102,7 @@ jobs:
       - name: Verify token secret is set
         env:
           TOKEN_PRESENT: ${{ secrets.GHORG_AUDIT_TOKEN != '' }}
-        run: ./ci/policy-live-verify-token.sh
+        run: ./.github/dist-ai/ci/policy-live-verify-token.sh
 
       - name: Run dm-github-org-policy --audit (live)
         env:

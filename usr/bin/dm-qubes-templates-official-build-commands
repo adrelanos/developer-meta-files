@@ -10,6 +10,7 @@ set -o pipefail
 set -o errtrace
 shopt -s inherit_errexit
 shopt -s shift_verbose
+export LC_ALL=C
 
 init_variables() {
   #derivative_version="17"
@@ -33,8 +34,8 @@ git_tag_pushed_sanity_test() {
 
   ## XXX: hardcoded path
   for repo_path in \
-      "$HOME/derivative-maker/qubes/qubes-template-kicksecure" \
-      "$HOME/derivative-maker/qubes/qubes-template-whonix" ; do
+      "${HOME}/derivative-maker/qubes/qubes-template-kicksecure" \
+      "${HOME}/derivative-maker/qubes/qubes-template-whonix" ; do
     cd -- "${repo_path}"
     git switch master
     dm-quickgittagsign
@@ -46,15 +47,15 @@ init_variables
 git_tag_pushed_sanity_test
 
 ## XXX: hardcoded path
-cd -- "$HOME/sourcesother/qubes-builder"
+cd -- "${HOME}/sourcesother/qubes-builder"
 
 for qubes_release_item in "${qubes_release_list[@]}"; do
   cmd_list=(
     env
     REPO_PROXY=''
     make
-    RELEASE="$qubes_release_item"
-    DISTS_VM="$template_oneline_string"
+    RELEASE="${qubes_release_item}"
+    DISTS_VM="${template_oneline_string}"
     template-github
   )
 
@@ -62,5 +63,5 @@ for qubes_release_item in "${qubes_release_list[@]}"; do
 done
 
 for template_item in "${template_list[@]}"; do
-  realpath -- "build-logs/template-github-$template_item.log"
+  realpath -- "build-logs/template-github-${template_item}.log"
 done

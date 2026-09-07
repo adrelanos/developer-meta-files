@@ -71,20 +71,18 @@ signing_lib_set_file_size_mb() {
 }
 
 sign_and_verify() {
-   signing_lib_set_file_size_mb "$1"
-
-   sign_cmd_openpgp "${1}" "${1}.asc"
-   verify_cmd_openpgp "${1}" "${1}.asc"
-   sign_cmd_signify "${1}" "${1}.sig"
-   verify_cmd_signify "${1}" "${1}.sig"
+   signing_lib_set_file_size_mb "$1" || return
+   sign_cmd_openpgp "${1}" "${1}.asc" || return
+   verify_cmd_openpgp "${1}" "${1}.asc" || return
+   sign_cmd_signify "${1}" "${1}.sig" || return
+   verify_cmd_signify "${1}" "${1}.sig" || return
 }
 
 ## Verify-only counterpart for a downstream verifier: check an already-published
 ## file against its sibling '.asc' (+ '.sig' when the file is small enough to
 ## have been signify-signed).
 verify_signature() {
-   signing_lib_set_file_size_mb "$1"
-
-   verify_cmd_openpgp "${1}" "${1}.asc"
-   verify_cmd_signify "${1}" "${1}.sig"
+   signing_lib_set_file_size_mb "$1" || return
+   verify_cmd_openpgp "${1}" "${1}.asc" || return
+   verify_cmd_signify "${1}" "${1}.sig" || return
 }

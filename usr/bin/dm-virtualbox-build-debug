@@ -9,6 +9,8 @@ set -o nounset
 set -o pipefail
 set -o errtrace
 shopt -s inherit_errexit
+shopt -s shift_verbose
+export LC_ALL=C
 
 true "$0: START"
 
@@ -16,6 +18,6 @@ debug_args_maybe=()
 debug_args_maybe+=("--remote-derivative-packages" "true")
 
 ## XXX: hardcoded path
-"$HOME/derivative-maker/help-steps/dm-build-official" "${debug_args_maybe[@]}"
+"${HOME}/derivative-maker/help-steps/dm-build-official" "${debug_args_maybe[@]}"
 
 true "$0: END"

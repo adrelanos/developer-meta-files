@@ -21,6 +21,7 @@ set -o pipefail
 set -o errtrace
 shopt -s inherit_errexit
 shopt -s shift_verbose
+export LC_ALL=C
 
 # shellcheck source=../../../helper-scripts/usr/libexec/helper-scripts/has.sh
 source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/has.sh
@@ -83,7 +84,9 @@ if [ ! "${verify_status}" = "0" ]; then
    while IFS= read -r crl_url; do
       [ -n "${crl_url}" ] || continue
       ## TODO: Use scurl here instead?
-      if ! curl --silent --show-error --location --max-time 60 \
+      ## --max-filesize: crl_url comes from the untrusted installer's
+      ## signature. Ensure we don't download an endless stream of data.
+      if ! curl --silent --show-error --location --max-time 60 --max-filesize 104857600 \
          --output "${crl_der_file}" -- "${crl_url}"; then
          true "$0: could not fetch ${crl_url}"
          continue

@@ -10,17 +10,18 @@ set -o pipefail
 set -o errtrace
 shopt -s inherit_errexit
 shopt -s shift_verbose
+export LC_ALL=C
 
 true "INFO: Currently running script: ${BASH_SOURCE[0]} $*"
 
 dist_build_source_run="true"
 
 MYDIR="$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" && pwd )"
-cd -- "$MYDIR"
+cd -- "${MYDIR}"
 
 ## XXX: hardcoded path
-source "$HOME/derivative-maker/help-steps/pre"
-source "$HOME/derivative-maker/help-steps/variables"
+source "${HOME}/derivative-maker/help-steps/pre"
+source "${HOME}/derivative-maker/help-steps/variables"
 
 root_check_no() {
    if [ "$(id -u)" = "0" ]; then
@@ -36,12 +37,12 @@ preparation() {
 show_dists() {
    true "${cyan}INFO ${BASH_SOURCE[0]}: Showing dists...${reset}"
    set +x
-   test -d "$binary_build_folder_dist/aptrepo_remote/$derivative_name_item/dists"
-   for file_name in "$binary_build_folder_dist/aptrepo_remote/$derivative_name_item/dists/"**; do
-      if [ -d "$file_name" ]; then
+   test -d "${binary_build_folder_dist}/aptrepo_remote/${derivative_name_item}/dists"
+   for file_name in "${binary_build_folder_dist}/aptrepo_remote/${derivative_name_item}/dists/"**; do
+      if [ -d "${file_name}" ]; then
          continue
       fi
-      printf '%s\n' "$file_name"
+      printf '%s\n' "${file_name}"
    done
    unset file_name
    set -x
@@ -54,12 +55,12 @@ show_pool() {
    fi
    true "${cyan}INFO ${BASH_SOURCE[0]}: Showing pool...${reset}"
    set +x
-   test -d "$binary_build_folder_dist/aptrepo_remote/$derivative_name_item/pool"
-   for file_name in "$binary_build_folder_dist/aptrepo_remote/$derivative_name_item/pool/"**; do
-      if [ -d "$file_name" ]; then
+   test -d "${binary_build_folder_dist}/aptrepo_remote/${derivative_name_item}/pool"
+   for file_name in "${binary_build_folder_dist}/aptrepo_remote/${derivative_name_item}/pool/"**; do
+      if [ -d "${file_name}" ]; then
          continue
       fi
-      printf '%s\n' "$file_name"
+      printf '%s\n' "${file_name}"
    done
    unset file_name
    set -x
@@ -67,36 +68,36 @@ show_pool() {
 
 upload_real_ask() {
    if [ ! "${build_upload_noninteractive:-}" = "true" ]; then
-      true "${cyan}INFO ${BASH_SOURCE[0]}: Please press enter to continue to uploading. $rsync_dry_run_maybe${reset}"
+      true "${cyan}INFO ${BASH_SOURCE[0]}: Please press enter to continue to uploading. ${rsync_dry_run_maybe}${reset}"
       read -r temp
    fi
 }
 
 upload_dists() {
-   true "${cyan}INFO ${BASH_SOURCE[0]}: Uploading dists... $rsync_dry_run_maybe${reset}"
-   test -d "$binary_build_folder_dist/aptrepo_remote/$derivative_name_item/dists"
-   rsync_dry_run_maybe="$rsync_dry_run_maybe" upload_real_ask
+   true "${cyan}INFO ${BASH_SOURCE[0]}: Uploading dists... ${rsync_dry_run_maybe}${reset}"
+   test -d "${binary_build_folder_dist}/aptrepo_remote/${derivative_name_item}/dists"
+   rsync_dry_run_maybe="${rsync_dry_run_maybe}" upload_real_ask
    rsync \
-      $rsync_opts \
+      ${rsync_opts} \
       --recursive \
-      $rsync_delete_maybe \
-      $rsync_dry_run_maybe \
+      ${rsync_delete_maybe} \
+      ${rsync_dry_run_maybe} \
       --rsh ssh \
-      "$binary_build_folder_dist/aptrepo_remote/$derivative_name_item/dists/"* \
+      "${binary_build_folder_dist}/aptrepo_remote/${derivative_name_item}/dists/"* \
       "${upload_location}/dists/"
 }
 
 upload_pool() {
-   true "${cyan}INFO ${BASH_SOURCE[0]}: Uploading pool... $rsync_dry_run_maybe${reset}"
-   test -d "$binary_build_folder_dist/aptrepo_remote/$derivative_name_item/pool"
-   rsync_dry_run_maybe="$rsync_dry_run_maybe" upload_real_ask
+   true "${cyan}INFO ${BASH_SOURCE[0]}: Uploading pool... ${rsync_dry_run_maybe}${reset}"
+   test -d "${binary_build_folder_dist}/aptrepo_remote/${derivative_name_item}/pool"
+   rsync_dry_run_maybe="${rsync_dry_run_maybe}" upload_real_ask
    rsync \
-      $rsync_opts \
+      ${rsync_opts} \
       --recursive \
-      $rsync_delete_maybe \
-      $rsync_dry_run_maybe \
+      ${rsync_delete_maybe} \
+      ${rsync_dry_run_maybe} \
       --rsh ssh \
-      "$binary_build_folder_dist/aptrepo_remote/$derivative_name_item/pool/"* \
+      "${binary_build_folder_dist}/aptrepo_remote/${derivative_name_item}/pool/"* \
       "${upload_location}/pool/"
 }
 

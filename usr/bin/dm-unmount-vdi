@@ -9,50 +9,51 @@ set -o nounset
 set -o pipefail
 set -o errtrace
 shopt -s inherit_errexit
+shopt -s shift_verbose
+export LC_ALL=C
 
 true "INFO: Currently running script: ${BASH_SOURCE[0]} $*"
 
 MYDIR="$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" && pwd )"
-cd -- "$MYDIR"
+cd -- "${MYDIR}"
 
 ## XXX: hardcoded path
-source "$HOME/derivative-maker/help-steps/pre"
-source "$HOME/derivative-maker/help-steps/variables"
+source "${HOME}/derivative-maker/help-steps/pre"
+source "${HOME}/derivative-maker/help-steps/variables"
+# shellcheck source=../../../helper-scripts/usr/libexec/helper-scripts/has.sh
+source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/has.sh
 
-exception_handler_unmount-vdi() {
+exception_handler_unmount_vdi() {
    : printf '%s\n' "
-${red}${bold}BASH_COMMAND${reset}: $BASH_COMMAND
+${red}${bold}BASH_COMMAND${reset}: ${BASH_COMMAND}
 ${red}${bold}ERROR ${BASH_SOURCE[0]}: | caller: $(caller)${reset}
 "
    exit 1
 }
 
 unmount_vdi() {
-   trap "exception_handler_unmount-vdi" ERR INT TERM
+   trap "exception_handler_unmount_vdi" ERR INT TERM
 
    sync
 
-   local command_v_exit_code="0"
-   command -v -- guestunmount >/dev/null || { command_v_exit_code="$?" ; true; };
-
-   if [ "$command_v_exit_code" = "0" ]; then
+   if has guestunmount; then
       true "${bold}${cyan}INFO: guestunmount available, using it, ok... ${reset}"
-      guestunmount "$CHROOT_FOLDER"
+      guestunmount "${CHROOT_FOLDER}"
    else
       ## guestunmount is not available in Debian Wheezy. Only since Debian Jessie.
       true "${bold}${cyan}INFO: guestunmount not available, using \"fusermount -u\" instead, ok... ${reset}"
-      fusermount -u "$CHROOT_FOLDER"
+      fusermount -u "${CHROOT_FOLDER}"
    fi
    sync
 
    ## Delete temporary folder.
    ## It did not contain anything. It was only a mount point.
-   rmdir -r -- "$CHROOT_FOLDER"
+   rmdir -r -- "${CHROOT_FOLDER}"
    sync
 }
 
 main() {
-   if [ "$BARE_METAL" = "1" ]; then
+   if [ "${BARE_METAL}" = "1" ]; then
       true "${green}INFO: Skipping script, because BARE_METAL=1: ${BASH_SOURCE[0]}${reset}"
       exit 0
    else

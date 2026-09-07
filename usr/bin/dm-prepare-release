@@ -14,6 +14,7 @@ set -o pipefail
 set -o errtrace
 shopt -s inherit_errexit
 shopt -s shift_verbose
+export LC_ALL=C
 
 true "INFO: Currently running script: ${BASH_SOURCE[0]} $*"
 
@@ -375,6 +376,7 @@ libvirt_compress() {
       --sort=name \
       --sparse \
       --mtime="@${SOURCE_DATE_EPOCH}" \
+      --exclude='.git' \
       --directory="${dist_binary_build_folder}" \
       --file - \
       "${filelist_base_name[@]}" \
@@ -651,7 +653,7 @@ signatures_create() {
       local dm_target_item
       dm_target_item="${target_names[i]}"
       if [ -n "${dm_target_item}" ]; then
-         "${MYDIR}/dm-reproducible-buildinfo" --target "${dm_target_item}" --image "${file_item}"
+         "${dist_developer_meta_files_folder}/usr/bin/dm-reproducible-buildinfo" --target "${dm_target_item}" --image "${file_item}"
          sign_and_verify "${file_item}.dm-buildinfo"
       fi
    done

@@ -6,6 +6,8 @@
 ## AI-Assisted
 
 ## style-ok: no-safe-rm
+## style-ok: no-tmp-hardcode -- '--tmpfs /tmp' mounts a container-private tmpfs
+## AT /tmp (systemd needs an exec-able /tmp); not a redirectable temp path.
 
 ## Build a Debian-based image with systemd as PID 1 and start it
 ## detached + --privileged. Not compatible with GHA's `container:`
@@ -18,6 +20,7 @@ set -o pipefail
 set -o errtrace
 shopt -s inherit_errexit
 shopt -s shift_verbose
+export LC_ALL=C
 
 if [ "${CI:-}" != "true" ]; then
    printf '%s\n' 'error: this script must run with CI=true.' >&2
@@ -73,7 +76,7 @@ attempt=0
 while [ "${attempt}" -lt "${WAIT_SECONDS}" ]; do
    attempt=$((attempt + 1))
    state="$(docker exec "${CONTAINER_NAME}" systemctl is-system-running 2>/dev/null || true)"
-   printf '  attempt %3d/%-3d state=%s\n' "${attempt}" "${WAIT_SECONDS}" "${state}"
+   printf '%s\n' "  attempt ${attempt}/${WAIT_SECONDS} state=${state}"
    case "${state}" in
       running|degraded|maintenance)
          break

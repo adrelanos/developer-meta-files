@@ -9,9 +9,11 @@ set -o nounset
 set -o pipefail
 set -o errtrace
 shopt -s inherit_errexit
+shopt -s shift_verbose
+export LC_ALL=C
 
 ## XXX: hardcoded path
-cd -- "$HOME/derivative-maker"
+cd -- "${HOME}/derivative-maker"
 
 ## NOTE: does not support spaces
 replace_list="\
@@ -36,29 +38,29 @@ while IFS= read -r -d $'\0' file_name; do
 
    basename_file_name="${file_name##*/}"
 
-   if [ "$basename_file_name" = "changelog.upstream" ]; then
+   if [ "${basename_file_name}" = "changelog.upstream" ]; then
       continue
    fi
-   if [ "$basename_file_name" = "dm-replace-list" ]; then
+   if [ "${basename_file_name}" = "dm-replace-list" ]; then
       continue
    fi
 
    while read -r line ; do
-      if [ "$line" = "" ]; then
+      if [ "${line}" = "" ]; then
          error "ERROR! line is empty!"
       fi
 
-      true "line: '$line'"
-      read -r first second <<< "$line"
+      true "line: '${line}'"
+      read -r first second <<< "${line}"
 
-      if [ "$first" = "" ]; then
+      if [ "${first}" = "" ]; then
          error "ERROR! first is empty!"
       fi
-      if [ "$second" = "" ]; then
+      if [ "${second}" = "" ]; then
          error "ERROR! second is empty!"
       fi
 
-      str_replace "$first" "$second" "$file_name"
+      str_replace "${first}" "${second}" "${file_name}"
 
       #str_replace 'sudo $SUDO_OPTS' '$SUDO_TO_USER' "$file_name"
 
@@ -72,7 +74,7 @@ while IFS= read -r -d $'\0' file_name; do
    ## $replace_list already ends with a newline; use printf '%s' (no
    ## extra newline) so the read loop does not see a trailing empty
    ## line and trip the `error "ERROR! line is empty!"` guard below.
-   done < <( printf '%s' "$replace_list" )
+   done < <( printf '%s' "${replace_list}" )
 
    true "INFO: main loop end"
 

@@ -42,6 +42,7 @@ set -o pipefail
 set -o errtrace
 shopt -s inherit_errexit
 shopt -s shift_verbose
+export LC_ALL=C
 
 me="${0##*/}"
 
@@ -68,8 +69,8 @@ me="${0##*/}"
 [ -v DIST_AI_REMOTE_URL ] || DIST_AI_REMOTE_URL="https://github.com/${DIST_AI_REPO}.git"
 
 emit() {
-   printf '%s: dist-ai ref -> %s (%s)\n' "${me}" "$1" "$2" >&2
-   printf 'ref=%s\n' "$1" >> "${GITHUB_OUTPUT}"
+   printf '%s\n' "${me}: dist-ai ref -> $1 ($2)" >&2
+   printf '%s\n' "ref=$1" >> "${GITHUB_OUTPUT}"
    exit 0
 }
 

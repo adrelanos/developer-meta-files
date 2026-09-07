@@ -26,22 +26,24 @@
 ## acceptable. A runner-owned sidecar lets actions/cache tar/untar
 ## with zero interaction with apt's permissions.
 ##
-## Usage:
-##   apt-install-with-cache.sh PACKAGE [PACKAGE ...]
-##
-## Paired workflow steps (caller's responsibility):
-##   - name: Cache apt downloads
-##     uses: actions/cache@<sha>
-##     with:
-##       path: ~/.apt-deb-cache
-##       key: ${{ runner.os }}-apt-<tool>-${{ hashFiles('<workflow>') }}
+## Usage: invoked by this directory's action.yml as
+## "${GITHUB_ACTION_PATH}/install.sh" PACKAGE [PACKAGE ...]; the action
+## wraps actions/cache (the ~/.apt-deb-cache sidecar) + this script.
+## Callers use the ACTION, not this script directly:
 ##   - name: Install
-##     run: .github/dmf/ci/apt-install-with-cache.sh PACKAGE [...]
+##     uses: org-ai-assisted/developer-meta-files/.github/actions/apt-install-with-cache@master
+##     with:
+##       packages: PACKAGE [PACKAGE ...]
+##       cache-key: ${{ runner.os }}-apt-<tool>-${{ hashFiles('<workflow>') }}
 ##
 ## CI guard mirrors ci/coverity-check-secrets.sh - this script has
 ## no sensible local invocation (no developer machine should be
 ## sudo-copying into /var/cache/apt/archives); ALLOW_LOCAL=true
 ## overrides for the rare-on-purpose case.
+
+## style-ok: allow-apt-get -- this CI bootstrap installs the base apt packages
+## that helper-scripts itself needs, so it runs BEFORE helper-scripts (and its
+## 'apt-get-noninteractive' wrapper) is on PATH.
 
 set -o errexit
 set -o nounset
@@ -49,6 +51,7 @@ set -o pipefail
 set -o errtrace
 shopt -s inherit_errexit
 shopt -s shift_verbose
+export LC_ALL=C
 shopt -s nullglob
 
 if [ "${CI:-}" != "true" ] && [ "${ALLOW_LOCAL:-}" != "true" ]; then

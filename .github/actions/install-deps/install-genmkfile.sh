@@ -24,6 +24,7 @@ set -o pipefail
 set -o errtrace
 shopt -s inherit_errexit
 shopt -s shift_verbose
+export LC_ALL=C
 
 if [ "${CI:-}" != "true" ]; then
    printf '%s\n' \
@@ -40,7 +41,8 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
 
 readonly sudo_prefix
-readonly clone_dir='/tmp/genmkfile-install'
+clone_dir="$(mktemp --directory)"
+readonly clone_dir
 readonly upstream_owner="${GENMKFILE_OWNER:-Kicksecure}"
 readonly upstream_url="https://github.com/${upstream_owner}/genmkfile.git"
 

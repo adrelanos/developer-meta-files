@@ -14,6 +14,7 @@ set -o pipefail
 set -o errtrace
 shopt -s inherit_errexit
 shopt -s shift_verbose
+export LC_ALL=C
 
 # shellcheck source=../../../helper-scripts/usr/libexec/helper-scripts/has.sh
 source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/has.sh
@@ -157,20 +158,23 @@ mkfs.fat -F 32 \
 ## that dd overwrites the ESP with -- the same silent-strip failure mode as the
 ## extraction listing above. The '[ -n ]' guard keeps an empty set to zero
 ## iterations (a flat FAT legitimately has no subdirectories).
-dir_listing="$( cd -- "${staging}" && find . -mindepth 1 -type d | LC_ALL=C sort )"
-if [ -n "${dir_listing}" ]; then
-   while read -r directory; do
-      mmd -i "${fresh_image}" "::${directory#./}"
-   done <<< "${dir_listing}"
-fi
+##
+## NUL-delimited: a file/dir name with a leading/trailing space or a newline must
+## survive verbatim into mmd/mcopy.
+##
+## FIXME: We aren't capturing or `[ -n ]` guarding the listing anymore, so we
+## need to use a temp file to expose the exit code of cd | find | sort to the
+## parent shell, and should use a flag or similar to indicate whether we
+## created any dirs or copied any files. We should also DELETE (not rewrite!)
+## the comment above that mentions capturing listings.
+while IFS= read -r -d '' directory; do
+   mmd -i "${fresh_image}" "::${directory#./}"
+done < <( cd -- "${staging}" && find . -mindepth 1 -type d -print0 | LC_ALL=C sort -z )
 
-file_listing="$( cd -- "${staging}" && find . -mindepth 1 -type f | LC_ALL=C sort )"
-if [ -n "${file_listing}" ]; then
-   while read -r file; do
-      touch --date="@${SOURCE_DATE_EPOCH}" -- "${staging}/${file#./}"
-      mcopy -i "${fresh_image}" -m "${staging}/${file#./}" "::${file#./}"
-   done <<< "${file_listing}"
-fi
+while IFS= read -r -d '' file; do
+   touch --date="@${SOURCE_DATE_EPOCH}" -- "${staging}/${file#./}"
+   mcopy -i "${fresh_image}" -m "${staging}/${file#./}" "::${file#./}"
+done < <( cd -- "${staging}" && find . -mindepth 1 -type f -print0 | LC_ALL=C sort -z )
 
 ## Overwrite the partition with the deterministic image. conv=notrunc so a file
 ## target keeps its size; the image is exactly the partition size regardless.

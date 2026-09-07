@@ -20,6 +20,7 @@ set -o pipefail
 set -o errtrace
 shopt -s inherit_errexit
 shopt -s shift_verbose
+export LC_ALL=C
 
 # shellcheck source=../../../../helper-scripts/usr/libexec/helper-scripts/strings.bsh
 source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/strings.bsh
@@ -150,8 +151,7 @@ ghorg_token() {
 ghorg_require_deps() {
   local cmd
 
-  ## No Git dependency, as none of the github-org-tools use Git.
-  for cmd in curl jq; do
+  for cmd in curl jq git; do
     has "${cmd}" || {
       log error "required command not found: '${cmd}'"
       return 1

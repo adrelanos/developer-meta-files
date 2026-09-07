@@ -10,6 +10,8 @@ set -o nounset
 set -o pipefail
 set -o errtrace
 shopt -s inherit_errexit
+shopt -s shift_verbose
+export LC_ALL=C
 
 ## amd64 chroot already existing for version check
 ## SC2037: shellcheck cannot statically tell that the trailing glob
@@ -37,7 +39,7 @@ git status
 true "press ctrl + c to abort"
 read -r question
 
-git commit -a -m "$commit_message"
+git commit -a -m "${commit_message}"
 
 export build_upload_noninteractive=true
 dm-upload-repository

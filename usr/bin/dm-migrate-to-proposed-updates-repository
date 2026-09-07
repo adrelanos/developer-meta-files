@@ -9,23 +9,25 @@ set -o nounset
 set -o pipefail
 set -o errtrace
 shopt -s inherit_errexit
+shopt -s shift_verbose
+export LC_ALL=C
 
 true "INFO: Currently running script: ${BASH_SOURCE[0]} $*"
 
 dist_build_source_run="true"
 
 MYDIR="$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" && pwd )"
-mydir_backup="$MYDIR"
-cd -- "$MYDIR"
+mydir_backup="${MYDIR}"
+cd -- "${MYDIR}"
 
 ## XXX: hardcoded path
-source "$HOME/derivative-maker/help-steps/pre"
-source "$HOME/derivative-maker/help-steps/variables"
+source "${HOME}/derivative-maker/help-steps/pre"
+source "${HOME}/derivative-maker/help-steps/variables"
 
-cd -- "$mydir_backup"
+cd -- "${mydir_backup}"
 
-for derivative_name_item in $derivative_name_list ; do
-   derivative_repository_name="$derivative_name_item"
+for derivative_name_item in ${derivative_name_list} ; do
+   derivative_repository_name="${derivative_name_item}"
    export derivative_repository_name
 
    #dm-reprepro-wrapper copymatched bookworm-proposed-updates bookworm-testers "*"

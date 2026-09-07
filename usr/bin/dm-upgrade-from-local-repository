@@ -10,25 +10,26 @@ set -o pipefail
 set -o errtrace
 shopt -s inherit_errexit
 shopt -s shift_verbose
+export LC_ALL=C
 
 true "INFO: Currently running script: ${BASH_SOURCE[0]} $*"
 
 MYDIR="$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" && pwd )"
-cd -- "$MYDIR"
+cd -- "${MYDIR}"
 
 ## XXX: hardcoded path
-source "$HOME/derivative-maker/help-steps/pre"
-source "$HOME/derivative-maker/help-steps/variables"
+source "${HOME}/derivative-maker/help-steps/pre"
+source "${HOME}/derivative-maker/help-steps/variables"
 
 main() {
    trap "exception_handler_unchroot_unmount" ERR INT TERM
 
    sync
 
-   "$dist_source_help_steps_folder/mount-raw" "$@"
+   "${dist_source_help_steps_folder}/mount-raw" "$@"
    #"$dist_source_help_steps_folder/prevent-daemons-from-starting"
 
-   dist_chroot_mount_resolv_conf="0" "$dist_source_help_steps_folder/chroot-raw" "$@"
+   dist_chroot_mount_resolv_conf="0" "${dist_source_help_steps_folder}/chroot-raw" "$@"
 
    sync
 
@@ -48,8 +49,8 @@ main() {
    ## grml-debootstrap is incomplete (does not complain debian security repository) and points to 127.0.0.1.
 
    ## This file doesn't include the derivative's APT repository.
-   cp -- "$source_code_folder_dist/packages/kicksecure/anon-apt-sources-list/etc/apt/sources.list.d/debian.sources" "$CHROOT_FOLDER/etc/apt/sources.list.d/debian.sources"
-   chmod o+r -- "$CHROOT_FOLDER/etc/apt/sources.list.d/debian.sources"
+   cp -- "${source_code_folder_dist}/packages/kicksecure/anon-apt-sources-list/etc/apt/sources.list.d/debian.sources" "${CHROOT_FOLDER}/etc/apt/sources.list.d/debian.sources"
+   chmod o+r -- "${CHROOT_FOLDER}/etc/apt/sources.list.d/debian.sources"
 
    ## Not using any /etc/apt/preferences.d snippets at the moment.
    #cp "$source_code_folder_dist/packages/...todo.../etc/apt/preferences.d/"* "$CHROOT_FOLDER/etc/apt/preferences.d/"
@@ -68,7 +69,7 @@ main() {
    #chroot_run apt-get "${DIST_APTGETOPT[@]}" update
    #chroot_run apt-get "${DIST_APTGETOPT[@]}" --yes dist-upgrade
 
-   "$dist_source_help_steps_folder/create-local-temp-apt-repo" "$@"
+   "${dist_source_help_steps_folder}/create-local-temp-apt-repo" "$@"
 
    ## Check if we are running on a Whonix-Gateway.
    if [ -f "/usr/share/anon-gw-base-files/gateway" ]; then
@@ -82,7 +83,7 @@ main() {
    fi
 
    ## Reading [apt repository containing snapshot.debian.org and] local repository containing Whonix's packages.
-   chroot_run apt-get "${DIST_APTGETOPT[@]}" $apt_sourcelist_empty $apt_sourceparts -o APT::Get::List-Cleanup="0" update
+   chroot_run apt-get "${DIST_APTGETOPT[@]}" ${apt_sourcelist_empty} ${apt_sourceparts} -o APT::Get::List-Cleanup="0" update
 
    ## TODO: ?
 #    if [ "$dist_build_flavor" = "whonix-gateway-lxqt" ]; then
@@ -95,11 +96,11 @@ main() {
 #    fi
 
    ## Upgrade Whonix Debian Packages.
-   chroot_run apt-get "${DIST_APTGETOPT[@]}" $apt_sourcelist_empty $apt_sourceparts --yes dist-upgrade
+   chroot_run apt-get "${DIST_APTGETOPT[@]}" ${apt_sourcelist_empty} ${apt_sourceparts} --yes dist-upgrade
 
    #chroot_run apt-get "${DIST_APTGETOPT[@]}" $apt_sourcelist_empty $apt_sourceparts -f install
 
-   "$dist_source_help_steps_folder/remove-local-temp-apt-repo" "$@"
+   "${dist_source_help_steps_folder}/remove-local-temp-apt-repo" "$@"
 
    ## Forget about local repository containing Whonix's packages.
    chroot_run apt-get --no-download --list-cleanup update
@@ -107,9 +108,9 @@ main() {
    chroot_run sync
    sync
 
-   "$dist_source_help_steps_folder/unchroot-raw" "$@"
+   "${dist_source_help_steps_folder}/unchroot-raw" "$@"
    #"$dist_source_help_steps_folder/unprevent-daemons-from-starting"
-   "$dist_source_help_steps_folder/unmount-raw" "$@"
+   "${dist_source_help_steps_folder}/unmount-raw" "$@"
 
    sync
 }

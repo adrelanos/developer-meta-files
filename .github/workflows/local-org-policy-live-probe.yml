@@ -119,7 +119,7 @@ jobs:
         ## on a hot egress IP and that's not a real failure of the
         ## tools.
         continue-on-error: true
-        run: ./ci/live-probe-unauth.sh
+        run: ./.github/dist-ai/ci/live-probe-unauth.sh
 
       - name: Run dm-github-org-policy --audit (live)
         env:

@@ -16,5 +16,6 @@ set -o pipefail
 set -o errtrace
 shopt -s inherit_errexit
 shopt -s shift_verbose
+export LC_ALL=C
 
 dm-packaging-helper-script --no-batch pkg_git_sign_tags "$@"

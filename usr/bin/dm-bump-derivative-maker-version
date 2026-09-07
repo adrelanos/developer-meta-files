@@ -12,9 +12,11 @@ set -o nounset
 set -o pipefail
 set -o errtrace
 shopt -s inherit_errexit
+shopt -s shift_verbose
+export LC_ALL=C
 
 ## XXX: hardcoded path
-cd -- "$HOME/derivative-maker"
+cd -- "${HOME}/derivative-maker"
 
 genmkfile deb-uachl-bumpup-major
 genmkfile deb-uachl-commit-changelog

@@ -38,18 +38,15 @@ this repo plus the per-consumer PRs referenced from them.
     |   |-- workflows/
     |   |   |   ## Library - called via `uses:`. Path is fixed.
     |   |   |-- reusable-bandit.yml
-    |   |   |-- reusable-claude-code-review.yml
     |   |   |-- reusable-codeql.yml
-    |   |   |-- reusable-codex-review.yml
     |   |   |-- reusable-coverity.yml
     |   |   |-- reusable-cppcheck.yml
-    |   |   |-- reusable-pre-push-static.yml
     |   |   |-- reusable-scorecard.yml
-    |   |   |-- reusable-secrets-audit.yml
     |   |   |   ## Hub-private - never propagated.
     |   |   |-- local-org-policy-live-probe.yml
     |   |   |-- local-org-policy-live-audit.yml
     |   |   |-- local-org-tools-mock-tests.yml
+    |   |   |-- local-secrets-audit.yml
     |   |   |   ## Auto-managed copies of the templates below.
     |   |   |   ## developer-meta-files is a consumer of itself.
     |   |   |   ## Note: consumer-scorecard.yml NOT installed in
@@ -59,12 +56,8 @@ this repo plus the per-consumer PRs referenced from them.
     |   |   |   ## consumer-cppcheck.yml, consumer-codeql-cpp.yml
     |   |   |   ## NOT installed - the hub has no C/C++.
     |   |   |-- consumer-bandit.yml
-    |   |   |-- consumer-claude-code.yml
     |   |   |-- consumer-codeql-actions.yml
-    |   |   |-- consumer-codeql-python.yml
-    |   |   |-- consumer-codex-review.yml
-    |   |   |-- consumer-pre-push-static.yml
-    |   |   `-- consumer-secrets-audit.yml
+    |   |   `-- consumer-codeql-python.yml
     |   `-- actions/
     |       |-- install-deps/
     |       `-- shellcheck/
@@ -78,18 +71,14 @@ this repo plus the per-consumer PRs referenced from them.
                 |   ## Single source of truth for every
                 |   ## consumer-*.yml propagated across the org.
                 |-- consumer-bandit.yml
-                |-- consumer-claude-code.yml
                 |-- consumer-codeql-actions.yml
-                |-- consumer-codex-review.yml
                 |-- consumer-coverity.yml         ## parameterized
                 |-- consumer-cppcheck.yml         ## parameterized
                 |-- consumer-codeql-cpp.yml       ## parameterized
                 |-- consumer-codeql-javascript.yml
                 |-- consumer-codeql-python.yml
                 |-- consumer-dist-ai-tests.yml
-                |-- consumer-pre-push-static.yml
-                |-- consumer-scorecard.yml
-                `-- consumer-secrets-audit.yml
+                `-- consumer-scorecard.yml
 
 `developer-meta-files/.github/workflows/` does NOT carry consumer
 wrappers for `coverity`, `cppcheck`, or `codeql-cpp`. The hub has
@@ -97,9 +86,8 @@ no C/C++ to scan; those parameterized templates live in
 `consumer-templates/` and propagate only to consumers that have
 those workflows installed.
 
-The unprefixed wrappers from before the rename (`claude-code.yml`,
-`codex-review.yml`, `scorecard.yml`, `codeql-actions.yml`,
-`pre-push-static.yml`, `secrets-audit.yml`) are now `consumer-*.yml`.
+The unprefixed wrappers from before the rename (`scorecard.yml`,
+`codeql-actions.yml`) are now `consumer-*.yml`.
 The unprefixed hub-private workflows (formerly `live.yml`,
 `policy-live.yml`, `test-github-org-tools.yml`) are now
 `local-org-policy-live-probe.yml`,
@@ -264,10 +252,8 @@ file was still present; only the config it reads was gone, which
 makes the breakage easy to miss - CI stays green, the scan just
 goes nowhere.
 
-Universal templates (`consumer-claude-code.yml`,
-`consumer-codex-review.yml`, `consumer-scorecard.yml`,
-`consumer-codeql-actions.yml`, `consumer-pre-push-static.yml`,
-`consumer-secrets-audit.yml`, `consumer-bandit.yml`) carry no
+Universal templates (`consumer-scorecard.yml`,
+`consumer-codeql-actions.yml`, `consumer-bandit.yml`) carry no
 per-repo state. A consumer that only installs universal templates
 does not need a `.github/dm-consumer.yml` file at all.
 
@@ -277,7 +263,7 @@ package-tag naming, executables with shebang lines only): the
 reusable discovers Python via shebang scan (`#!.*python` over the
 tree) AND `.py` extension, so no per-repo paths config is needed.
 The discovery script lives at `ci/bandit-discover-python.sh` in
-this repo.
+the dist-ai repo (run in CI from `.github/dist-ai/ci/`).
 
 ## Parameter ownership across reusable inputs
 
@@ -391,7 +377,7 @@ from each other only by the hardcoded-in-wrapper values below.
 
 Consequence for python and javascript consumers: a repo that
 installs only those wrappers needs no `.github/dm-consumer.yml`.
-`ci/dm-consumer-load.sh` soft-skips when the file or the named
+dist-ai's `ci/dm-consumer-load.sh` soft-skips when the file or the named
 section is absent and the section has no required keys, which is
 the case for `codeql-python`. Only `codeql-cpp` hard-fails on a
 missing section, because `build-command` is required there.

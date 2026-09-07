@@ -10,6 +10,7 @@ set -o pipefail
 set -o errtrace
 shopt -s inherit_errexit
 shopt -s shift_verbose
+export LC_ALL=C
 
 true "INFO: Currently running script: ${BASH_SOURCE[0]} $*"
 
@@ -1123,7 +1124,7 @@ pkg_descr_creator() {
 
       in_meta_section='false'
       description_found='false'
-      while read -r line; do
+      while IFS= read -r line; do
          true "line: ${line}"
          read -r first_word second_word third_word _ <<< "${line}" || true
 
@@ -1516,12 +1517,8 @@ pkg_git_diff_and_merge_branch_arraybolt3() {
    pkg_git_diff_and_merge_branch "ArrayBolt3/arraybolt3/trixie"
 }
 
-pkg_git_diff_and_merge_branch_bot_master() {
+pkg_git_diff_and_merge_branch_bot() {
    pkg_git_diff_and_merge_branch "${DM_GITHUB_MIRROR}/master"
-}
-
-pkg_git_diff_and_merge_branch_bot_ai() {
-   pkg_git_diff_and_merge_branch "${DM_GITHUB_MIRROR}/ai"
 }
 
 ### }}}
@@ -1592,15 +1589,7 @@ pkg_git_diff_and_merge_branch() {
       ## the drive-by commits below it (sq-git policy).
       dry_run_or_run git merge --no-ff "${origin_ref}"
    elif [ "${origin_branch}" = "${DM_GITHUB_MIRROR}/master" ]; then
-      ## Cannot verify against Claude SSH key: appliable to claude web sessions
-      ## only, which are no longer being used.
-      ## TODO: Create a local signing key for claude?
-      #git verify-commit "${origin_ref}"
-      ## '--no-ff': same sq-git policy rationale as above; maintainer
-      ## merge commit authenticates the AI-generated commits below it.
-      dry_run_or_run git merge --no-ff --no-verify-signature "${origin_ref}"
-   elif [ "${origin_branch}" = "${DM_GITHUB_MIRROR}/ai" ]; then
-      ## TODO: Same as above.
+      ## TODO: Can't we verify against Claude's SSH key?
       #git verify-commit "${origin_ref}"
       ## '--no-ff': same sq-git policy rationale as above; maintainer
       ## merge commit authenticates the AI-generated commits below it.

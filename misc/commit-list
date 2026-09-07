@@ -6,13 +6,15 @@ set -o nounset
 set -o pipefail
 set -o errtrace
 shopt -s inherit_errexit
+shopt -s shift_verbose
+export LC_ALL=C
 
 check() {
-   if [ ! "$1" = "$(basename -- "$PWD")" ]; then
+   if [ ! "$1" = "$(basename -- "${PWD}")" ]; then
       ## git makes no new lines.
-      printf '\n'
+      printf '%s\n' ''
       printf '%s\n' "ERROR!" >&2
-      printf '%s\n' "$1 is not $(basename -- "$PWD")" >&2
+      printf '%s\n' "$1 is not $(basename -- "${PWD}")" >&2
       printf '%s\n' "ERROR!" >&2
       exit 1
    fi
@@ -20,22 +22,22 @@ check() {
 
 iterate() {
    for pkg in ./*; do
-      if [ ! -d "$pkg" ]; then
+      if [ ! -d "${pkg}" ]; then
          continue
       fi
-      cd -- "$pkg"
+      cd -- "${pkg}"
       doit
       cd -- ..
    done
 }
 
 doit() {
-   package="$(basename -- "$PWD")"
+   package="$(basename -- "${PWD}")"
    #git log --pretty=oneline --abbrev-commit --author=adrelanos --since="01.08.2015" --until="31.08.2015" | sed "s,^,https://github.com/adrelanos/$package/commit/,"
-   output="$(git --no-pager log --author=adrelanos --since="01.09.2016" --until="31.09.2016" --pretty="format:https://github.com/adrelanos/$package/commit/%h %s %b")"
-   if [ ! "$output" = "" ]; then
-      printf '%s\n' "$output"
-      printf '\n'
+   output="$(git --no-pager log --author=adrelanos --since="01.09.2016" --until="31.09.2016" --pretty="format:https://github.com/adrelanos/${package}/commit/%h %s %b")"
+   if [ ! "${output}" = "" ]; then
+      printf '%s\n' "${output}"
+      printf '%s\n' ''
    fi
 }
 

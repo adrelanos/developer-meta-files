@@ -6,6 +6,8 @@ set -o nounset
 set -o pipefail
 set -o errtrace
 shopt -s inherit_errexit
+shopt -s shift_verbose
+export LC_ALL=C
 
 if ! test -d "${1:-}" && ! test -f "${1:-}" ; then
    true "ERROR: not a folder or file: ${1:-}"
@@ -25,23 +27,23 @@ opts=(
 )
 
 while IFS= read -r -d '' file_name; do
-   true "file_name: $file_name"
-   if ! test -f "$file_name" ; then
+   true "file_name: ${file_name}"
+   if ! test -f "${file_name}" ; then
       continue
    fi
    ## Match the shebang only on the first line; a file that just
    ## mentions `#!/bin/bash` in a comment shouldn't qualify.
-   if ! head -n 1 -- "$file_name" | grep -q -- '^#!/bin/bash' ; then
+   if ! head -n 1 -- "$file_name" | grep -- '^#!/bin/bash' >/dev/null 2>&1; then
       continue
    fi
-   if shellcheck "${opts[@]}" "$file_name" ; then
+   if shellcheck "${opts[@]}" "${file_name}" ; then
       continue
    fi
    file_name_short="${file_name##*/}"
    true "press y to open kate. enter to continue"
    read -r temp
-   if test "$temp" = "y" ; then
-      kate "$file_name" >/dev/null 2>&1
+   if test "${temp}" = "y" ; then
+      kate "${file_name}" >/dev/null 2>&1
    fi
 done < <(find "${1:-}" -type f -not -iwholename '*.git*' -not -iwholename '*changelog.upstream*' -print0)
 

@@ -25,7 +25,7 @@
 ## to forward exactly COVERITY_SCAN_TOKEN and COVERITY_SCAN_EMAIL.
 ## Callers must use an explicit 'secrets:' map - 'secrets: inherit'
 ## bypasses the schema (it forwards every caller-side secret
-## regardless). Run consumer-secrets-audit.yml manually to verify
+## regardless). Run local-secrets-audit.yml manually to verify
 ## the secrets surface.
 ##
 ## Secrets are scoped to the individual steps that need them
@@ -166,14 +166,6 @@ jobs:
           path: .github/dist-ai
           persist-credentials: false
 
-      - name: Checkout developer-meta-files (orchestration scripts)
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
-        with:
-          repository: org-ai-assisted/developer-meta-files
-          ref: master
-          path: .github/dmf
-          persist-credentials: false
-
       - name: Install yq
         ## Ubuntu 24.04 ships kislyuk's python-yq jq wrapper. The
         ## `// ""` defaults and `-r` raw output in the next step
@@ -191,7 +183,7 @@ jobs:
         ## See ci/dm-consumer-load.sh for the schema rules
         ## (required hard-fail, optional empty-default, newline
         ## rejection, hyphen->underscore output naming).
-        run: .github/dmf/ci/dm-consumer-load.sh
+        run: .github/dist-ai/ci/dm-consumer-load.sh
           coverity
           project-name,canonical-repos
           apt-packages,build-command
@@ -205,7 +197,7 @@ jobs:
         env:
           CANONICAL_REPOS: ${{ steps.cfg.outputs.canonical_repos }}
           THIS_REPO: ${{ github.repository }}
-        run: .github/dmf/ci/canonical-repos-gate.sh
+        run: .github/dist-ai/ci/canonical-repos-gate.sh
 
       - name: Sanity check secrets
         if: steps.gate.outputs.allowed == 'true'
@@ -213,7 +205,7 @@ jobs:
           COVERITY_TOKEN: ${{ secrets.COVERITY_SCAN_TOKEN }}
           COVERITY_EMAIL: ${{ secrets.COVERITY_SCAN_EMAIL }}
           COVERITY_PROJECT: ${{ steps.cfg.outputs.project_name }}
-        run: .github/dmf/ci/coverity-check-secrets.sh
+        run: .github/dist-ai/ci/coverity-check-secrets.sh
 
       ## Cache key includes github.repository so different Coverity
       ## consumers (helper-scripts, kloak, ...) get distinct caches;
@@ -231,11 +223,11 @@ jobs:
         env:
           COVERITY_TOKEN: ${{ secrets.COVERITY_SCAN_TOKEN }}
           COVERITY_PROJECT: ${{ steps.cfg.outputs.project_name }}
-        run: .github/dmf/ci/coverity-download.sh
+        run: .github/dist-ai/ci/coverity-download.sh
 
       - name: Run Coverity build (Python default)
         if: steps.gate.outputs.allowed == 'true' && steps.cfg.outputs.build_command == ''
-        run: .github/dmf/ci/coverity-build-python.sh
+        run: .github/dist-ai/ci/coverity-build-python.sh
 
       - name: Run Coverity build (caller-supplied)
         if: steps.gate.outputs.allowed == 'true' && steps.cfg.outputs.build_command != ''
@@ -255,7 +247,7 @@ jobs:
           COVERITY_EMAIL: ${{ secrets.COVERITY_SCAN_EMAIL }}
           COVERITY_PROJECT: ${{ steps.cfg.outputs.project_name }}
           DRY_RUN: 'false'
-        run: .github/dmf/ci/coverity-submit.sh
+        run: .github/dist-ai/ci/coverity-submit.sh
 
       - name: Upload cov-int artifact (always)
         if: always()

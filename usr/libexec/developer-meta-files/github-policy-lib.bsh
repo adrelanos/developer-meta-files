@@ -49,6 +49,7 @@ set -o pipefail
 set -o errtrace
 shopt -s inherit_errexit
 shopt -s shift_verbose
+export LC_ALL=C
 
 # shellcheck source=../../../../helper-scripts/usr/libexec/helper-scripts/strings.bsh
 source "${HELPER_SCRIPTS_PATH:-}"/usr/libexec/helper-scripts/strings.bsh
@@ -166,7 +167,7 @@ _policy_upsert_ruleset() {
 
    if [ -n "${existing_id}" ] && [ "${existing_id}" != 'null' ]; then
       ## API-derived id flows into a URL path.
-      if ! [[ "${existing_id}" =~ ^[0-9]+$ ]] \
+      if ! is_whole_number "${existing_id}" \
          || [ "${#existing_id}" -gt "${GHORG_MAX_ID_LEN}" ]; then
          log warn "'${scope_label}': ruleset id '${existing_id}' not a valid numeric id"
          policy_warn_seen=1

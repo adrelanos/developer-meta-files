@@ -22,12 +22,17 @@
 ## HELPER_SCRIPTS_OWNER to the caller input or, by default,
 ## github.repository_owner.
 
+## style-ok: no-has -- this action INSTALLS helper-scripts, so it runs before
+## helper-scripts (and its 'has') is on PATH; it self-checks genmkfile with
+## 'command -v'.
+
 set -o errexit
 set -o nounset
 set -o pipefail
 set -o errtrace
 shopt -s inherit_errexit
 shopt -s shift_verbose
+export LC_ALL=C
 
 if [ "${CI:-}" != "true" ]; then
    printf '%s\n' \
@@ -50,7 +55,8 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
 
 readonly sudo_prefix
-readonly clone_dir='/tmp/helper-scripts-install'
+clone_dir="$(mktemp --directory)"
+readonly clone_dir
 readonly upstream_owner="${HELPER_SCRIPTS_OWNER:-Kicksecure}"
 readonly upstream_url="https://github.com/${upstream_owner}/helper-scripts.git"
 

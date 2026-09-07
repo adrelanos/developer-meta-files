@@ -31,6 +31,7 @@ set -o pipefail
 set -o errtrace
 shopt -s inherit_errexit
 shopt -s shift_verbose
+export LC_ALL=C
 
 usage() {
    printf '%s\n' "Usage:
@@ -109,10 +110,10 @@ find_artifact() {
    find_status_file="$(mktemp)"
    ## '-H' dereferences the start point only., so we can handle symlink
    ## arguments without find escaping the build dir.
-   mapfile -t match_list < <(
+   mapfile -d '' -t match_list < <(
       find_exit_status=0
-      find -H "${dir}" -type f -name "${artifact_glob}" \
-         | LC_ALL=C sort \
+      find -H "${dir}" -type f -name "${artifact_glob}" -print0 \
+         | LC_ALL=C sort -z \
          || find_exit_status="${PIPESTATUS[0]}"
       printf '%s\n' "${find_exit_status}" > "${find_status_file}"
    )
@@ -394,15 +395,15 @@ if [ "${target}" = "qcow2" ]; then
       && tar --extract --xz --file "${artifact_b}" --directory "${unpack_b}" 2>> "${report}"; then
       ## Same 'find' exit code capture trick as earlier.
       qcow2_status_file="$(mktemp)"
-      mapfile -t qcow2_members_a < <(
+      mapfile -d '' -t qcow2_members_a < <(
          find_exit_status=0
-         find "${unpack_a}" -type f -name '*.qcow2' | LC_ALL=C sort || find_exit_status="${PIPESTATUS[0]}"
+         find "${unpack_a}" -type f -name '*.qcow2' -print0 | LC_ALL=C sort -z || find_exit_status="${PIPESTATUS[0]}"
          printf '%s\n' "${find_exit_status}" > "${qcow2_status_file}"
       )
       qcow2_status_a="$(cat -- "${qcow2_status_file}")"
-      mapfile -t qcow2_members_b < <(
+      mapfile -d '' -t qcow2_members_b < <(
          find_exit_status=0
-         find "${unpack_b}" -type f -name '*.qcow2' | LC_ALL=C sort || find_exit_status="${PIPESTATUS[0]}"
+         find "${unpack_b}" -type f -name '*.qcow2' -print0 | LC_ALL=C sort -z || find_exit_status="${PIPESTATUS[0]}"
          printf '%s\n' "${find_exit_status}" > "${qcow2_status_file}"
       )
       qcow2_status_b="$(cat -- "${qcow2_status_file}")"

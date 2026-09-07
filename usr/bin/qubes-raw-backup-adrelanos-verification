@@ -8,12 +8,16 @@
 ## unreachable.
 # shellcheck disable=SC2317
 
+## style-ok: no-has -- runs on Qubes dom0.
+
 set -x
 set -o errexit
 set -o nounset
 set -o pipefail
 set -o errtrace
 shopt -s inherit_errexit
+shopt -s shift_verbose
+export LC_ALL=C
 
 source /usr/bin/qubes-raw-backup-adrelanos-shared
 
@@ -21,12 +25,12 @@ command -v -- cmp >/dev/null
 command -v -- blockdev >/dev/null
 
 ## Get the size of the original disk in bytes.
-original_size=$(blockdev --getsize64 "$original_disk")
+original_size=$(blockdev --getsize64 "${original_disk}")
 
 ## Using cp with --bytes="$original_size" to ensure that the comparison stops
 ## at the size of the original disk, even if the backup disk is larger.
 ## This way, the comparison is not confused if the backup_disk is larger.
-pv "$original_disk" | cmp --bytes="$original_size" /dev/stdin "$backup_disk"
+pv "${original_disk}" | cmp --bytes="${original_size}" /dev/stdin "${backup_disk}"
 
 ## Alternative. Untested!
 #ddrescue --verbose --no-scrape --size="$original_size" "$original_disk" "$backup_disk" ~/logfile

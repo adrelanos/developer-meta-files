@@ -8,10 +8,12 @@ set -o nounset
 set -o pipefail
 set -o errtrace
 shopt -s inherit_errexit
+shopt -s shift_verbose
+export LC_ALL=C
 
 while read -r line ; do
 
    base_name="${line##*/}"
-   printf '%s\n' "$base_name"
+   printf '%s\n' "${base_name}"
 
 done < <( dm-list-all-source-files | grep --fixed-strings -e "/usr/bin/" -e "/sbin/" )

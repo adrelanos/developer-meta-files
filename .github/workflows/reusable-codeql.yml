@@ -16,9 +16,9 @@
 ##
 ## ## Scan scope
 ##
-## The CI-runtime helper checkouts (.github/dmf, .github/dist-ai)
-## are excluded from extraction via the init step's inline
-## 'paths-ignore'. Add any further helper checkout there too:
+## The CI-runtime helper checkout (.github/dist-ai) is excluded from
+## extraction via the init step's inline 'paths-ignore'. Add any
+## further helper checkout there too:
 ## whatever the extractor walks is reported as the CALLER's alert,
 ## and an alert about code the caller does not host can never
 ## clear, because the caller only re-scans its own pushes.
@@ -179,13 +179,6 @@ jobs:
 
     env:
       DIST_AI_REF: ${{ github.repository == 'org-ai-assisted/dist-ai' && github.sha || 'master' }}
-      ## Dogfood ref: caller's commit when developer-meta-files is its
-      ## own caller (so a PR that modifies the script under test gets
-      ## exercised); 'master' for every other caller. Routed through
-      ## env for the org-wide env-routing convention (same shape as
-      ## JOB_STATUS). The job-level fork-PR guard above is the actual
-      ## mitigation for actions/untrusted-checkout.
-      DMF_REF: ${{ github.repository == 'org-ai-assisted/developer-meta-files' && github.sha || 'master' }}
 
     steps:
       - name: Checkout repository
@@ -193,13 +186,16 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Checkout developer-meta-files (ci/ helpers + step-summary)
-        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+      ## dist-ai carries the ci/ config-load helpers (used early) AND the
+      ## step-summary binary (used late). Checked out early -- config-load needs
+      ## it before CodeQL init -- and kept out of extraction by the init step's
+      ## paths-ignore below (a helper checkout, not the code under scan).
+      - name: Checkout dist-ai (shared CI helper scripts)
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
         with:
-          repository: org-ai-assisted/developer-meta-files
-          ref: ${{ env.DMF_REF }}
-          path: .github/dmf
+          repository: org-ai-assisted/dist-ai
+          ref: ${{ env.DIST_AI_REF }}
+          path: .github/dist-ai
           persist-credentials: false
 
       - name: Install yq
@@ -219,7 +215,7 @@ jobs:
           BUILD_MODE: ${{ inputs.build-mode }}
         ## See ci/codeql-load-config.sh (build-mode=manual makes
         ## build-command required; otherwise optional).
-        run: .github/dmf/ci/codeql-load-config.sh
+        run: .github/dist-ai/ci/codeql-load-config.sh
 
       ## Pre-init hook - source-tree prep that the extractor must
       ## see. Skipped when dm-consumer.yml.<section>.prepare-command
@@ -242,17 +238,15 @@ jobs:
           ## findings as the CALLER's alerts - against code that does
           ## not exist in the caller, cannot be fixed there, and never
           ## re-scans, so such an alert can never clear on its own.
-          ## .github/dmf must exist BEFORE init (the config-load and
-          ## prepare-command steps run out of it), so step ordering
-          ## cannot solve it the way it does for .github/dist-ai;
-          ## paths-ignore is the mechanism that covers both, and any
-          ## future helper checkout added to this list.
+          ## .github/dist-ai must exist BEFORE init (the config-load step
+          ## runs out of it), so step ordering cannot keep it out of
+          ## extraction; paths-ignore is the mechanism that excludes it,
+          ## and any future helper checkout added to this list.
           ## Honoured for interpreted languages and for build-mode
           ## 'none'; under a manual c-cpp build the build-command
           ## alone decides what gets extracted.
           config: |
             paths-ignore:
-              - .github/dmf
               - .github/dist-ai
 
       ## Manual build path - dm-consumer.yml.<section>.build-command.
@@ -267,21 +261,6 @@ jobs:
         uses: github/codeql-action/analyze@7211b7c8077ea37d8641b6271f6a365a22a5fbfa  # v4.36.0
         with:
           category: "/language:${{ inputs.language }}"
-
-      ## Staged AFTER the analysis, not with the other checkouts: CodeQL
-      ## walks the whole source tree, so dist-ai sitting under it during
-      ## 'analyze' would report dist-ai's code as the CONSUMER's alerts.
-      ## Only the summary step below needs it, and that step is
-      ## 'if: always()' - so this must be too, or a failed analysis
-      ## leaves the summary calling a binary that was never fetched.
-      - name: Checkout dist-ai (shared CI helper binaries)
-        if: always()
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
-        with:
-          repository: org-ai-assisted/dist-ai
-          ref: ${{ env.DIST_AI_REF }}
-          path: .github/dist-ai
-          persist-credentials: false
 
       - name: Emit step summary
         if: always()

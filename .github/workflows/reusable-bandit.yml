@@ -102,13 +102,6 @@ jobs:
 
     env:
       DIST_AI_REF: ${{ github.repository == 'org-ai-assisted/dist-ai' && github.sha || 'master' }}
-      ## Dogfood ref: caller's commit when developer-meta-files is its
-      ## own caller (so a PR that modifies the script under test gets
-      ## exercised); 'master' for every other caller. Routed through
-      ## env for the org-wide env-routing convention (same shape as
-      ## JOB_STATUS / BASE_REF). The job-level fork-PR guard above is
-      ## the actual mitigation for actions/untrusted-checkout.
-      DMF_REF: ${{ github.repository == 'org-ai-assisted/developer-meta-files' && github.sha || 'master' }}
 
     steps:
       - name: Checkout repository
@@ -130,15 +123,6 @@ jobs:
           packages: 'bandit'
           cache-key: ${{ runner.os }}-apt-bandit-${{ hashFiles('.github/workflows/reusable-bandit.yml') }}
 
-      - name: Checkout developer-meta-files (discovery + step-summary helpers)
-        if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
-        with:
-          repository: org-ai-assisted/developer-meta-files
-          ref: ${{ env.DMF_REF }}
-          path: .github/dmf
-          persist-credentials: false
-
       - name: bandit
         ## Shebang-aware discovery via dmf helper. Feeds explicit
         ## NUL-separated file list to bandit via xargs -0.
@@ -155,7 +139,7 @@ jobs:
           set -o errexit
           set -o nounset
           set -o pipefail
-          .github/dmf/ci/bandit-discover-python.sh \
+          .github/dist-ai/ci/bandit-discover-python.sh \
             | xargs -0 --no-run-if-empty -- bandit -ll -ii --
 
       - name: Emit step summary

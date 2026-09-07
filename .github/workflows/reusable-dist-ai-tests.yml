@@ -18,7 +18,7 @@
 ## Runs in a debian:trixie-slim container (Python 3.13), NOT bare
 ## ubuntu-24.04 (Python 3.12): the packages under test target current
 ## Debian/Python (e.g. helper-scripts' stcat uses Path.read_text(newline=)
-## which is 3.13+). Same container choice as reusable-pre-push-static.yml.
+## which is 3.13+).
 ##
 ## Checkout layout: the caller repo and dist-ai are checked out as
 ## SIBLING subdirectories of GITHUB_WORKSPACE
@@ -48,8 +48,8 @@
 ##
 ## No 'concurrency:' block: github.workflow inside a reusable resolves to
 ## the caller's workflow name, so a group declared here would deadlock
-## with the caller's cancellable group (same precedent as
-## reusable-pre-push-static.yml).
+## with the caller's cancellable group; a reusable must not declare its
+## own concurrency group here.
 
 name: dist-ai tests (reusable)
 

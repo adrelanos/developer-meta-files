@@ -8,10 +8,12 @@ set -o nounset
 set -o pipefail
 set -o errtrace
 shopt -s inherit_errexit
+shopt -s shift_verbose
+export LC_ALL=C
 
 while read -r line ; do
 
    list_item="'${line}',"
-   printf '%s\n' "    $list_item"
+   printf '%s\n' "    ${list_item}"
 
 done < <( dm-list-all-usr-bin-sbin | sort )

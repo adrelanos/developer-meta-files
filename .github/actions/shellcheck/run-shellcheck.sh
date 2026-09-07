@@ -22,6 +22,7 @@ set -o pipefail
 set -o errtrace
 shopt -s inherit_errexit
 shopt -s shift_verbose
+export LC_ALL=C
 
 if [ "${CI:-}" != "true" ] && [ "${ALLOW_LOCAL:-}" != "true" ]; then
    printf '%s\n' \
@@ -51,7 +52,7 @@ files=()
 while IFS= read -r -d '' candidate; do
    ## First-line read; bail if empty or unreadable.
    read -r first_line < "${candidate}" || continue
-   if [[ "${first_line}" =~ $shellbang_re ]]; then
+   if [[ "${first_line}" =~ ${shellbang_re} ]]; then
       files+=( "${candidate}" )
    fi
 done < <(

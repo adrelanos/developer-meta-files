@@ -10,18 +10,19 @@ set -o pipefail
 set -o errtrace
 shopt -s inherit_errexit
 shopt -s shift_verbose
+export LC_ALL=C
 
 true "$0: START."
 
 MYDIR="$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" && pwd )"
 
-if [ "$MYDIR" = "/usr/bin" ]; then
+if [ "${MYDIR}" = "/usr/bin" ]; then
    true "INFO: Run from: /usr/bin"
    ## XXX: hardcoded path
-   derivative_maker_source_code_dir="$HOME/derivative-maker"
+   derivative_maker_source_code_dir="${HOME}/derivative-maker"
 else
    true "INFO: Run from: source code folder"
-   derivative_maker_source_code_dir="$(cd -- "$MYDIR" && cd -- "../../../../../" && pwd)"
+   derivative_maker_source_code_dir="$(cd -- "${MYDIR}" && cd -- "../../../../../" && pwd)"
 fi
 
 ## helper-scripts location: prefer HELPER_SCRIPTS_PATH (exported by the
@@ -38,12 +39,12 @@ grep_find_unicode_wrapper="${HELPER_SCRIPTS_PATH}/usr/bin/grep-find-unicode-wrap
 run_via_helper_scripts="${HELPER_SCRIPTS_PATH}/usr/bin/run-via-helper-scripts"
 
 ## Sanity tests.
-test -d "$derivative_maker_source_code_dir"
-test -x "$grep_find_unicode_wrapper"
-test -x "$run_via_helper_scripts"
+test -d "${derivative_maker_source_code_dir}"
+test -x "${grep_find_unicode_wrapper}"
+test -x "${run_via_helper_scripts}"
 
 ## Need to 'cd' for relative paths.
-cd -- "$derivative_maker_source_code_dir"
+cd -- "${derivative_maker_source_code_dir}"
 
 declare -A symlink_whitelist
 
@@ -79,21 +80,21 @@ declare -A git_symlink_paths
 git_ls_files_stage="$(git ls-files --recurse-submodules --stage)"
 while IFS=$'\t' read -r git_index_meta git_symlink_path; do
    [ "${git_index_meta%% *}" = "120000" ] || continue
-   git_symlink_paths["$git_symlink_path"]=1
-done <<< "$git_ls_files_stage"
+   git_symlink_paths["${git_symlink_path}"]=1
+done <<< "${git_ls_files_stage}"
 
 read_link_target() {
    local path
    path="$1"
-   if [ -L "$path" ]; then
-      readlink -- "$path"
+   if [ -L "${path}" ]; then
+      readlink -- "${path}"
    else
       ## When Git's 'core.symlinks' setting is set to 'false', symlinks are
       ## text files containing the path. `read_link_target` will only ever be
       ## called with a path that is guaranteed to be a symlink from Git's
       ## perspective, so we can dump the contents of those files to get the
       ## symlink target.
-      "$run_via_helper_scripts" stcat "$path"
+      "${run_via_helper_scripts}" stcat "${path}"
    fi
 }
 
@@ -101,18 +102,18 @@ check_symlink() {
    local symlink
    symlink="$1"
    local target
-   target="$(read_link_target "$symlink")"
+   target="$(read_link_target "${symlink}")"
 
-   if [ "${symlink_whitelist[$symlink]+_}" ]; then
-      if [ "${symlink_whitelist[$symlink]}" == "$target" ]; then
-         printf '%s\n' "$0: INFO: Whitelisted symlink: '$symlink' -> '$target'" >/dev/null
+   if [ -n "${symlink_whitelist[${symlink}]+_}" ]; then
+      if [ "${symlink_whitelist[${symlink}]}" == "${target}" ]; then
+         printf '%s\n' "$0: INFO: Whitelisted symlink: '${symlink}' -> '${target}'" >/dev/null
          return 0
       fi
-      printf '%s\n' "$0: ERROR: Whitelisted symlink: '$symlink' but wrong target '$target'" >&2
+      printf '%s\n' "$0: ERROR: Whitelisted symlink: '${symlink}' but wrong target '${target}'" >&2
       return 1
    fi
 
-   printf '%s\n' "$0: ERROR: NOT whitelisted symlink: '$symlink' -> '$target'" >&2
+   printf '%s\n' "$0: ERROR: NOT whitelisted symlink: '${symlink}' -> '${target}'" >&2
    return 1
 }
 
@@ -126,28 +127,28 @@ find_symlinks() {
    for symlink in "${!git_symlink_paths[@]}"; do
       ## Normalize symlink names; the untracked symlink routine below will
       ## print names that start with "./".
-      symlink="./$symlink"
-      [ -v "seen_symlink[$symlink]" ] && continue
-      seen_symlink["$symlink"]=1
-      all_symlinks+=("$symlink")
+      symlink="./${symlink}"
+      [ -v "seen_symlink[${symlink}]" ] && continue
+      seen_symlink["${symlink}"]=1
+      all_symlinks+=("${symlink}")
    done
 
    ## Find untracked symlinks. Ignore .git in all subdirs.
    while IFS= read -r -d '' symlink; do
-      [ -v "seen_symlink[$symlink]" ] && continue
-      seen_symlink["$symlink"]=1
-      all_symlinks+=("$symlink")
+      [ -v "seen_symlink[${symlink}]" ] && continue
+      seen_symlink["${symlink}"]=1
+      all_symlinks+=("${symlink}")
    done < <(find "." -path '*/.git' -prune -o -type l -print0)
 
-   for symlink in ${all_symlinks[@]+"${all_symlinks[@]}"}; do
-      if check_symlink "$symlink" ; then
+   for symlink in "${all_symlinks[@]}"; do
+      if check_symlink "${symlink}" ; then
          continue
       fi
       found_symlink=true
       printf '%s\n' "----------" >&2
    done
 
-   if [ "$found_symlink" = "true" ]; then
+   if [ "${found_symlink}" = "true" ]; then
       exit 1
    fi
 }
@@ -164,7 +165,7 @@ find_symlinks
 ## --exclude=LICENSE
 ## --exclude=lkrg-openrc.sh
 grep_find_unicode_wrapper_output="$(\
-   "$grep_find_unicode_wrapper" \
+   "${grep_find_unicode_wrapper}" \
       --recursive \
       --binary-files=without-match \
       --exclude=control.authcookie \
@@ -192,12 +193,12 @@ whitelist_list=(
 )
 whitelist_pattern="($(IFS=$'\n'; printf '%s' "${whitelist_list[*]}" | sed -z 's/\n/|/g'))";
 
-filtered_output=$(printf '%s\n' "$grep_find_unicode_wrapper_output" | grep --invert-match --extended-regexp -- "$whitelist_pattern" || true)
+filtered_output=$(printf '%s\n' "${grep_find_unicode_wrapper_output}" | grep --invert-match --extended-regexp -- "${whitelist_pattern}" || true)
 
-if [ -z "$filtered_output" ]; then
+if [ -z "${filtered_output}" ]; then
    true "INFO: No Unicode issues found, everything is OK."
 else
-   printf '%s\n' "$filtered_output" >&2
+   printf '%s\n' "${filtered_output}" >&2
 
    printf '%s\n' "\
 $0: ERROR: Unicode found!
@@ -261,7 +262,7 @@ grep_missing_newline_result_raw="$( \
    || true
 
 true "grep_missing_newline_result_raw:
-$grep_missing_newline_result_raw"
+${grep_missing_newline_result_raw}"
 
 grep_missing_newline_result_filtered=()
 
@@ -270,7 +271,7 @@ grep_missing_newline_result_filtered=()
 ## split into multiple fake "files" (the prior `for ... in $var`
 ## form word-split on every whitespace character).
 while IFS= read -r file_name ; do
-   [ -z "$file_name" ] && continue
+   [ -z "${file_name}" ] && continue
 
    ## git style symlinks actually not allowed.
 #    if [ "$file_name" = "packages/kicksecure/helper-scripts/usr/bin/append-once" ]; then
@@ -289,12 +290,12 @@ while IFS= read -r file_name ; do
 
    ## Skip git-tracked symlinks. 'git ls-files' paths have no './' prefix,
    ## matching grep's output here.
-   if [ -n "${git_symlink_paths[$file_name]+_}" ]; then
+   if [ -n "${git_symlink_paths[${file_name}]+_}" ]; then
       continue
    fi
 
-   grep_missing_newline_result_filtered+=("$file_name")
-done <<< "$grep_missing_newline_result_raw"
+   grep_missing_newline_result_filtered+=("${file_name}")
+done <<< "${grep_missing_newline_result_raw}"
 
 if [ "${#grep_missing_newline_result_filtered[@]}" -eq "0" ]; then
    true "INFO: No missing newlines at the end of file issues found, everything is OK."

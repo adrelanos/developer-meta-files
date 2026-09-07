@@ -8,6 +8,8 @@ set -o nounset
 set -o pipefail
 set -o errtrace
 shopt -s inherit_errexit
+shopt -s shift_verbose
+export LC_ALL=C
 
 ## Thanks to:
 ## http://stackoverflow.com/a/2154277
@@ -15,14 +17,14 @@ shopt -s inherit_errexit
 recurse() {
  local i
  for i in "$1"/*;do
-    if [ -d "$i" ];then
+    if [ -d "${i}" ]; then
         #echo "dir: $i"
-        recurse "$i"
-    elif [ -f "$i" ]; then
-        printf '%s\n' "$i"
+        recurse "${i}"
+    elif [ -f "${i}" ]; then
+        printf '%s\n' "${i}"
     fi
  done
 }
 
 ## XXX: hardcoded path
-recurse "$HOME/derivative-maker"
+recurse "${HOME}/derivative-maker"

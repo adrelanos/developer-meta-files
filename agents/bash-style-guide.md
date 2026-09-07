@@ -14,6 +14,21 @@ Rules that cite a helper script include the source path so a reader
 can confirm intent against implementation.
 
 
+## Waivers
+
+Any rule can be suppressed for a single file with a per-rule override
+comment keyed on its id: `## style-ok: R-NNN` (one or two `#`, or
+`//` in slash-comment syntax). It is honored file-wide, wherever it
+sits. Some rules ALSO carry a named waiver (`allow-echo`,
+`no-safe-rm`, `printf-format`, ...) documented at the rule itself; the
+named tag and the id override are interchangeable escape hatches for
+that rule. A waiver must be a real COMMENT: a `## style-ok:` line
+inside a heredoc body or a quoted string is data, not a waiver, and
+does not suppress anything. A waiver is a deliberate, reviewed
+exception, not a default -- prefer complying over waiving. Prefer using
+named waivers over ID-based waivers for the sake of reviewers.
+
+
 ## File-level
 
 **R-001: ASCII only.** Source code and commit messages are ASCII
@@ -194,6 +209,88 @@ one option on a single `set` line fails the gate. `set --` / `set --
 `set +o <name>` toggle is R-011's concern.
 
 
+**R-014: `errexit` is disabled inside any command that is the operand
+of `||`, `&&`, or an `if`/`while` condition -- and an inner `set -o
+errexit` does NOT re-arm it there.** So a failing command in a guarded
+group runs past its failure and can yield a false success.
+_auto-detected: no | auto-fixed: no_
+
+Bad:
+
+    (
+       set -o errexit
+       run_scenario
+    ) || ec=$?                                   # errexit DEAD in the subshell
+
+Good:
+
+    set +o errexit
+    (
+       set -o errexit
+       run_scenario
+    )                                            # standalone -> inner -e is live
+    ec=$?
+    set -o errexit
+
+Why: run the group STANDALONE (not as a `||`/`if` operand) with the
+outer errexit briefly off, then capture `$?`. A failed step then aborts
+the group instead of falling through to later commands (e.g. passing
+assertions after a failed setup -> a false PASS in a test runner).
+
+
+**R-015: A `while COND; do ...; done` loop's exit status is the LAST
+command run in the body (or 0 if the body never ran) -- never the
+EOF-terminating `read`.** So a stream-scanning value helper reports
+success on no-match.
+_auto-detected: no | auto-fixed: no_
+
+    apt_candidate() {
+       while IFS= read -r line; do
+          case "${line}" in
+             *Candidate:*)
+                printf '%s' "..."
+                return 0
+                ;;
+          esac
+       done < <(apt-cache policy -- "$1")
+    }
+
+Why: on no match the last body command is the non-matching `case` (rc 0)
+and an empty stream never runs the body (also 0); the failed EOF `read`
+does not set the status. So `cand="$(apt_candidate x)"` under `errexit`
+does NOT abort -- `cand` is empty and the script continues. Guard the
+empty result explicitly.
+
+
+**R-016: Prefer running a command and CAPTURING its output before a loop
+over feeding the command into the loop through process substitution
+(`done < <(cmd)`) or a complex subshell.** Run the command on its own
+line, check its status, then iterate the captured value.
+_auto-detected: no | auto-fixed: no_
+
+Bad:
+
+    while IFS= read -r line; do
+       ...
+    done < <(apt-cache policy -- "$1")
+
+Good:
+
+    policy="$(apt-cache policy -- "$1")" || return
+    while IFS= read -r line; do
+       ...
+    done <<< "${policy}"
+
+Why: `< <(cmd)` runs the command in a subshell whose exit status the loop
+never sees, so a failed producer reads as an empty stream (see R-015);
+capturing first makes the failure catchable (`|| return`) and the flow
+linear and readable. Reserve process substitution for a stream too large
+to hold in memory, or one that MUST feed the CURRENT shell (a pipe would
+run the loop in a subshell and lose its variable writes) -- and then
+guard the producer's failure explicitly. Applies on TOUCH, like other
+structural debt -- do not mass-rewrite pre-existing `< <(...)` unprompted.
+
+
 ## Variables
 
 **R-020: Wrap every variable reference in `${var}` braces.** No
@@ -260,6 +357,50 @@ so the guard is dead weight -- and R-025 already requires the
 conditional-substitution forms are legitimate and spared.
 
 
+**R-027: Hoist a `$(cmd)` out of another command's ARGUMENTS and out of
+an `if`/`while` condition into a named variable on its own line.**
+_auto-detected: no | auto-fixed: no_
+
+Bad:
+
+    safe-rm --force -- "$(resolve_dir "${id}")/muted"
+
+Good:
+
+    local dir
+    dir="$(resolve_dir "${id}")" || return 1
+    safe-rm --force -- "${dir}/muted"
+
+Why: a `$(...)` embedded in another command's argument MASKS the inner
+command's exit code -- on failure the outer command silently runs with a
+partial/empty argument. Hoisting lets `errexit` (or an explicit `||
+return`/`|| die`) catch it first; and under `set -x` a separate
+assignment line traces the resolved value before the branch. A plain
+top-level `var="$(...)"` already lets errexit catch the failure (see
+R-011, R-022 for `local`, R-033 for `printf`).
+
+Note that `if var="$(cmd)"; then ... fi` is fine. The return value of
+this expression is the return value of the command in the subshell, so
+it isn't vulnerable to the issue described above. This is a common
+idiom to capture the output of a command and handle errors
+conveniently.
+
+
+**R-028: Default an unbound variable at its SOURCE with `[ -v VAR ] ||
+VAR=value`, not with per-consumer `${var:-}`.**
+_auto-detected: no | auto-fixed: no_
+
+Why: `set -o nounset` exists to catch a genuinely-unset variable as a
+bug; once every consumer defaults it away with `${var:-}`, a real
+missing-value bug passes silently. Set it once where it is defined --
+ideally derived from a related always-set variable -- so consumers
+reference it bare and nounset still catches the next real omission. Use
+`[ -v VAR ] || VAR=value` (then `export` if needed): it defaults only
+when the name is truly UNSET, so an intentional empty value is respected
+(`${VAR:-}` clobbers it) and it is safe under nounset (`[ -v VAR ]` does
+not dereference). Reserve `${var:-}` for genuinely-optional variables.
+
+
 ## printf
 
 **R-030: Always `printf '%s\n' "..."`, unless doing complex table-like
@@ -299,6 +440,11 @@ and GATE-ENFORCED -- they fail the static gate. Whether the blank
 line should exist at all is R-042's separate call; this rule only
 fixes its form once you decide to write one.
 
+Waiver: `## style-ok: printf-format` (file-wide) suppresses BOTH the
+printf format rules -- R-030's format-injection check and R-031's
+bare-newline check. Reserve it for a file whose printf usage is
+deliberately non-standard; prefer the compliant `printf '%s\n' ""`.
+
 **R-032: Quote choice.** Double quotes preferred. Single quotes
 acceptable when the body has many doubles to escape:
 
@@ -320,6 +466,20 @@ flag handling is problematic.
 used as a command; a file that genuinely needs it carries a
 script-wide `## style-ok: allow-echo` waiver (same shape as
 `no-safe-rm`).
+
+
+**R-035: Prefer pure-bash text processing over `awk`.** Express
+line-scans and counts with `while read -r` (+ associative arrays) rather
+than an embedded `awk` program.
+_auto-detected: no | auto-fixed: no_
+
+Why: an `awk` program is a second language inside a bash file, and
+`read < <(awk ...)` hides failure modes a native loop does not have
+(SIGPIPE, exit-status masking -- see R-014/R-015); `awk` is also not
+`--`-safe. Applies on TOUCH (write/refactor), like other style debt --
+do not mass-rewrite pre-existing `awk` unprompted. With assoc arrays:
+an empty subscript is invalid, so bucket empties under a placeholder,
+and `read ... || [ -n "${var}" ]` keeps an unterminated final line.
 
 
 ## printf vs log
@@ -347,6 +507,22 @@ right tool.**
 **R-042: Drop blank-line separators (`printf '%s\n' ""` /
 `log notice ""`).** Once every line carries a `[NOTICE]:` prefix,
 blank lines are noise.
+
+
+**R-064: `read -a` / `readarray` / `mapfile` take the array NAME as the
+argument right after `-a`, so a `--` end-of-options separator can NEVER
+sit before that name** (see R-062).
+_auto-detected: no | auto-fixed: no_
+
+    read -r -a -- arr     # `--': not a valid identifier
+    read -ra -- arr       # same
+
+`--` is valid only AFTER the array name (`read -r -a arr --`) but
+pointless there -- end-of-options only protects a following dash-prefixed
+DATA value, and array data comes from stdin, not argv. Plain `read -r --
+var` (no `-a`) IS valid. Consequence: a blanket "add `--`" sweep breaks
+every `read -a`; the fix is to REMOVE the `--`, not reorder. Find them
+with `grep -rnE '\b(read|readarray|mapfile)\b[^|;&]*\s--\s'`.
 
 
 ## Functions
@@ -597,6 +773,17 @@ for accurate linting.
 **R-081: Never fall back to `source=/dev/null`.** That silences
 cross-file checks.
 
+**R-085: No `# shellcheck disable=SC1091` on a helper-scripts
+source.** The `pre-push-static` gate checks out
+helper-scripts as the repo sibling when the consumer sets
+`dist-ai-tests: helper-scripts: true` in `.github/dm-consumer.yml`, so
+shellcheck FOLLOWS the `# shellcheck source=` directive instead of
+emitting SC1091. The per-line disable is then dead code; drop it and
+set the flag. See the `shellcheck` skill. Waiver:
+`## style-ok: allow-sc1091-disable` for a genuinely unfollowable
+optional source.
+_auto-detected: yes | auto-fixed: no_
+
 **R-082: Each consumer sources every helper-scripts file it uses
 directly.** Don't rely on transitive sourcing.
 
@@ -718,29 +905,47 @@ Exception: bootstrap that runs before the executable bit is set
 lost +x), or surfaces that don't honor the shebang. State the
 reason inline.
 
-**R-193: Call an in-repo Python script directly, not via `python3 --
-<file>.py`.** R-180 makes every `*.py` executable with a shebang, so
-run it like any other program.
+**R-193: Never name the Python interpreter in command position.** No
+`python`, `python3`, or version-pinned `python3.11` as a command. R-180
+makes every `*.py` executable with a shebang, so run a script like any
+other program; and an inline program (`-c`, or a program fed on stdin)
+belongs in its own executable file, not embedded in the shell.
 
 Bad:
 
-    python3 -- "${dir}/report-summary.py" "${report}"
+    python3 "${dir}/report-summary.py" "${report}"   # script via interpreter
+    python3 -- "${dir}/report-summary.py"            # same, '--' form
+    python3 -c 'import json, sys; ...'               # embedded program
+    python3 - <<'PY'                                 # program on stdin
+    ...
+    PY
+    python3.11 report.py                             # version pin
 
 Good:
 
-    "${dir}/report-summary.py" "${report}"
+    "${dir}/report-summary.py" "${report}"           # direct, +x
+    "${dir}/summarize.py" < "${report}"              # -c moved to a file
 
 Why: the same contract R-102 states for shell -- the shebang declares
 the interpreter, the caller should not restate it. It matters more
-here: a `python3 -- file` prefix DROPS the shebang's own flags
+here: a `python3 file` prefix DROPS the shebang's own flags
 (`#!/usr/bin/python3 -Bsu`), so the direct call is not just tidier, it
-runs the interpreter the file asked for. A generic dispatcher passing
-`"$@"` (no literal path) is glue, not a named call, and is fine.
+runs the interpreter the file asked for. An embedded `-c`/stdin program
+can't be linted, type-checked, coverage-measured, or unit-tested -- no
+file exists to see -- so it must move to a standalone `*.py`. A version
+pin (`python3.11`) hardcodes a version the target may not ship.
 
-Enforced by R-193 in the pre-push gate: it flags a literal
-`<interpreter> -- <path>.py` at quote depth zero, outside comments.
-Waiver: `## style-ok: allow-python-dashdash` for a script deliberately
-not executable, or an external path you don't control.
+The ONE exception is an unpinned `python3 -m MODULE` (an installed
+module, e.g. `python3 -m venv`): there is no script file to give a
+shebang, so naming the interpreter is unavoidable. A pin is still
+refused even there (`python3.11 -m ...`).
+
+Enforced by R-193 in the pre-push gate, in shell scripts AND in the
+command lines that units and workflows embed (systemd `Exec*=`, GitHub
+Actions `run:`). Command position only -- a `python3` inside a quoted
+string or a comment is data. Waiver, for a deliberate PATH/venv python
+you genuinely need: `## style-ok: allow-python-interpreter` (or the
+per-rule `## style-ok: R-193`).
 
 **R-103: Don't replace the process with `exec <command>`; run it as
 a child and forward the exit code.** Process-replacement `exec`
@@ -1212,16 +1417,17 @@ starts with the prefix (`${TMPFILE}`), are not matched.
 
 **R-190: A substantial interpreter program does not belong in a
 shell heredoc.** If the embedded body is more than ~5 lines, put it
-in its own file with a shebang and call it.
+in its own file with a shebang and call it. Covers `perl`, `ruby`,
+`node`, `php`; Python in ANY form (any size) is R-193's job.
 
     ## Bad -- invisible to every tool that would check it:
-    summary="$(python3 - "${report}" <<'PY'
+    summary="$(perl - "${report}" <<'PL'
     ...40 lines of parsing...
-    PY
+    PL
     )"
 
     ## Good:
-    summary="$("${helper_dir}/report-summary.py" "${report}")"
+    summary="$("${helper_dir}/report-summary.pl" "${report}")"
 
 Why: this is R-100's defect in the other direction. ruff and pyrefly
 only see real `*.py` files; coverage.py cannot measure a heredoc at
@@ -1235,7 +1441,9 @@ copy, fall back to the installed path) so editing the repo takes
 effect without installing, and fail loudly when neither exists. A
 silent fallback to a stale installed copy is worse than no fallback.
 
-Short glue stays inline: a one-line `python3 -c` is not a program.
+Short glue stays inline: a one-line `perl -e` / `node -e` is not a
+program. (This latitude is for the non-Python interpreters only --
+R-193 refuses `python3 -c` at any length.)
 
 Waiver: `## style-ok: allow-inline-interpreter` anywhere in the file.
 
@@ -1258,6 +1466,76 @@ program, and is allowed; only a `sh -c` / `bash -c` value carrying a
 until do then`), or a `\` line-continuation is flagged.
 
 Waiver: `# style-ok: allow-embedded-script` anywhere in the unit.
+
+**R-194: An apt configuration hook does not embed a multi-statement shell
+command.** A `Pre-Invoke` / `Post-Invoke` / `Pre-Install-Pkgs` directive runs
+its double-quoted value through `sh -c`:
+_auto-detected: yes | auto-fixed: no_
+
+    // Bad -- a script inlined in a config file, invisible to every tool:
+    DPkg::Post-Invoke {"if [ -x /usr/bin/foo ]; then /usr/bin/foo; fi";};
+
+    // Good:
+    DPkg::Post-Invoke {"/usr/libexec/mypkg/post-invoke-hook";};
+
+Why: the same defect R-191 catches in a systemd unit. The command is hidden
+from shellcheck, has no importable home a test can reach, and no coverage tool
+sees it. Move the logic into a script with a shebang and call it from the hook.
+
+Flagged: the INNER text of a hook's quoted value contains a `;` statement
+separator or a `|` pipe. Tolerated as glue: a `&&` / `||` chain and a `|| true`
+error-suppression tail -- an apt hook has no native alternative for them. The
+`;` apt uses to terminate a directive or separate a `{...}` list element sits
+outside the quotes and is config syntax, not a shell separator, so it is not
+counted.
+
+Scope: apt config paths only (`apt.conf.d/`, `apt.conf`). The check is per-line
+and does not parse a rare multi-LINE brace block across lines (a config parser
+for a rare case is the wrong tool -- see R-195's note); such a form is a
+documented fail-open. Waiver: `// style-ok: allow-embedded-script` (or `#`).
+
+**R-195: A cron entry does not embed a multi-statement command.** A cron table's
+command field runs through `sh -c`:
+_auto-detected: yes | auto-fixed: no_
+
+    # Bad -- an inlined script in a crontab:
+    0 3 * * * root cd /srv/app && ./purge.sh; systemctl restart app | logger
+
+    # Good:
+    0 3 * * * root /usr/local/bin/nightly-maintenance
+
+Why: the same defect R-191 catches in a systemd unit -- invisible to shellcheck,
+no importable home, no coverage.
+
+Flagged: the command contains a `;` statement separator or a `|` pipe. Tolerated
+as glue: `&&` / `||` chains and a `( ... )` subshell -- the stock `/etc/crontab`
+itself uses `cd / && run-parts ...` and `test -x X || ( cd / && run-parts ... )`,
+and cron has no native directive for a working directory or a conditional run,
+so flagging that glue would fight the OS default. Blank lines, comments, and
+environment assignments (`SHELL=`, `PATH=`, `MAILTO=`) are not commands and are
+skipped.
+
+Scope: cron tables only (`cron.d/`, a `crontab` file) -- NOT the
+`/etc/cron.{daily,hourly,...}/` run-parts directories, whose entries are ordinary
+executable scripts already covered by the shell rules. Waiver:
+`# style-ok: allow-embedded-script`.
+
+Both PARSE the extracted shell value before testing (the gate's shfmt-backed
+detector), so a `;` / `|` that is DATA -- an escaped `find ... -exec rm {} \;`
+terminator, or a `|` inside a quoted pattern (`awk '/foo|bar/'`, `grep -E 'a|b'`)
+-- is correctly a single command, never a multi-statement one. A separator hidden
+inside a quote is no longer a false positive: the parser knows it is string
+content.
+
+The general rule behind R-194/R-195 (and the shell command-position rules): never
+HAND-ROLL a parser -- a quote/brace/heredoc state machine -- but USE a real one.
+The gate and the auto-fixer analyse the shell VALUE with the shfmt AST (the
+`pre-push-detect` detector and `pre-push-fix`, via `dist_ai.bash_ast`), so a
+command, a separator, or a quote is told from data EXACTLY, not by a fragile regex
+that has to accept a documented fail-open. Only the config-line EXTRACTION
+(finding the value in an `apt.conf` / crontab / unit) stays a simple per-line
+scan; a rare multi-LINE brace block is still declined, because a config-format
+parser for that one case is the wrong tool.
 
 ## Python files
 
@@ -1287,3 +1565,126 @@ stated as a pair. `check-shebang-scripts-are-executable` fails a
 shebang without the mode; `check-executables-have-shebangs` fails the
 mode without a shebang; R-180 in the pre-push gate fails a file with
 NEITHER, which would otherwise slip past both.
+
+## External command timeouts
+
+**R-200: `timeout` should almost always carry `--kill-after=`.** A bare
+`timeout <N> <cmd>` sends only `SIGTERM` after `<N>` seconds; a child
+can ignore `SIGTERM` and keep running, defeating the very bound
+`timeout` was added for. Add `--kill-after=<K>` so `timeout` follows up
+with `SIGKILL` `<K>` seconds later:
+_auto-detected: yes | auto-fixed: yes_
+
+    timeout --kill-after=5 5 -- eglinfo -B
+
+`--kill-after=<K>` is the canonical spelling (R-060 long flags); the
+short `-k` provides the same safety. `<K>` is the grace window after the
+`SIGTERM`, not the total budget -- mirroring the main duration
+(`--kill-after=5 5`) is a fine default.
+
+Why: the whole point of `timeout` is a hard upper bound on wall-clock;
+without the `SIGKILL` follow-up that bound is only advisory, and the one
+process you most need to bound (a stuck or busy-waiting process) is
+exactly the one that ignores `SIGTERM`. Note that even `SIGKILL` cannot
+terminate processes that are stuck in an uninterruptible D-state, so
+code should be somewhat wary of assuming a process is truly dead after
+a SIGKILL.
+
+The rare legitimate bare `timeout` (a command that MUST be allowed to
+finish its own cleanup on `SIGTERM`, or where `SIGKILL` would corrupt
+state) waives it: put `## style-ok: allow-bare-timeout` anywhere in the
+script and the pre-push gate skips R-200 script-wide.
+
+The pre-push gate (and its auto-fixer) flag a `timeout` in COMMAND
+position with no kill-after option. A `timeout` inside a string (the
+deferred `x="timeout 5"` spelling) or used as another command's argument
+is spared -- a line-based gate cannot safely reason about it -- so add
+the option to those by hand.
+
+
+## Package management
+
+**R-210: `apt-get-noninteractive`, not `apt-get`.** Use the
+helper-scripts wrapper for every `apt-get` invocation (including behind
+`sudo`/`doas`):
+_auto-detected: yes | auto-fixed: no_
+
+    sudo apt-get-noninteractive update
+    sudo apt-get-noninteractive install --yes --no-install-recommends -- foo
+
+Why: the wrapper exports `DEBIAN_FRONTEND=noninteractive`,
+`DEBIAN_PRIORITY=critical`, a `policy-rc.d`, and force-conf* options, so a
+scripted install never blocks on a debconf prompt or a conffile question
+(the class of hang that wedges an unattended build or a boot-time
+install). A bare `apt-get` inherits the caller's frontend and may stall.
+
+**R-211: `dpkg-noninteractive`, not `dpkg`, for state-changing actions.**
+Any action that unpacks or changes package state -- `--install`/`-i`,
+`--unpack`, `--configure`, `--remove`/`-r`, `--purge`/`-P`,
+`--record-avail`/`-A`, `--{set,clear}-selections`,
+`--{update,merge}-avail`, `--forget-old-unavail`, `--triggers-only` --
+goes through the wrapper (`dpkg --force-confnew`):
+_auto-detected: yes | auto-fixed: no_
+
+    sudo dpkg-noninteractive --install --refuse-downgrade -- ./foo.deb
+
+A read-only QUERY (`dpkg --compare-versions`, `-l`, `-L`, `-s`, `-S`,
+`--print-architecture`, `--get-selections`, ...) and the separate
+`dpkg-*` tools (`dpkg-deb`, `dpkg-query`) stay bare -- the wrapper's
+`--force-confnew` is meaningless there, and forcing a query through it
+would break early-boot code where the wrapper may be absent.
+
+Why a wrapper file is exempt: the helper-scripts scripts that DEFINE
+`apt-get-noninteractive` / `dpkg-noninteractive` necessarily call bare
+`apt-get` / `dpkg` -- that is their job -- so the gate never flags them
+(matched by basename).
+
+**R-212: never `--allow-downgrades`.** A silent downgrade masks a
+dependency or repository regression that should fail loudly; rely on the
+default refuse-downgrade behaviour (`dpkg --refuse-downgrade`).
+_auto-detected: yes | auto-fixed: no_
+
+**R-213: never `make_use_lintian=false`.** Disabling lintian on a
+genmkfile build hides packaging defects. Fix the lintian findings
+instead.
+_auto-detected: yes | auto-fixed: no_
+
+The pre-push gate flags R-210 through R-213 on shell files (command
+position, sparing an apt-get/dpkg inside a string or comment); its
+auto-fixer rewrites R-210 (`apt-get` -> `apt-get-noninteractive`) but not
+R-211/R-212/R-213 (dpkg needs an action-aware decision, and the other two
+are a deliberate removal a human must make).
+
+The ONLY sanctioned override is an explicit human-operator decision, for
+an environment where the wrapper genuinely does not exist (a minimal CI
+image without helper-scripts): put the matching waiver -- `## style-ok:
+allow-apt-get`, `allow-dpkg`, `allow-downgrades`, or
+`allow-lintian-disable` -- in the script, with a comment stating why. A
+model must not add these waivers on its own; converting to the wrapper is
+the default.
+
+**R-220: no unauthorized SKIP.** A test SKIP -- `exit 77` / `return 77`,
+the reserved skip code -- must be authorized:
+_auto-detected: yes | auto-fixed: no_
+
+    # Bad -- a required tool absent is an ENVIRONMENT BUG, not a skip:
+    type -P helper-script >/dev/null || exit 77
+
+    # Good -- a required tool absent fails LOUD:
+    if ! type -P helper-script >/dev/null; then
+       printf 'FATAL: helper-script absent\n' >&2
+       exit 1
+    fi
+
+    # Good -- a genuinely OPTIONAL target may skip, WITH a reason:
+    [ -x /usr/bin/optional-e2e-daemon ] || exit 77  ## style-ok: allow-skip: e2e-only daemon, absent in the core lane
+
+Why: a skip added to make a red suite green is a silent pass -- the gate
+exists to stop exactly that. A REQUIRED dependency's absence is an
+environment bug and must be `exit 1` (FATAL), so it fails loudly and gets
+fixed; only a genuinely OPTIONAL target may `exit 77`, and it must say why
+in a PER-SKIP `## style-ok: allow-skip: <reason>` waiver on the `exit 77`
+line or the line directly above it. The gate flags an unwaived `exit 77` /
+`return 77` in command position (an `exit 77` inside a string or a comment
+is not a skip). Unlike the package-wrapper waivers, the reason is
+mandatory: `allow-skip` with no rationale still reads as a bare skip.

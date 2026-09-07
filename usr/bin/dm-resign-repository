@@ -9,23 +9,25 @@ set -o nounset
 set -o pipefail
 set -o errtrace
 shopt -s inherit_errexit
+shopt -s shift_verbose
+export LC_ALL=C
 
 true "INFO: Currently running script: ${BASH_SOURCE[0]} $*"
 
 dist_build_source_run="true"
 
 MYDIR="$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" && pwd )"
-cd -- "$MYDIR"
+cd -- "${MYDIR}"
 
 ## XXX: hardcoded path
-source "$HOME/derivative-maker/help-steps/pre"
-source "$HOME/derivative-maker/help-steps/variables"
+source "${HOME}/derivative-maker/help-steps/pre"
+source "${HOME}/derivative-maker/help-steps/variables"
 
 ## Debugging.
-"$dist_source_help_steps_folder/signing-key-test" "$@"
+"${dist_source_help_steps_folder}/signing-key-test" "$@"
 
-for derivative_name_item in $derivative_name_list ; do
-   derivative_repository_name="$derivative_name_item"
+for derivative_name_item in ${derivative_name_list} ; do
+   derivative_repository_name="${derivative_name_item}"
    export derivative_repository_name
 
    ## NOTE: Do not deprecate too early.
