@@ -1,3 +1,35 @@
+commit 7377af78aa52d534822665b2b8bf33b6ca56c62a
+Author: Patrick Schleizer <adrelanos@whonix.org>
+Date:   Tue Sep 8 11:12:07 2026 -0400
+
+    fix
+
+commit 9f514d18d55c522c1fd792e1db8d84c02aae0b83
+Merge: c851262e 77b44895
+Author: Patrick Schleizer <adrelanos@whonix.org>
+Date:   Mon Sep 7 00:17:42 2026 -0400
+
+    Merge remote-tracking branch 'ArrayBolt3/arraybolt3/trixie'
+
+commit 77b448954c9062a439471cf150ec69b58c80b96e
+Author: Aaron Rainbolt <arraybolt3@gmail.com>
+Date:   Sun Sep 6 17:48:17 2026 -0400
+
+    Polish
+
+commit 61ab739bd93f60ae8f9ee5fd84c2b21f201d3f5b
+Merge: 6aea69ab 677d63ae
+Author: Aaron Rainbolt <arraybolt3@gmail.com>
+Date:   Sun Sep 6 17:28:10 2026 -0400
+
+    Merge branch 'ai' into arraybolt3/trixie
+
+commit c851262ee948f76ab36a5bbea007de60d859dc7b
+Author: Patrick Schleizer <adrelanos@whonix.org>
+Date:   Sun Sep 6 16:36:29 2026 +0000
+
+    bumped changelog version
+
 commit 99c097d57dd9d7c9f23334aa2a7a20f027715ef9
 Author: Patrick Schleizer <adrelanos@whonix.org>
 Date:   Sun Sep 6 12:34:43 2026 -0400
@@ -9,6 +41,172 @@ Author: Patrick Schleizer <adrelanos@whonix.org>
 Date:   Sun Sep 6 12:32:49 2026 -0400
 
     .
+
+commit 677d63ae0b5f0bc18592f3754246e702b65b7b2f
+Author: claude (dev455 bd3fcb82-771d-4158-81bc-7c406f4d7842) <noreply@anthropic.com>
+Date:   Sun Sep 6 12:08:46 2026 -0400
+
+    R-193 doc + secrets-audit timeout: address ai-review
+
+    - bash-style-guide R-193 Bad block: label the interpreter-prefixed line
+      by its defect, not the fix ('# run via shebang' read as a false claim).
+    - local-secrets-audit: raise the 1-min job timeout to 5; provisioning plus
+      the cross-repo checkout can exceed 60s and cancel before the audit runs.
+
+commit 7991abff230010e258d9d913b355180a57470f2b
+Author: claude (dev455 bd3fcb82-771d-4158-81bc-7c406f4d7842) <noreply@anthropic.com>
+Date:   Sun Sep 6 11:03:53 2026 -0400
+
+    local-secrets-audit: gate the audit job on the CI-enabled switch
+
+    W-008: every job that runs steps carries the org-wide CI-enabled guard
+    (and the repo pin that keeps the AI-review secret to this repo), matching
+    the sibling live-probe/live-audit workflows.
+
+commit 5ed0b96aeb7b35d8c9f1ea23db9968fd23439998
+Author: claude (dev455 bd3fcb82-771d-4158-81bc-7c406f4d7842) <noreply@anthropic.com>
+Date:   Sun Sep 6 10:36:20 2026 -0400
+
+    Rewrite R-193 for the broadened no-explicit-python-interpreter rule
+
+    Document that R-193 refuses every explicit python interpreter (embedded
+    `-c`/stdin, script-through-interpreter, version pin), with the unpinned
+    `-m MODULE` carve-out and the systemd/workflow reach. Point R-190 at the
+    non-python interpreters.
+
+commit 6aea69abd70a754a03010457a4188d51445a2f2c
+Author: Aaron Rainbolt <arraybolt3@gmail.com>
+Date:   Sat Sep 5 22:26:16 2026 -0400
+
+    Delete /usr/bin/ppcross_install
+
+commit ab687f83c905759ad0e02f37d840ba3228f2b731
+Author: claude (dev436 a3685db2-6dac-45db-a9b9-debf9f1688b7) <noreply@anthropic.com>
+Date:   Sat Sep 5 11:15:35 2026 -0400
+
+    dm-review-branch: drop set -x (leaks untrusted ref)
+
+    - xtrace echoes every command's expanded form to the terminal, so an
+      untrusted ref name (git permits U+202E and other spoofing codepoints
+      in ref names) reached the operator RAW, before any scan or stcat
+      neutralization. The sibling scan tools omit set -x for this reason.
+
+commit 8bde6cbcafa742252390b1cdb5539e0ddb6d945c
+Author: claude (dev436 a3685db2-6dac-45db-a9b9-debf9f1688b7) <noreply@anthropic.com>
+Date:   Sat Sep 5 10:56:10 2026 -0400
+
+    dm-review-branch: validate the ref argument
+
+    - no args now prints a usage message and fails closed, not a bare
+      'unbound variable' nounset crash.
+    - reject a leading-dash ref up front so it cannot be misparsed as an
+      option by check-ref-commits-for-unicode (which takes a bare ref).
+
+commit 5b7c5e10c3fdc29e30482d37ca3f788eef265ea2
+Author: claude (dev436 a3685db2-6dac-45db-a9b9-debf9f1688b7) <noreply@anthropic.com>
+Date:   Sat Sep 5 10:41:55 2026 -0400
+
+    dm-review-branch: guard scan deps, fail closed if absent
+
+    - a missing unicode-show makes check-ref-*-for-unicode return a
+      MISLEADING rc 1 (die_if_not_has) that the rc==1 path takes for a
+      detection and lets the operator wave past -- reviewing with no
+      working scanner. Guard stcat + unicode-show with die (R-090) so a
+      missing scan dependency fails closed early with a clear message.
+
+commit 0779b22a350493b18cf955f3ffc0c1da4a0ef481
+Author: claude (dev436 a3685db2-6dac-45db-a9b9-debf9f1688b7) <noreply@anthropic.com>
+Date:   Sat Sep 5 10:12:15 2026 -0400
+
+    dm-review-branch: fail closed on scan setup errors
+
+    - review_prompt_or_die treated scan rc>=2 (bad/absent ref, no new
+      commits, not a work tree) like rc==1 (a look-alike detection):
+      a misleading "possible unicode spoofing" message plus a pointless
+      continue-prompt for a review that cannot run. rc>=2 now dies with the
+      real error; the consent prompt is reserved for a genuine rc==1.
+
+commit 81cc9e679e65c0134e32b6c3be33cecf001cc950
+Author: claude (dev436 a3685db2-6dac-45db-a9b9-debf9f1688b7) <noreply@anthropic.com>
+Date:   Sat Sep 5 09:58:16 2026 -0400
+
+    dm-review-branch: neutralize SGR in git log
+
+    - NO_COLOR=1 on the git-log stcat neutralizes attacker SGR color too
+      (stcat keeps SGR when color is on -- black-on-black hides text); the
+      bare pipe only covered cursor/erase.
+    - --no-pager matches the review flow (git-review-driver.sh never pages).
+
+commit 37ccba6ce772e729271a4f7c47671cd30bee8b2c
+Author: claude (dev436 a3685db2-6dac-45db-a9b9-debf9f1688b7) <noreply@anthropic.com>
+Date:   Sat Sep 5 07:42:08 2026 -0400
+
+    dm-review-branch: neutralize git log output
+
+    - git log printed attacker-controlled bytes (commit messages, author
+      identity) raw; a finding the operator consented past could then inject
+      the terminal. stcat closes that last un-neutralized sink.
+
+commit d3b362de912a3818066318ab471a84744f9c7791
+Author: Aaron Rainbolt <arraybolt3@gmail.com>
+Date:   Fri Sep 4 17:29:51 2026 -0400
+
+    Polish
+
+commit a315847578d1e931b0f060d5ffb4717989ab74c8
+Merge: a0f3931e d1063e5c
+Author: Aaron Rainbolt <arraybolt3@gmail.com>
+Date:   Thu Sep 3 22:39:50 2026 -0400
+
+    Merge branch 'ai' into arraybolt3/trixie
+
+commit d1063e5caab76c3679072c7ec75382f3831206aa
+Author: claude (dev396 10cef804-6a88-483e-94cd-fb47b7dcd233) <noreply@anthropic.com>
+Date:   Wed Sep 2 01:11:02 2026 -0400
+
+    Drop the dead option-A private-ai-config deploy-key checkout
+
+    - safe-pgrep/safe-pkill now ship in dist-ai (0.1-3); the shots reaper resolves
+      them from dist-ai/usr/bin via dist-ai-tests-all's PATH, so the cross-repo
+      private-ai-config checkout + deploy-key secret are unused
+    - forward-undoes the unmerged a20a7caa + 5220d649 (superseded by the #24 move)
+
+commit 5220d64991f3a72434ccf96e9c9fb5a08036afed
+Author: claude (dev403 4c3884c6-12c9-4b17-9f6d-7438b41b39bf) <noreply@anthropic.com>
+Date:   Tue Sep 1 21:48:38 2026 -0400
+
+    Skip private-ai-config checkout on Dependabot PRs (#24)
+
+commit a20a7caa6d96d65d9c286b78885f9d084a10c22a
+Author: claude (dev403 4c3884c6-12c9-4b17-9f6d-7438b41b39bf) <noreply@anthropic.com>
+Date:   Tue Sep 1 14:45:39 2026 -0400
+
+    Add opt-in private-ai-config checkout to dist-ai tests reusable (#24)
+
+    - reusable: optional PRIVATE_AI_CONFIG_DEPLOY_KEY secret + gated checkout of
+      org-ai-assisted/private-ai-config (read-only deploy key) + pac-runtime step
+      so the secure-terminal-shots reaper resolves safe-pgrep/safe-pkill
+    - consumer template: pass the secret through (empty + unused unless opted in)
+
+commit ac64108c738816c834d0dc883e99db63c1d3bf5b
+Merge: 01d9e853 8d192230
+Author: claude (dev389 441cb0a6-d1fd-4733-bd36-6d511939b41b) <noreply@anthropic.com>
+Date:   Mon Aug 31 04:17:03 2026 -0400
+
+    Merge master into ai
+
+    - absorb upstream sync so the PR diff carries only our own work
+    - keep ai's arraybolt3-simplified packaging helper (drop re-added _bot_ai)
+
+commit 8d192230baa460d8b42e830d4d8dfbd120204611
+Merge: 5ac26359 964648a7
+Author: claude (dev389 441cb0a6-d1fd-4733-bd36-6d511939b41b) <noreply@anthropic.com>
+Date:   Mon Aug 31 04:13:08 2026 -0400
+
+    Sync master to Kicksecure master (re-adopt trixie)
+
+    - upstream accepted arraybolt3/trixie; our earlier master-revert is superseded
+    - tree set equal to upstream 964648a7; zero delta for an upstream pull
 
 commit 964648a70ef58fec7ce74c879c0a3a48c72b6dde
 Author: Patrick Schleizer <adrelanos@whonix.org>
@@ -29,11 +227,183 @@ Date:   Sun Aug 30 09:33:02 2026 -0400
 
     Merge remote-tracking branch 'ArrayBolt3/arraybolt3/trixie'
 
+commit 01d9e8532bb1b584e5e0259261c86c0b03e2164e
+Author: claude (dev352 385b930f-4313-4883-93d5-e6857c3f7ea7) <noreply@anthropic.com>
+Date:   Fri Aug 28 00:34:59 2026 -0400
+
+    dm-prepare-release: reference dm-reproducible-buildinfo via dist_developer_meta_files_folder
+
+    The canonical, centrally-defined (help-steps/variables) path used by every
+    other dev-meta bin reference here (lines 116, 121) and across the build --
+    not the sourced-variables-clobbered MYDIR.
+
+commit 5257b209b5f162dee15321b88f824268c151685f
+Author: claude (dev352 385b930f-4313-4883-93d5-e6857c3f7ea7) <noreply@anthropic.com>
+Date:   Fri Aug 28 00:24:05 2026 -0400
+
+    dm-prepare-release: use captured bin dir for dm-reproducible-buildinfo
+
+    MYDIR is reassigned by the sourced 'variables', so ${MYDIR}/dm-reproducible-buildinfo
+    resolved against help-steps and failed 'No such file' at 5200. Capture the bin
+    dir before the clobber (as dmf_libexec_dir already does) and use it.
+
+commit 36c55adda7e3e8a2a370d9404067f2badb6dc512
+Merge: dcc0c96c a0f3931e
+Author: claude (dev352 385b930f-4313-4883-93d5-e6857c3f7ea7) <noreply@anthropic.com>
+Date:   Fri Aug 28 00:22:44 2026 -0400
+
+    Merge remote-tracking branch 'ArrayBolt3/arraybolt3/trixie' into ai
+
+commit dcc0c96c76c74249178da88817b37504c6b10d75
+Author: claude (dev369 7c5d3ad8-d5e4-47bd-97e7-4ef9a3853344) <noreply@anthropic.com>
+Date:   Thu Aug 27 06:07:24 2026 -0400
+
+    Document style-ok waivers and per-rule override
+
+commit aba5ea76eb5611ee639e94078f95408291b00f95
+Author: claude (dev352 385b930f-4313-4883-93d5-e6857c3f7ea7) <noreply@anthropic.com>
+Date:   Thu Aug 27 01:19:25 2026 -0400
+
+    dm-check-unicode: allow-list grml-debootstrap workflows
+
+    - upstream grml CI workflows carry emoji in PR/release-note text (not shipped);
+      scope the allow-list to that dir so a new upstream workflow does not re-block
+      the source build
+
+commit d3a7d889903b532732a2b9ea418e5e97f0dff16a
+Author: claude (dev352 385b930f-4313-4883-93d5-e6857c3f7ea7) <noreply@anthropic.com>
+Date:   Wed Aug 26 23:32:50 2026 -0400
+
+    harden input handling: NUL-delimited finds, IFS= reads, CRL size cap, remote quoting
+
+    - dm-reproducible-compare-artifacts + dm-normalize-fat-partition: find -print0 | sort -z into IFS= read -d '' / mapfile -d '' (a name with a space or newline reached the wrong path)
+    - dm-packaging-helper-script: description loop is IFS= read (was stripping leading whitespace -> indentation + ' .' paragraph break lost)
+    - dm-virtualbox-installer-exe-verify-windows: curl --max-filesize on the CRL fetch (URL from the untrusted installer signature -> unbounded-download DoS)
+    - qubes-copy-folder-to-dom0: printf %q the dirname/basename interpolated into the remote qvm-run command (broke on spaces)
+
+commit e6bacaa862359f84e740bc6c943834bd2bf57725
+Author: claude (dev352 385b930f-4313-4883-93d5-e6857c3f7ea7) <noreply@anthropic.com>
+Date:   Wed Aug 26 23:20:27 2026 -0400
+
+    signing-lib: propagate every signature check (fix verify bypass)
+
+    - verify_signature/sign_and_verify ran UNCHAINED statements with no errexit (sourceable lib), so only the last command's status returned; verify_cmd_signify returns 0 for >=1000MB, masking an invalid OpenPGP signature as verified. Chain each with '|| return'.
+
+commit 3aee4ae71ffa6b00f938d7875e7c468ded91575f
+Author: claude (dev352 385b930f-4313-4883-93d5-e6857c3f7ea7) <noreply@anthropic.com>
+Date:   Wed Aug 26 22:45:16 2026 -0400
+
+    dm-prepare-release: exclude .git from the source tarball
+
+    - .git is clone-dependent (pack order, refs, logs), so including it made the source archive non-reproducible across machines even with symlinks normalized; keep .gitmodules/.gitignore/.gitattributes (source)
+
 commit a0f3931e289e6cb0c0c59f50592692f4cfada781
 Author: Aaron Rainbolt <arraybolt3@gmail.com>
 Date:   Wed Aug 26 20:29:57 2026 -0400
 
     Create a new exception for Bash style rule R-030 for AI agents, leave a TODO for creating an override mechanism
+
+commit f42e53d2e6071171ab5e35c6d8e6bf04cc4c0afa
+Author: claude (dev360 af829598-ca19-4edf-a20a-beea79d986e6) <noreply@anthropic.com>
+Date:   Wed Aug 26 09:39:20 2026 -0400
+
+    Add export LC_ALL=C to complete R-010 strict block
+
+    - 15 adopted scripts omitted the 7th directive; add it to satisfy the
+      gate and match our convention (also aids reproducible-build determinism)
+
+commit 02c28a7a0c3c596f5365161df4f2fb32c7d3bfdc
+Author: claude (dev360 af829598-ca19-4edf-a20a-beea79d986e6) <noreply@anthropic.com>
+Date:   Wed Aug 26 09:36:26 2026 -0400
+
+    github-org-lib: add export LC_ALL=C to complete R-010 block
+
+commit 1c6f6d99aca142c7723a33cee38b8d71c0bf83b5
+Author: claude (dev360 af829598-ca19-4edf-a20a-beea79d986e6) <noreply@anthropic.com>
+Date:   Wed Aug 26 08:04:08 2026 -0400
+
+    De-bloat: reuse shared helpers, trim history comment
+
+    - github-policy-lib: use is_whole_number instead of a hand-rolled regex
+    - ghorg_require_deps: fold in git (clone/push/fork all use it); drop the
+      one-off die_if_not_has in github-org-fork
+    - dm-mount-vdi: comment states the why, not the prior implementation
+
+commit 6b14e5a8f16a1fda9aa5687f2a03059fbb1dde00
+Author: claude (dev360 af829598-ca19-4edf-a20a-beea79d986e6) <noreply@anthropic.com>
+Date:   Wed Aug 26 06:47:01 2026 -0400
+
+    Re-propose our style rules on top of ArrayBolt3 base
+
+    - pure additions to his adopted base: R-014/015/016, R-027/028, R-035,
+      R-064, R-085, R-194/195, and new sections R-200 (timeouts),
+      R-210-213 (package management), R-220 (no unauthorized skip)
+    - his base rules unchanged; these are ours to propose upstream
+
+commit 0534691cd069cc78d016a6385d191d5acbdef7da
+Author: claude (dev360 af829598-ca19-4edf-a20a-beea79d986e6) <noreply@anthropic.com>
+Date:   Wed Aug 26 06:44:12 2026 -0400
+
+    Adopt ArrayBolt3's bash-style-guide as base
+
+commit f44152704398045e1195d1258a53e5c5a761c592
+Author: claude (dev360 af829598-ca19-4edf-a20a-beea79d986e6) <noreply@anthropic.com>
+Date:   Wed Aug 26 06:22:49 2026 -0400
+
+    Adopt ArrayBolt3's simpler implementations
+
+    - drop the over-engineered restore: fact-check found no real bug in his
+      versions, only verbosity / non-real edge cases (nbd100+ under default
+      nbds_max 16; a process-sub bug his code already avoids)
+    - dm-update-frozen-snapshot carries his explicit "do not make this more
+      complicated" note; an AI had bloated it to ~500 lines
+    - bash-style-guide.md left as-is (rulebook policy, pending decision)
+
+commit 81973953743bb2b1e4924d6ed4b275d5a446bce7
+Author: claude (dev360 af829598-ca19-4edf-a20a-beea79d986e6) <noreply@anthropic.com>
+Date:   Wed Aug 26 05:50:46 2026 -0400
+
+    Layer our implementations over trixie merge
+
+    - trixie's tip is behind ours on dmf: restore our mature, documented
+      versions of the files it downgraded (dm-update-frozen-snapshot,
+      dm-reproducible-*, bash-style-guide, ...)
+    - keep trixie's genuine fixes: whonix_virt vm-not-nonqubes,
+      X-Private-Trivially-Cross-Buildable, has.sh source, pv --size,
+      HELPER_SCRIPTS_PATH :- guard
+
+commit 31d296fe15f9bafd949e22600efb873b982bddab
+Merge: a839d29e 3775a0d4
+Author: claude (dev360 af829598-ca19-4edf-a20a-beea79d986e6) <noreply@anthropic.com>
+Date:   Wed Aug 26 05:46:00 2026 -0400
+
+    Merge ArrayBolt3/arraybolt3/trixie into ai
+
+    - faithful wholesale merge (conflicts resolved to trixie); our
+      improvements layered in the follow-up commit
+
+commit 5ac26359786139ab6d6bd4c123b657b2fe22c8e4
+Author: claude (dev360 af829598-ca19-4edf-a20a-beea79d986e6) <noreply@anthropic.com>
+Date:   Wed Aug 26 04:20:57 2026 -0400
+
+    Restore master to upstream: undo trixie merge regression
+
+    - trixie tip is behind upstream on dmf: the merge downgraded 12 mature
+      scripts (dm-update-frozen-snapshot 649->11, dm-reproducible-compare-
+      artifacts 325->82, ...) and re-added decommissioned CI
+    - tree now equals Kicksecure master de884dc6
+
+commit 7fb2ac9179d7eb147294360662bd4d5383758826
+Merge: de884dc6 3775a0d4
+Author: claude (dev360 af829598-ca19-4edf-a20a-beea79d986e6) <noreply@anthropic.com>
+Date:   Wed Aug 26 04:14:42 2026 -0400
+
+    Merge ArrayBolt3/arraybolt3/trixie into master
+
+    - brings trixie's dm-script refactor (dm-nbd-cleanup,
+      dm-normalize-fat-partition, dm-debconf-normalize-owners),
+      reprepro-freshness -> package-build-freshness rename, and
+      bash-style-guide rule updates
 
 commit 3775a0d4bd60b8872c0b71ca6c620c80a149b33c
 Author: Aaron Rainbolt <arraybolt3@gmail.com>
@@ -59,6 +429,182 @@ Date:   Tue Aug 25 22:19:33 2026 -0400
 
     Fixups, TODOs, shorten lots of overly long comments
 
+commit a839d29ed653944e31ea8bfa4bb6247af04fb414
+Author: claude (dev335 c1c3663c-6489-49dc-b99d-e16b611b398a) <noreply@anthropic.com>
+Date:   Tue Aug 25 12:23:55 2026 -0400
+
+    bash-style-guide: multiline R-014, add R-016, gate tags
+
+    - R-014 errexit examples multi-line (house form, not a ';'-joined subshell)
+    - R-016: prefer capturing a command before a loop over process substitution
+      ('done < <(cmd)'), for catchable failure + linear flow; cross-refs R-015
+    - tag every rule auto-detected/auto-fixed vs the dist-ai-style gate (40
+      detected, 5 fixed); a 'no' is guidance the gate does not mechanically check
+
+    Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+
+commit 80e7b58e73aed053c0967da6c2a2a9a18668b010
+Author: claude (dev334 bfc02b48-7559-4372-b6ea-39bd596f2fe0) <noreply@anthropic.com>
+Date:   Tue Aug 25 04:36:43 2026 -0400
+
+    bash-style-guide: document 6 bash gotchas
+
+commit 984a436d60723927bee5b7c07acf8b6d9160b05a
+Author: claude (dev311 a31758b6-1681-47f1-b668-39612165d830) <noreply@anthropic.com>
+Date:   Mon Aug 24 10:15:18 2026 -0400
+
+    Decommission reusable claude-code-review
+
+    - Operator directive: retire the CI reusable Claude review. Delete
+      reusable-claude-code-review.yml + consumer-claude-code.yml + its template.
+    - Clean the dangling doc refs (scorecard FP lists, github-actions concurrency
+      notes + example, consumer-templates tree/prose).
+
+commit b7274635d12bc3df2af5b9bdc29ae0f4a484047d
+Merge: 4fe526e9 de884dc6
+Author: claude (dev311 a31758b6-1681-47f1-b668-39612165d830) <noreply@anthropic.com>
+Date:   Mon Aug 24 10:08:46 2026 -0400
+
+    Merge remote-tracking branch 'origin/master' into ai
+
+commit 4fe526e9810bd77a5c5036dd268f7b35d53adbe9
+Author: claude (dev311 a31758b6-1681-47f1-b668-39612165d830) <noreply@anthropic.com>
+Date:   Mon Aug 24 09:59:22 2026 -0400
+
+    Remove last dead .github/dmf CI checkout (scorecard)
+
+    - reusable-scorecard.yml checked out .github/dmf for a "step-summary helper"
+      that actually runs from .github/dist-ai; drop the dead checkout + DMF_REF.
+    - No workflow checks out .github/dmf anymore: retarget the untrusted-checkout
+      false-positive doc to the .github/dist-ai checkout, and fix the stale
+      apt-install-with-cache usage comment to the composite-action form.
+
+commit 10dc510a3fc828905ddbd1dfcc0119920f69b01e
+Author: claude (dev314 6d1f7042-4a26-49eb-a79e-79ba74a5b281) <noreply@anthropic.com>
+Date:   Mon Aug 24 09:58:05 2026 -0400
+
+    Document R-063 printf -v guard in bash style guide
+
+    Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+
+commit f7057432ab4ba444d624cb9dc016ece6ef7ebd45
+Author: claude (dev311 a31758b6-1681-47f1-b668-39612165d830) <noreply@anthropic.com>
+Date:   Mon Aug 24 09:52:07 2026 -0400
+
+    Remove now-dead .github/dmf CI checkouts
+
+    - After the ci/ helper move to dist-ai, .github/dmf is unused in
+      reusable-bandit / coverity / cppcheck: drop the checkout step and the
+      DMF_REF env.
+    - codeql: config-load now runs from dist-ai, which was checked out only LATE
+      (post-analyze, for step-summary only). Check dist-ai out EARLY instead so
+      config-load has it before init; paths-ignore keeps it out of extraction (as
+      it did for .github/dmf). Drop the redundant late checkout and the
+      .github/dmf paths-ignore entry.
+
+commit 76d76195bfb61383b35051c480bd46272d260027
+Author: claude (dev311 a31758b6-1681-47f1-b668-39612165d830) <noreply@anthropic.com>
+Date:   Mon Aug 24 09:45:04 2026 -0400
+
+    Move ci/ helpers to dist-ai; retire secrets-audit
+
+    - The 11 ci/ CI helpers now live (packaged + tested) in dist-ai; rewire the
+      6 workflow callers to .github/dist-ai/ci/<script> and delete the dmf copies.
+    - Retire the secrets-audit reusable + consumer + template; add
+      local-secrets-audit.yml (workflow_dispatch) running the migrated script
+      directly and forwarding CLAUDE_OAUTH_PRESENT (the org's current AI key).
+    - Clean dangling doc/comment refs to the retired secrets-audit, pre-push-static,
+      and codex-review workflows; point moved-script locations at dist-ai.
+
+commit fcf95a5839f953f4b53393540df3a125cc930d6c
+Author: claude (dev310 36a8f570-bca1-403d-9314-91c77355bde3) <noreply@anthropic.com>
+Date:   Mon Aug 24 09:03:55 2026 -0400
+
+    ci: decommission reusable pre-push-static + codex-review
+
+    - Remove the CI pre-push-static gate (reusable + consumer + template):
+      style is enforced by the LOCAL pre-push gate only.
+    - Remove codex-review (reusable + consumer + template): unused (disabled).
+    - claude-code-review kept.
+
+commit 8b7293fc1ef180b7d49155ddb93b6522196554c1
+Author: claude (dev310 36a8f570-bca1-403d-9314-91c77355bde3) <noreply@anthropic.com>
+Date:   Mon Aug 24 08:29:49 2026 -0400
+
+    apt-install-with-cache: allow-apt-get (bootstrap before helper-scripts)
+
+commit 9f74babfea3fe6eb368ace3386af51af0a57c1a3
+Author: claude (dev293 ebafde5e-1521-425e-9659-bc1b832924a2) <noreply@anthropic.com>
+Date:   Mon Aug 24 08:28:19 2026 -0400
+
+    R-100: document statement-count threshold, allow small guards
+
+    - Match the corrected gate: >5 shell statements (AST-counted), not lines.
+    - "any control flow" -> "substantial control flow"; a single if/exit
+      pre-flight guard may stay inline.
+
+commit 4f8e9b7dfd9757693cca33529af9e40ba5696605
+Author: claude (dev310 36a8f570-bca1-403d-9314-91c77355bde3) <noreply@anthropic.com>
+Date:   Mon Aug 24 08:08:55 2026 -0400
+
+    usr/libexec/*.bsh: add export LC_ALL=C (R-010 7/7)
+
+    - repo-metadata / github-policy-data / github-policy-lib run source-time logic
+      (add_repo table, readonly POLICY_* consts, top-level source), so they
+      self-enforce strict like github-org-lib.bsh; complete the block rather than
+      the no-strict form used by the pure-inherit sibling libs.
+
+commit 63776247058b3091fbe6d65569f815a261e9a55d
+Author: claude (dev310 36a8f570-bca1-403d-9314-91c77355bde3) <noreply@anthropic.com>
+Date:   Mon Aug 24 08:05:54 2026 -0400
+
+    .github/actions,misc,debug-steps: clear shell-style gate fails
+
+    - R-010 complete strict preamble (LC_ALL=C / shift_verbose) on executed
+      action + debug-step scripts; SC2250 braces.
+    - R-030 printf '%s'; R-170 mktemp not /tmp (install-*), no-tmp-hardcode
+      waiver for the container --tmpfs /tmp; R-090 no-has waiver for the
+      helper-scripts installer (runs before has is on PATH).
+
+commit ebd7943d42b9705b3fab9e36a5683469adb6dccb
+Author: claude (dev310 36a8f570-bca1-403d-9314-91c77355bde3) <noreply@anthropic.com>
+Date:   Mon Aug 24 07:48:29 2026 -0400
+
+    github-org-lib.bsh: add export LC_ALL=C (R-010 7/7)
+
+commit 7942c06366d97cf6179dc6991ce1f2998c29d4b3
+Author: claude (dev310 36a8f570-bca1-403d-9314-91c77355bde3) <noreply@anthropic.com>
+Date:   Mon Aug 24 07:39:29 2026 -0400
+
+    usr/bin,ci: clear remaining shell-style gate fails
+
+    - R-030 printf '%s' format; R-051 underscore trap-handler names;
+      R-070 ';;' own line; R-026 drop pre-4.4 empty-array guard; R-161
+      grep here-string + --quiet; R-170 mktemp not /tmp; R-103 direct
+      call not process-replacement exec; R-090 has (vdi) / justified
+      no-has waivers (ppcross, qubes-backup); R-011 allow-errexit-toggle
+      and R-210 allow-apt-get waivers where deliberate.
+
+commit e8835769f2d9a4ad4565508997a64688c77206e2
+Author: claude (dev310 36a8f570-bca1-403d-9314-91c77355bde3) <noreply@anthropic.com>
+Date:   Mon Aug 24 07:38:21 2026 -0400
+
+    usr/bin,ci: brace vars, complete strict preamble
+
+    - SC2250 variable braces via shellcheck autofix; purely cosmetic.
+    - add 'export LC_ALL=C' and 'shopt -s shift_verbose' to complete the
+      R-010 seven-directive strict-mode block.
+
+commit bcccf0e7e9ff151085eba77bbe20067b0c90549a
+Author: claude (dev293 ebafde5e-1521-425e-9659-bc1b832924a2) <noreply@anthropic.com>
+Date:   Mon Aug 24 07:02:16 2026 -0400
+
+    canonical-repos-gate: R-161 here-string, R-030 printf, LC_ALL
+
+    - grep <<< instead of printf|grep (no SIGPIPE on a quiet grep); printf %s format;
+      export LC_ALL=C completes the strict block. Verified: both branches emit the
+      correct allowed=true/false.
+
 commit de884dc699086747d7e4c9fc94af4bdb7210b5b2
 Author: Patrick Schleizer <adrelanos@whonix.org>
 Date:   Mon Aug 24 07:23:55 2026 +0000
@@ -71,11 +617,58 @@ Date:   Mon Aug 24 03:21:30 2026 -0400
 
     .
 
+commit b8e9a619dbad3f436a1b46ff4e6a4c128f6a99e9
+Author: claude (dev293 ebafde5e-1521-425e-9659-bc1b832924a2) <noreply@anthropic.com>
+Date:   Mon Aug 24 01:43:18 2026 -0400
+
+    bash-style-guide: add R-220 (no unauthorized skip)
+
+    - exit 77/return 77 needs a per-skip allow-skip waiver with a reason; a required
+      dep absence must be exit 1 (FATAL), not a skip.
+
+commit cd99ddaf260ae3bfa60fd8b44ef126364411636d
+Author: claude (dev293 ebafde5e-1521-425e-9659-bc1b832924a2) <noreply@anthropic.com>
+Date:   Sun Aug 23 21:04:52 2026 -0400
+
+    bash-style-guide: doctrine now "use a real parser", not fail-open
+
+    - the gate/fixer analyse the shell value with the shfmt AST, so the R-191/194/
+      195 quote-hidden fail-open is closed; only config-line extraction stays a scan.
+
+commit 393dce0446a61f4176ca8d972b2b8d8afa000d7c
+Author: claude (dev293 ebafde5e-1521-425e-9659-bc1b832924a2) <noreply@anthropic.com>
+Date:   Sun Aug 23 20:13:04 2026 -0400
+
+    reusable-pre-push-static: install shfmt for the AST gate
+
+    - pre-push-static now runs its shell rules over the shfmt AST (pre-push-detect)
+      and hard-fails if shfmt is absent, so the CI gate must install it.
+
 commit edb6156d45dd7da88ac360ca48fa5a4e6fc9a0c2
 Author: Aaron Rainbolt <arraybolt3@gmail.com>
 Date:   Sun Aug 23 16:29:42 2026 -0400
 
     Changes that go with refactoring of derivative-maker, not all merged code has been reviewed yet
+
+commit a33f23fee509937092ee91097d4de531a8e8d7fe
+Author: claude (dev287 a0ded5c7-af9b-42b1-8352-30ba089c29ec) <noreply@anthropic.com>
+Date:   Sun Aug 23 04:27:32 2026 -0400
+
+    bash-style-guide: add R-210..R-213 package rules
+
+commit 5566f6468dfdf9f689af5963575573725ac499bf
+Author: claude (dev273 b82d6fcf-bbbb-4b87-a5d7-2979871305a7) <noreply@anthropic.com>
+Date:   Fri Aug 21 05:09:23 2026 -0400
+
+    bash-style-guide: note LC_ALL=C makes bash string ops byte-oriented (ai-review)
+
+    - global 'export LC_ALL=C' also affects bash-native expansions: '${#var}'
+      counts bytes, '${var:off:len}' slices bytes, and case ops / '[[ =~ ]]' /
+      '[[:class:]]' match by byte. A per-command prefix cannot reach an expansion
+      the parent shell evaluates, so a script slicing multibyte data in the shell
+      scopes a 'LC_ALL=C.UTF-8' block instead (codex)
+
+    Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
 
 commit 25fc8cf5a24cdea70c32cb8200eba58c40a45ef1
 Author: Patrick Schleizer <adrelanos@whonix.org>
@@ -88,6 +681,199 @@ Author: Patrick Schleizer <adrelanos@whonix.org>
 Date:   Fri Aug 21 04:48:56 2026 -0400
 
     .
+
+commit 3820f9d5f32e75999df700b4592151299374652a
+Author: claude (dev273 b82d6fcf-bbbb-4b87-a5d7-2979871305a7) <noreply@anthropic.com>
+Date:   Fri Aug 21 04:43:53 2026 -0400
+
+    bash-style-guide: add 'export LC_ALL=C' to the R-010 strict block
+
+    - 7th directive of the strict-mode block (R-010, and the R-010a guarded form)
+    - why: deterministic locale (sort / char ranges / number formatting), the
+      reproducible-build default; it is an export, so it obeys the same
+      guard/library placement rules as the rest of the block
+    - a multibyte need is a per-command 'LC_ALL=C.UTF-8 cmd' override, not a
+      reason to drop the block default
+
+    Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+
+commit 263c0402b5950c6e60986c8212b53fe85ba36f9b
+Author: claude (dev272 e8b76afb-795c-4739-8ebd-023de854021e) <noreply@anthropic.com>
+Date:   Fri Aug 21 03:11:42 2026 -0400
+
+    bash-style-guide: R-085 no SC1091 disable; fix R-090 absolute source= example
+
+    - R-085: the reusable gate's helper-scripts sibling checkout follows the
+      source= directive, so no per-line '# shellcheck disable=SC1091'.
+    - R-090 example used an absolute source= path (forbidden by R-080 and the
+      static gate); make it relative.
+    - Point to the shellcheck skill.
+
+    Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+
+commit 2dfd9334f3311d768e6b0d46b5b05925018d0ed5
+Author: claude (dev269 56c1aa7f-c6ae-4b09-bda2-661caa1a126e) <noreply@anthropic.com>
+Date:   Fri Aug 21 01:48:23 2026 -0400
+
+    address PR review: correct misleading doc and comments
+
+    - bash-style-guide R-062: drop 'find' from the verified '--' list. '--' ends
+      find's option parsing but does NOT protect a leading-hyphen starting path
+      ('find -- -leading' still fails); a './path' or absolute path is required.
+      Added an NB documenting this.
+    - dm-reproducible-compare-artifacts: the diffoscope-rc-0 path exits 4, not 1
+      (the comment said 1, contradicting the exit contract, where 1 is reserved
+      for internal errors and 4 is the 'artifacts differ' verdict).
+    - dm-update-frozen-snapshot: annotate the near-dead equality guard. Bumping
+      is unconditional by design (new_ts is the server 'now', always later than a
+      committed pin); the guard only short-circuits a same-second rerun. Reworded
+      its message so it no longer implies skip-when-unchanged semantics.
+
+    Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+
+commit 73ad47d6e75a9e21f1b761927381c43362f7c805
+Author: claude (dev269 56c1aa7f-c6ae-4b09-bda2-661caa1a126e) <noreply@anthropic.com>
+Date:   Fri Aug 21 01:48:21 2026 -0400
+
+    dm-normalize-fat-partition: list hidden root entries (mdir -a)
+
+    - 'mdir -b' omits hidden entries, so a hidden file or directory directly in
+      the ESP root was silently dropped from the rebuilt image. Add '-a'.
+
+    Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+
+commit 3cab876c42f7a9b6f8946eab85eefeb0f75c61ee
+Author: claude (dev269 56c1aa7f-c6ae-4b09-bda2-661caa1a126e) <noreply@anthropic.com>
+Date:   Fri Aug 21 01:48:19 2026 -0400
+
+    dm-nbd-cleanup: enumerate every nbd node, not just nbd0-99
+
+    - The two-glob /dev/nbd[0-9] /dev/nbd[0-9][0-9] pair missed nbd100+ under a
+      raised nbds_max, leaking a device the cleanup then never disconnected.
+    - Enumerate /dev/nbd* once, keep only a bare nbd<digits> name (any digit
+      count; partition nodes like nbd0p1 dropped), and reuse the one list in
+      both the presence check and the disconnect loop.
+
+    Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+
+commit 9b94d1264f855eff6ff31c098aeb3030d93718cb
+Author: claude (dev269 56c1aa7f-c6ae-4b09-bda2-661caa1a126e) <noreply@anthropic.com>
+Date:   Fri Aug 21 01:26:14 2026 -0400
+
+    dm-virtualbox-installer-exe-verify-windows: clean temp CRLs on retry-verify failure
+
+    - Capture the retry osslsigncode status, then remove both temp CRL files on
+      success AND failure. Under errexit a bare failing verify exited before the
+      cleanup, leaking the mktemp files.
+    - Propagate the failure with an explicit exit 1, matching the no-CRL branch.
+
+    Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+
+commit 636432636452d67ace848bf7001f2e8f31824f22
+Author: claude (dev269 56c1aa7f-c6ae-4b09-bda2-661caa1a126e) <noreply@anthropic.com>
+Date:   Fri Aug 21 01:11:12 2026 -0400
+
+    package-build-freshness: harden dm_package_source_hash find invocation
+
+    Review of the cd-free rewrite surfaced regressions the old 'cd .' hid:
+
+    - 'find -H' follows a SYMLINKED source root, as the old cd did. Without it
+      find did not descend a symlinked root, so edits inside went undetected and
+      a stale package could be skipped. Symlinks INSIDE the tree are still
+      recorded, not chased.
+    - Prune '.git' by NAME instead of an interpolated -path pattern, so a glob
+      character or a trailing slash in the directory name can no longer defeat
+      the prune and leak .git contents into the digest.
+
+    Verified under GNU find 4.10.0: symlink-root follow + edit detection,
+    .git ignored with a '[a]' dir name, missing dir -> nohash; behavioural
+    suite 7/7.
+
+    Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+
+commit 8868918738a630cd47b3e897551e543d2019ba30
+Author: claude (dev269 56c1aa7f-c6ae-4b09-bda2-661caa1a126e) <noreply@anthropic.com>
+Date:   Fri Aug 21 00:51:21 2026 -0400
+
+    package-build-freshness: drop cd subshell in dm_package_source_hash
+
+    - Use find %P relative paths for the type/mode stream and the symlink stream.
+    - Hash regular-file content only; the path is already carried by stream 1.
+    - No cd: the caller's working directory is untouched and the hash is
+      location-independent.
+    - Detection unchanged (content edit, chmod, new empty dir, file<->symlink,
+      symlink retarget, .git prune all move the digest). Hash VALUE changes, so
+      the next --skip-published-packages build rebuilds every package once (the
+      documented first-build-treated-as-changed path).
+
+    Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+
+commit 0f0c4bf6753d3298ed3dac70f1d8b5600b455eac
+Author: claude (dev269 56c1aa7f-c6ae-4b09-bda2-661caa1a126e) <noreply@anthropic.com>
+Date:   Fri Aug 21 00:51:19 2026 -0400
+
+    dm-virtualbox-installer-exe-verify-windows: avoid process-substitution subshell
+
+    - Extract CRL URLs into a variable; drive the while-read loop with a here-string.
+    - Here-string keeps the loop body in the current shell, so crl_fetched persists.
+    - Empty input still swallowed by the existing '[ -n "${crl_url}" ]' guard.
+
+    Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+
+commit c9ad05a3f0ba667d952dbe1e69c72f68ebad92f0
+Author: claude (dev266 64e5a92c-86e9-4990-a525-69b5a1b5360e) <noreply@anthropic.com>
+Date:   Thu Aug 20 23:08:20 2026 -0400
+
+    bash-style-guide: note R-194/R-195 defang of quoted/escaped ';' and '|'
+
+    A ';' / '|' that is data (an escaped find terminator, a '|' inside a quoted
+    pattern) is defanged before the test, so a valid single command is not
+    over-blocked. Deletes data only -> fail-open, never over-block.
+
+    ## AI-Assisted
+
+commit 2d7cbc87f3a93a45cd87440b2c5163e5e55de96c
+Merge: fc1f9693 d486b8eb
+Author: claude (dev266 64e5a92c-86e9-4990-a525-69b5a1b5360e) <noreply@anthropic.com>
+Date:   Thu Aug 20 22:28:00 2026 -0400
+
+    Merge origin/ai (R-200 doc) into ai
+
+commit fc1f969318f879f8623b95622c8ba0130fa60870
+Author: claude (dev266 64e5a92c-86e9-4990-a525-69b5a1b5360e) <noreply@anthropic.com>
+Date:   Thu Aug 20 22:27:13 2026 -0400
+
+    bash-style-guide: document R-194 (apt hook) and R-195 (cron)
+
+    - R-194: an apt Pre-Invoke/Post-Invoke/Pre-Install-Pkgs hook must not
+      embed a multi-statement shell command in its quoted value.
+    - R-195: a cron.d / crontab entry must not embed a multi-statement command;
+      '&&'/'||' glue tolerated (stock /etc/crontab uses it).
+    - State the general rule: a gate check (and auto-fixer) must never grow a
+      shell/config parser -- scan a line at a time, report the common case,
+      accept a documented fail-open on the rare multi-line form.
+
+    ## AI-Assisted
+
+commit d486b8eb8249961eca7bab2e4921a51c802328ba
+Merge: ea818b1d dfdd5152
+Author: claude (timeout-killafter d50d9c38-4cd2-4f05-9701-008cbe107399) <noreply@anthropic.com>
+Date:   Thu Aug 20 09:46:51 2026 -0400
+
+    Merge remote-tracking branch 'org-ai-assisted/ai' into ai
+
+commit ea818b1d698349b0568b4f349495986da6eb800e
+Author: claude (timeout-killafter d50d9c38-4cd2-4f05-9701-008cbe107399) <noreply@anthropic.com>
+Date:   Thu Aug 20 09:45:27 2026 -0400
+
+    bash-style-guide: R-200 timeout should carry --kill-after=
+
+    A bare 'timeout N cmd' sends only SIGTERM, which a child wedged in an
+    uninterruptible syscall can ignore and then run forever, defeating the
+    bound. Document the kill-after requirement, the canonical
+    --kill-after=<K> spelling (vs the short -k), the allow-bare-timeout
+    waiver, and the gate's command-position scope (a timeout in a string or
+    as an argument is spared).
 
 commit b3f1f8f3b320956f756c10cb183fe67224eae48f
 Merge: 50177838 dfdd5152
