@@ -29,7 +29,7 @@ if [ "$#" -ne 1 ]; then
 fi
 if [[ "${1}" == -* ]]; then
    die 2 "ref '${1}' must not start with '-'."
-esac
+fi
 
 ## Handle the result of a unicode-spoofing scan ($1 = its exit code, $2 = its
 ## name). The scan tools separate their exit codes on purpose:
