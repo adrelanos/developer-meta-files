@@ -45,7 +45,9 @@ canonical_workflows_dir="${derivative_maker_source_code_dir}/packages/kicksecure
 canonical_dependabot_yml="${derivative_maker_source_code_dir}/packages/kicksecure/developer-meta-files/consumer-templates/.github/dependabot.yml"
 
 [ -v DM_GITHUB_DEV ] || DM_GITHUB_DEV='github-adrelanos'
-[ -v DM_GITLAB_DEV ] || DM_GITLAB_DEV='gitlab-adrelanos'
+## TODO
+#[ -v DM_GITLAB_DEV ] || DM_GITLAB_DEV='gitlab-adrelanos'
+DM_GITLAB_DEV=''
 ## TODO
 #[ -v DM_GITHUB_MIRROR ] || DM_GITHUB_MIRROR='org-ai-assisted'
 DM_GITHUB_MIRROR=''
