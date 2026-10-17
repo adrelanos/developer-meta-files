@@ -39,7 +39,7 @@ sign_cmd_signify() {
    ## derivative-maker help-steps/signing-key-create
 
    ## Big file are unfortunately unsupported by signify.
-   if [ "${file_size_mb}" -ge "1000" ]; then
+   if [ "${file_size_mb}" -ge "10" ]; then
       return 0
    fi
    ## https://forums.whonix.org/t/signify-openbsd/7842
@@ -56,7 +56,7 @@ verify_cmd_openpgp() {
 }
 
 verify_cmd_signify() {
-   if [ "${file_size_mb}" -ge "1000" ]; then
+   if [ "${file_size_mb}" -ge "10" ]; then
       return 0
    fi
    signify-openbsd -V -p "${signify_public_key}" -m "$1" -x "$2"
